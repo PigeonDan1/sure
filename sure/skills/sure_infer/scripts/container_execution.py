@@ -9,6 +9,13 @@ from typing import Any
 
 from harness_runtime import harness_runtime_from_eval_input
 from deployment_binding import DEPLOYMENT_BINDING_V1, DEPLOYMENT_BINDING_V2
+from docker_runtime import resolve_docker_binary
+from evaluation_runtime import evaluation_runtime_from_eval_input
+from execution_provenance import (
+    build_execution_provenance,
+    execution_provenance_env,
+    write_execution_provenance,
+)
 
 
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -234,9 +241,24 @@ def build_local_container_command(
     harness_root = container_path(harness_runtime["runtime_root"])
     harness_python = container_path(harness_runtime["python_executable"])
     harness_manifest = container_path(harness_runtime["manifest_path"])
+    try:
+        evaluation_runtime = evaluation_runtime_from_eval_input(eval_input, prepare=False)
+    except Exception:
+        # Host provenance still records unavailable reasons; missing engine must not
+        # block container command construction at this stage.
+        evaluation_runtime = None
+    execution_provenance_path = control_run_dir / "artifacts" / "execution_provenance.json"
+    execution_provenance = build_execution_provenance(
+        harness_root=repo_root,
+        evaluation_runtime=evaluation_runtime,
+        image_digest=str(binding.get("target_image_digest") or ""),
+        image_ref=str(binding.get("target_image_ref") or ""),
+    )
+    write_execution_provenance(execution_provenance_path, execution_provenance)
     dataset_projection_root = dataset_projection_root_from_eval_input(eval_input)
 
-    command = ["docker", "run", "--rm", "--init", "--entrypoint", harness_python]
+    docker_binary = resolve_docker_binary()
+    command = [docker_binary, "run", "--rm", "--init", "--entrypoint", harness_python]
     mounted_targets: dict[str, tuple[Path, bool]] = {}
     lowered = (device_request or "auto").lower()
     if lowered != "cpu" and container.get("gpu_required") is True:
@@ -334,6 +356,15 @@ def build_local_container_command(
             "XDG_CACHE_HOME": f"{output_target}/.runtime/cache/xdg",
         }
     )
+    # Sidecar is written on the host; env path must match the container mount spelling.
+    # Already-container-spelled: wrap it in Path() and a Windows host hands the
+    # container a backslashed `\d\...` path, so it stays a string.
+    env.update(
+        execution_provenance_env(
+            container_path(execution_provenance_path.resolve()),
+            execution_provenance,
+        )
+    )
     if dataset_projection_root is not None:
         env["SURE_EVAL_DATASETS_ROOT"] = container_path(dataset_projection_root)
     for key in sorted(env):
@@ -355,6 +386,9 @@ def build_local_container_command(
             else None
         ),
         "harness_runtime": harness_runtime,
+        "evaluation_runtime": evaluation_runtime,
+        "execution_provenance": execution_provenance,
+        "docker_binary": docker_binary,
         "surface_env_refused": refused_surface_env(surface),
         "evaluation_node_runtime": {
             "runtime_type": "evaluation_node_python",

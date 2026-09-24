@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 """Regression tests for the infer/eval dataset identity boundary.
 
-/sure_infer expands a short alias such as "aishell1" to the fully qualified,
-versioned dataset id it actually writes artifacts under (e.g.
-"aishell1__v1.0.2__asr") via
+/sure_infer expands a short alias such as "aishell1" to the fully qualified
+projection id it writes artifacts under (e.g. ``aishell1__v1.0.2__asr``) via
 DatasetManager._existing_jsonl_for_dataset -> normalize_dataset_name.
-/sure_eval deliberately has a stricter public identity: callers must provide
-the exact ``<dataset>__<version>`` value approved in NFS. It does not accept a
-short alias or the historical ``__task`` report suffix.
+
+/sure_eval local_infer_run accepts 2-seg or 3-seg ids. A 2-seg request expands
+to the unique completed projection stem in the bundle (e.g. ``…__tts``); ambiguous
+multi-task bundles still require the full 3-seg id. Approved NFS reval still
+requests 2-seg ``source__version`` and peels optional task suffixes when reading
+report rows (GitLab reval surface).
 
 These tests exercise:
   - the shared resolve_dataset_alias() rule directly,
-  - /sure_infer's own DatasetManager._existing_jsonl_for_dataset using that
-    rule (proves the eval side keeps resolving exactly as before), and
-  - /sure_eval's canonical request validator (proves aliases and historical
-    report suffixes cannot weaken exact dataset-set equality).
+  - DatasetManager._existing_jsonl_for_dataset,
+  - local vs approved request validators.
 
 Run directly:
     cd sure/skills/sure_infer/scripts && python test_dataset_alias.py
@@ -119,13 +119,103 @@ class RevalRequiresCanonicalDatasetIdTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not canonical"):
             resolve_prediction_source._requested_dataset_id("aishell1")
 
-    def test_historical_task_suffix_is_rejected(self) -> None:
+    def test_approved_nfs_rejects_task_suffix_on_request(self) -> None:
+        # Approved reval set matching is still 2-seg source__version.
         with self.assertRaisesRegex(ValueError, "not canonical"):
             resolve_prediction_source._requested_dataset_id("aishell1__v1.0.2__asr")
 
     def test_legacy_single_underscore_version_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValueError, "not canonical"):
             resolve_prediction_source._requested_dataset_id("aishell1_v1.0.2")
+
+
+class LocalInferDatasetIdTests(unittest.TestCase):
+    def test_two_seg_local_id(self) -> None:
+        self.assertEqual(
+            resolve_prediction_source._local_dataset_id("aishell1__v1.0.2"),
+            "aishell1__v1.0.2",
+        )
+
+    def test_three_seg_projection_id(self) -> None:
+        self.assertEqual(
+            resolve_prediction_source._local_dataset_id("aishell1__v1.0.2__asr"),
+            "aishell1__v1.0.2__asr",
+        )
+        self.assertEqual(
+            resolve_prediction_source._local_dataset_id("duo_ds__v1.0.0__tts"),
+            "duo_ds__v1.0.0__tts",
+        )
+
+    def test_unversioned_and_task(self) -> None:
+        self.assertEqual(
+            resolve_prediction_source._local_dataset_id("flat_ds__unversioned"),
+            "flat_ds__unversioned",
+        )
+        self.assertEqual(
+            resolve_prediction_source._local_dataset_id("flat_ds__unversioned__asr"),
+            "flat_ds__unversioned__asr",
+        )
+
+    def test_short_alias_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not "):
+            resolve_prediction_source._local_dataset_id("aishell1")
+
+
+class ExpandLocalDatasetIdsTests(unittest.TestCase):
+    def test_exact_three_seg_passthrough(self) -> None:
+        self.assertEqual(
+            resolve_prediction_source._expand_local_dataset_ids(
+                ["duo_ds__v1.0.0__tts"],
+                ["duo_ds__v1.0.0__tts"],
+            ),
+            ["duo_ds__v1.0.0__tts"],
+        )
+
+    def test_two_seg_expands_to_unique_projection(self) -> None:
+        self.assertEqual(
+            resolve_prediction_source._expand_local_dataset_ids(
+                ["aispeech_phy_ar_common_fleurs_v251217__v1.0.2"],
+                ["aispeech_phy_ar_common_fleurs_v251217__v1.0.2__tts"],
+            ),
+            ["aispeech_phy_ar_common_fleurs_v251217__v1.0.2__tts"],
+        )
+
+    def test_exact_two_seg_when_bundle_is_two_seg(self) -> None:
+        self.assertEqual(
+            resolve_prediction_source._expand_local_dataset_ids(
+                ["legacy__v1.0.0"],
+                ["legacy__v1.0.0"],
+            ),
+            ["legacy__v1.0.0"],
+        )
+
+    def test_ambiguous_multi_task_requires_full_id(self) -> None:
+        with self.assertRaisesRegex(ValueError, "ambiguous"):
+            resolve_prediction_source._expand_local_dataset_ids(
+                ["duo_ds__v1.0.0"],
+                ["duo_ds__v1.0.0__asr", "duo_ds__v1.0.0__tts"],
+            )
+
+    def test_missing_id_fails(self) -> None:
+        with self.assertRaisesRegex(ValueError, "not among completed"):
+            resolve_prediction_source._expand_local_dataset_ids(
+                ["other__v1.0.0"],
+                ["duo_ds__v1.0.0__tts"],
+            )
+
+    def test_subset_rejected_even_after_expand(self) -> None:
+        with self.assertRaisesRegex(ValueError, "do not exactly match"):
+            resolve_prediction_source._expand_local_dataset_ids(
+                ["a__v1__tts"],
+                ["a__v1__tts", "b__v1__tts"],
+            )
+
+    def test_duplicate_expand_targets_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            resolve_prediction_source._expand_local_dataset_ids(
+                ["duo_ds__v1.0.0", "duo_ds__v1.0.0__tts"],
+                ["duo_ds__v1.0.0__tts"],
+            )
 
 
 if __name__ == "__main__":

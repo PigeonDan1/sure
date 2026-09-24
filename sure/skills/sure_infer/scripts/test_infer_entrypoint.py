@@ -293,6 +293,22 @@ class InferEntrypointTests(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertEqual(self.failed_stage(completed), "guards")
 
+    def test_distinct_venvs_may_share_a_base_python_executable(self) -> None:
+        model_python = self.root / "model-runtime" / "bin" / "python"
+        model_python.parent.mkdir(parents=True)
+        model_python.symlink_to(sys.executable)
+
+        completed = self.run_entrypoint(MODEL_PYTHON=str(model_python))
+
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+
+    def test_the_same_runtime_python_is_refused(self) -> None:
+        completed = self.run_entrypoint(MODEL_PYTHON=sys.executable)
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(self.failed_stage(completed), "guards")
+        self.assertIn("same executable", completed.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()

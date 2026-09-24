@@ -13,16 +13,15 @@ import hashlib
 import json
 import math
 import os
-import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from sure_eval.core.logging import get_logger
 
-from resolve_evaluation_engine import git_environment
-from evaluation_runtime import evaluation_child_environment
+from execution_provenance import load_execution_provenance_from_environment
 from model_identity import canonical_model_name
+from server_protocol import resolve_server_protocol
 
 logger = get_logger(__name__)
 SKILL_ROOT = Path(__file__).resolve().parent.parent
@@ -35,26 +34,6 @@ def _utc_now() -> str:
 
 def _artifact_run_id(run_dir: Path) -> str:
     return os.environ.get("RUN_ID") or run_dir.name
-
-
-def _git_commit(root: Path | None) -> str | None:
-    if root is None or not root.exists():
-        return None
-    try:
-        completed = subprocess.run(
-            ["git", "-c", f"safe.directory={root}", "-C", str(root), "rev-parse", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
-            env=git_environment(evaluation_child_environment()),
-        )
-    except (OSError, subprocess.SubprocessError):
-        # Sealed inference images need not ship git; the commit is provenance
-        # only, so a missing binary degrades to an absent value.
-        return None
-    value = completed.stdout.strip()
-    return value if completed.returncode == 0 and value else None
 
 
 def _read_json_file(path: Path) -> dict[str, Any]:
@@ -119,6 +98,71 @@ def _nonempty_dict(*values: dict[str, Any]) -> dict[str, Any]:
         if value:
             return value
     return {}
+
+
+
+def _first_text(*values: Any) -> str | None:
+    for value in values:
+        if value not in (None, ""):
+            return str(value)
+    return None
+
+
+def _load_execution_provenance(results_dir: Path) -> dict[str, Any]:
+    return _nonempty_dict(
+        _load_run_sidecar(results_dir, "execution_provenance.json"),
+        _load_run_sidecar(results_dir, "artifacts/execution_provenance.json"),
+        load_execution_provenance_from_environment(),
+    )
+
+
+def _identity_provenance(
+    *,
+    results_dir: Path,
+    generation_status: dict[str, Any],
+    evaluation_runtime: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    execution_provenance = _load_execution_provenance(results_dir)
+    status_provenance = _nonempty_dict(
+        _safe_dict(generation_status.get("execution_provenance")),
+        _nested_dict(generation_status, "runtime", "execution_provenance"),
+        _safe_dict(generation_status.get("provenance")),
+    )
+    unavailable = _safe_dict(execution_provenance.get("unavailable"))
+    status_unavailable = _safe_dict(status_provenance.get("unavailable"))
+    evaluation_runtime = evaluation_runtime or {}
+
+    harness_commit = _first_text(
+        execution_provenance.get("harness_commit"),
+        status_provenance.get("harness_commit"),
+        os.environ.get("SURE_HARNESS_COMMIT"),
+    )
+    evaluation_engine_commit = _first_text(
+        execution_provenance.get("evaluation_engine_commit"),
+        status_provenance.get("evaluation_engine_commit"),
+        evaluation_runtime.get("engine_commit"),
+        os.environ.get("SURE_EVALUATION_ENGINE_COMMIT"),
+    )
+
+    return {
+        "execution_provenance": execution_provenance,
+        "harness_commit": harness_commit,
+        "harness_commit_unavailable_reason": (
+            None
+            if harness_commit
+            else unavailable.get("harness_commit")
+            or status_unavailable.get("harness_commit")
+            or "host execution provenance did not provide harness_commit"
+        ),
+        "evaluation_engine_commit": evaluation_engine_commit,
+        "evaluation_engine_commit_unavailable_reason": (
+            None
+            if evaluation_engine_commit
+            else unavailable.get("evaluation_engine_commit")
+            or status_unavailable.get("evaluation_engine_commit")
+            or "Evaluation Runtime binding did not provide engine_commit"
+        ),
+    }
 
 
 def write_protocol_yaml(
@@ -186,6 +230,8 @@ def write_protocol_yaml(
     status_server_config = _safe_dict(status_runtime.get("server_config"))
     server_command = status_runtime.get("server_command") or sanitized_server.get("command", [])
     server_working_dir = status_runtime.get("server_working_dir") or sanitized_server.get("working_dir", ".")
+    merged_server = {**(sanitized_server or {}), **(status_server_config or {})}
+    server_protocol = resolve_server_protocol(merged_server)
     env_keys = status_env.get("env_keys") if isinstance(status_env.get("env_keys"), list) else server_env_keys
     safe_env_values = _safe_dict(status_env.get("safe_env_values"))
     redacted_env_keys = status_env.get("redacted_env_keys") if isinstance(status_env.get("redacted_env_keys"), list) else []
@@ -230,6 +276,11 @@ def write_protocol_yaml(
     )
     execution_entrypoint = os.environ.get("SURE_EVAL_EXECUTION_ENTRYPOINT")
 
+    identity_provenance = _identity_provenance(
+        results_dir=results_dir,
+        generation_status=generation_status,
+        evaluation_runtime=evaluation_runtime if isinstance(evaluation_runtime, dict) else None,
+    )
     payload = {
         "schema": "sure.eval.inference_protocol.v1",
         "protocol_id": protocol_id,
@@ -303,7 +354,8 @@ def write_protocol_yaml(
             },
             "evaluation_runtime": evaluation_runtime,
             "server": {
-                "transport": "stdio_jsonrpc",
+                "transport": merged_server.get("transport") or "stdio",
+                "protocol": server_protocol,
                 "command": server_command,
                 "working_dir": server_working_dir,
                 "tool_name": selected_tool_name,
@@ -416,11 +468,17 @@ def write_protocol_yaml(
             "protocol_argument": protocol_id,
         },
         "provenance": {
-            "harness_commit": _git_commit(HARNESS_ROOT),
+            "harness_commit": identity_provenance.get("harness_commit"),
+            "harness_commit_unavailable_reason": identity_provenance.get("harness_commit_unavailable_reason"),
             "evaluation_engine": {
                 "root": str(engine_root) if engine_root else None,
-                "commit": _git_commit(engine_root),
+                "commit": identity_provenance.get("evaluation_engine_commit"),
+                "commit_unavailable_reason": identity_provenance.get("evaluation_engine_commit_unavailable_reason"),
             },
+            "execution_provenance": _existing_path_or_none(results_dir / "execution_provenance.json")
+            or _existing_path_or_none(results_dir / "artifacts" / "execution_provenance.json")
+            or os.environ.get("SURE_EVAL_EXECUTION_PROVENANCE"),
+            "execution_provenance_schema": _safe_dict(identity_provenance.get("execution_provenance")).get("schema"),
             "prediction_generation_status": generation_status_path,
             "prediction_generation_status_schema": generation_status.get("schema"),
             "runtime_inventory": runtime_inventory_path,
@@ -433,7 +491,7 @@ def write_protocol_yaml(
             "source_runtime_inventory": source_inference_provenance.get("source_runtime_inventory"),
             "raw_response_source_of_truth": False,
             "notes": [
-                "Inference parameters come from model config, CLI overrides, protocol resolver output, and the actual MCP call policy.",
+                "Inference parameters come from model config, CLI overrides, protocol resolver output, and the actual server call policy.",
                 "raw_response is preserved in predictions JSONL as model output evidence only.",
             ],
         },

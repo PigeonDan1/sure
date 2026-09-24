@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Generate prediction files for one dataset by calling a model-local MCP server.
+Generate prediction files for one dataset by calling a model-local server.
 
 This script is the execution surface for the `wait_for_predictions` step when
 the main flow chooses `direct_server_use`.
@@ -42,6 +42,8 @@ from sure_eval.core.logging import configure_logging, get_logger
 from sure_eval.datasets import DatasetManager
 from sure_eval.models.registry import ModelInfo
 from sure_eval.protocols.resolver import ProtocolResolver
+
+from server_protocol import JSONL_SERVER_PROTOCOL, MCP_SERVER_PROTOCOL, resolve_server_protocol
 
 configure_logging(level="INFO")
 logger = get_logger(__name__)
@@ -724,7 +726,7 @@ def _start_model_server(
     env: dict[str, str],
     log_handle: Any,
 ) -> subprocess.Popen[str]:
-    """Launch the model's MCP server with UTF-8 on both sides of the stdio bridge.
+    """Launch the model server with UTF-8 on both sides of the stdio bridge.
 
     Both ends serialise with ensure_ascii=False, so pipes left on the host code
     page kill the first prompt or transcript that leaves ASCII. The child needs
@@ -768,6 +770,31 @@ def _send_request(
             continue
         if response.get("id") == request.get("id"):
             return response
+
+
+def _send_jsonl_request(
+    process: subprocess.Popen[str],
+    request: dict[str, Any],
+) -> Any:
+    """Send one raw JSON request to a line-oriented model server."""
+    assert process.stdin is not None
+    assert process.stdout is not None
+
+    process.stdin.write(json.dumps(request, ensure_ascii=False) + "\n")
+    process.stdin.flush()
+
+    while True:
+        line = process.stdout.readline()
+        if line == "":
+            raise RuntimeError("Server exited before returning a response")
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            return json.loads(line)
+        except json.JSONDecodeError:
+            # Keep parity with the MCP bridge for accidental stdout logging.
+            continue
 
 
 def _extract_response_payload(response: dict[str, Any]) -> Any:
@@ -946,6 +973,13 @@ def _normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict
             for field in ("speech_segments", "frame_scores"):
                 if prediction.get(field) is not None:
                     normalized[field] = prediction[field]
+            timestamps = prediction.get("timestamps")
+            if "speech_segments" not in normalized and isinstance(timestamps, list):
+                normalized["speech_segments"] = [
+                    {"start": float(segment[0]), "end": float(segment[1])}
+                    for segment in timestamps
+                    if isinstance(segment, (list, tuple)) and len(segment) >= 2
+                ]
             return json.dumps(normalized, ensure_ascii=False), normalized
         if task_name == "SV":
             embedding = prediction.get("embedding") or payload.get("embedding") or []
@@ -1203,6 +1237,7 @@ def _write_prediction_manifests(
     prediction_path: Path,
     structured_prediction_path: Path,
     protocol_id: str | None,
+    server_protocol: str,
     source_samples: int,
     generated_samples: int,
 ) -> tuple[Path, Path]:
@@ -1228,7 +1263,11 @@ def _write_prediction_manifests(
     }
     conversion_row = {
         "dataset": dataset,
-        "source_format": "model_mcp_tool_response",
+        "source_format": (
+            "model_mcp_tool_response"
+            if server_protocol == MCP_SERVER_PROTOCOL
+            else "model_jsonl_response"
+        ),
         "format_used": row["format_used"],
         "num_rows": row["num_rows"],
         "source_artifacts": {
@@ -1239,7 +1278,11 @@ def _write_prediction_manifests(
         "steps": [
             {
                 "name": "raw_response_to_prediction",
-                "input": "MCP tools/call JSON-RPC response payload",
+                "input": (
+                    "MCP tools/call JSON-RPC response payload"
+                    if server_protocol == MCP_SERVER_PROTOCOL
+                    else "line-oriented JSON response payload"
+                ),
                 "output": "prediction object and normalized_prediction scalar/path",
                 "script": "scripts/generate_predictions_via_server.py:_normalize_prediction_payload",
             },
@@ -1369,6 +1412,7 @@ def main() -> int:
     server_cfg = model_cfg.get("server", {})
     command = _resolve_server_command(model_dir, runtime_inventory_document)
     working_dir = _resolve_working_dir(model_dir, runtime_inventory_document)
+    server_protocol = resolve_server_protocol(server_cfg)
     env = model_child_env()
     server_env_config: dict[str, str] = {}
     writable_cache_keys = {
@@ -1460,6 +1504,7 @@ def main() -> int:
         "execution_requested": env.get("SURE_EVAL_EXECUTION_REQUESTED", ""),
         "execution_job_id": env.get("SURE_EVAL_EXECUTION_JOB_ID", ""),
         "inference_call_mode": "direct_server_use",
+        "server_protocol": server_protocol,
         "protocol_id": protocol_id,
         "tool_name": tool_name,
         "host": socket.gethostname(),
@@ -1476,6 +1521,7 @@ def main() -> int:
                 "working_dir": server_cfg.get("working_dir", "."),
                 "timeout": server_cfg.get("timeout"),
                 "startup_timeout_sec": server_cfg.get("startup_timeout_sec"),
+                "protocol": server_protocol,
                 "env_keys": sorted(server_env_config),
             },
             "runtime_inventory": runtime_inventory,
@@ -1556,19 +1602,19 @@ def main() -> int:
         )
 
         try:
-            initialize = _send_request(
-                process,
-                {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
-            )
-            if "error" in initialize:
-                raise RuntimeError(initialize["error"].get("message", "initialize failed"))
-
-            tools_list = _send_request(
-                process,
-                {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
-            )
-            if "error" in tools_list:
-                raise RuntimeError(tools_list["error"].get("message", "tools/list failed"))
+            if server_protocol == MCP_SERVER_PROTOCOL:
+                initialize = _send_request(
+                    process,
+                    {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                )
+                if "error" in initialize:
+                    raise RuntimeError(initialize["error"].get("message", "initialize failed"))
+                tools_list = _send_request(
+                    process,
+                    {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+                )
+                if "error" in tools_list:
+                    raise RuntimeError(tools_list["error"].get("message", "tools/list failed"))
 
             next_id = 3
             with tempfile.TemporaryDirectory(prefix=f"sure-eval-{canonical_dataset}-audio-") as scratch:
@@ -1604,17 +1650,24 @@ def main() -> int:
                         if key not in tool_args and _is_dynamic_argument_key(str(key))
                     )
 
-                    response = _send_request(
-                        process,
-                        {
-                            "jsonrpc": "2.0",
-                            "id": next_id,
-                            "method": "tools/call",
-                            "params": {"name": tool_name, "arguments": arguments},
-                        },
-                    )
+                    if server_protocol == MCP_SERVER_PROTOCOL:
+                        response = _send_request(
+                            process,
+                            {
+                                "jsonrpc": "2.0",
+                                "id": next_id,
+                                "method": "tools/call",
+                                "params": {"name": tool_name, "arguments": arguments},
+                            },
+                        )
+                    else:
+                        response = _send_jsonl_request(process, arguments)
                     next_id += 1
-                    raw_payload = _extract_response_payload(response)
+                    raw_payload = (
+                        _extract_response_payload(response)
+                        if server_protocol == MCP_SERVER_PROTOCOL
+                        else response
+                    )
                     raw_response_types.add(type(raw_payload).__name__)
                     if isinstance(raw_payload, dict):
                         raw_response_keys.update(str(key) for key in raw_payload)
@@ -1691,6 +1744,7 @@ def main() -> int:
                 prediction_path=prediction_path,
                 structured_prediction_path=structured_prediction_path,
                 protocol_id=args.protocol if args.protocol.lower() != "none" else None,
+                server_protocol=server_protocol,
                 source_samples=len(samples),
                 generated_samples=len(prediction_map),
             )
@@ -1735,10 +1789,11 @@ def main() -> int:
             raise
         finally:
             try:
-                _send_request(
-                    process,
-                    {"jsonrpc": "2.0", "id": 999999, "method": "shutdown", "params": {}},
-                )
+                if server_protocol == MCP_SERVER_PROTOCOL:
+                    _send_request(
+                        process,
+                        {"jsonrpc": "2.0", "id": 999999, "method": "shutdown", "params": {}},
+                    )
             except Exception:
                 pass
             if process.stdin is not None:

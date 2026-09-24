@@ -79,4 +79,5 @@ id_rsa.pub
 packages/coding-agent/test/suite/tmp-*/
 openspec/
 .claude/
+.codex/
 .idea/

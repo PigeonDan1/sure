@@ -33,6 +33,7 @@ from typing import Any
 from harness_runtime import HarnessRuntimeBindingError, harness_runtime_from_eval_input
 from container_execution import container_path, resolve_container_harness_runtime
 from deployment_binding import DEPLOYMENT_BINDING_V1, DEPLOYMENT_BINDING_V2
+from docker_runtime import resolve_docker_binary
 
 
 def _sha256_file(path: Path) -> str:
@@ -328,7 +329,17 @@ def _live_runtime_probe(
         + f"export SURE_EVAL_NODE_LOCAL_PYTHON={shlex.quote(harness_python)}; "
         + f"{shlex.quote(harness_python)} -s -c {shlex.quote(node_probe)} || exit 43"
     )
-    command = ["docker", "run", "--rm", "--entrypoint", "bash"]
+    try:
+        docker_binary = resolve_docker_binary()
+    except ValueError as exc:
+        return {
+            "passed": False,
+            "probe_ran": False,
+            "failure_class": HOST_CANNOT_PROBE,
+            "exit_code": None,
+            "evidence": f"{HOST_CANNOT_PROBE}: Docker binary is not usable: {exc}",
+        }
+    command = [docker_binary, "run", "--rm", "--entrypoint", "bash"]
     if mounted:
         command.extend(
             ["--mount", f"type=bind,src={repo_root},dst={container_path(repo_root)},readonly"]
@@ -344,7 +355,7 @@ def _live_runtime_probe(
             "exit_code": None,
             "evidence": (
                 f"{HOST_CANNOT_PROBE}: runtime probe could not start: {exc} "
-                f"(docker on PATH: {shutil.which('docker') or 'not found'})"
+                f"(docker resolved: {docker_binary}; docker on PATH: {shutil.which('docker') or 'not found'})"
             ),
         }
     categories = {
@@ -371,6 +382,7 @@ def _live_runtime_probe(
         "failure_class": None if completed.returncode == 0 else failure_class,
         "exit_code": completed.returncode,
         "image_ref": binding.get("target_image_ref"),
+        "docker_binary": docker_binary,
         "harness_runtime_id": harness.get("runtime_id"),
         "harness_lock_sha256": harness.get("lock_sha256"),
         "harness_python": harness_python,

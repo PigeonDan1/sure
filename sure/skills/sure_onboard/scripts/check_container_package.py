@@ -10,6 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from docker_runtime import resolve_docker_binary
 from deployment_contract import (
     immutable_image_ref,
     load_artifact,
@@ -24,9 +25,9 @@ from deployment_contract import (
 )
 
 
-def verify_live_image(image_ref: str) -> None:
+def verify_live_image(docker_bin: str, image_ref: str) -> None:
     proc = subprocess.run(
-        ["docker", "image", "inspect", image_ref, "--format", "{{json .RepoDigests}}"],
+        [docker_bin, "image", "inspect", image_ref, "--format", "{{json .RepoDigests}}"],
         capture_output=True,
         text=True,
         timeout=30,
@@ -44,13 +45,14 @@ def verify_live_image(image_ref: str) -> None:
 
 
 def verify_live_runtimes(
+    docker_bin: str,
     image_ref: str,
     model_runtime: dict[str, object],
     harness_runtime: dict[str, object],
 ) -> None:
     model_python = str(model_runtime["python_executable"])
     model_probe = subprocess.run(
-        ["docker", "run", "--rm", "--entrypoint", model_python, image_ref, "-c", "import sys; print(sys.executable)"],
+        [docker_bin, "run", "--rm", "--entrypoint", model_python, image_ref, "-c", "import sys; print(sys.executable)"],
         capture_output=True,
         text=True,
         timeout=60,
@@ -71,7 +73,7 @@ def verify_live_runtimes(
         f"assert m.get('lock_sha256') == {lock_sha256!r}"
     )
     harness_probe = subprocess.run(
-        ["docker", "run", "--rm", "--entrypoint", harness_python, image_ref, "-s", "-c", code],
+        [docker_bin, "run", "--rm", "--entrypoint", harness_python, image_ref, "-s", "-c", code],
         capture_output=True,
         text=True,
         timeout=60,
@@ -135,8 +137,9 @@ def main() -> int:
             expected_runtime_id=os.environ.get("SURE_HARNESS_RUNTIME_ID") or None,
             expected_lock_sha256=os.environ.get("SURE_HARNESS_LOCK_SHA256") or None,
         )
-        verify_live_image(image_ref)
-        verify_live_runtimes(image_ref, model_runtime, harness_runtime)
+        docker_bin = resolve_docker_binary()
+        verify_live_image(docker_bin, image_ref)
+        verify_live_runtimes(docker_bin, image_ref, model_runtime, harness_runtime)
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         print(f"PACKAGE_CONTAINER failed: {exc}", file=sys.stderr)
         return 1

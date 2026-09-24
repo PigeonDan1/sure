@@ -37,6 +37,7 @@ import type { SureHookContext } from "../../src/core/sure/types.ts";
 // touches the real sure/memory/ of this checkout:
 //   <tmp>/repo/sure/runtime/memory                link to the real shared library
 //   <tmp>/repo/sure/runtime/model                 link to the real model runtime (deployment_binding.py imports it)
+//   <tmp>/repo/sure/runtime/uvenv.py              link for evaluation_runtime import chain
 //   <tmp>/repo/sure/site                          link to the real site loader (same import chain)
 //   <tmp>/repo/sure/runtime/harness/bootstrap.py  fake: reports the local python as the harness python
 //   <tmp>/repo/sure/skills/sure_infer/scripts/    copies of the scripts used here
@@ -132,7 +133,9 @@ const PUBLISH_STUB = [
 ].join("\n");
 
 // check_execution_result.py imports check_execution_surface_compliance.py, which
-// imports harness_runtime.py, container_execution.py and deployment_binding.py.
+// imports harness_runtime / container_execution / deployment_binding / docker_runtime.
+// container_execution also pulls evaluation_runtime + execution_provenance at import
+// time (and evaluation_runtime pulls resolve_evaluation_engine).
 const COPIED_SCRIPTS = [
 	"build_run_digest.py",
 	"check_memory_extraction.py",
@@ -143,6 +146,10 @@ const COPIED_SCRIPTS = [
 	"harness_runtime.py",
 	"container_execution.py",
 	"deployment_binding.py",
+	"docker_runtime.py",
+	"evaluation_runtime.py",
+	"execution_provenance.py",
+	"resolve_evaluation_engine.py",
 	"check_run_report.py",
 ];
 
@@ -209,6 +216,7 @@ function fixture(name: string, options: { publishStub?: boolean } = {}): Fixture
 	const links: Array<[target: string, link: string]> = [
 		[MEMORY_LIB_DIR, join(repoRoot, "sure", "runtime", "memory")],
 		[join(REPO_ROOT, "sure", "runtime", "model"), join(repoRoot, "sure", "runtime", "model")],
+		[join(REPO_ROOT, "sure", "runtime", "uvenv.py"), join(repoRoot, "sure", "runtime", "uvenv.py")],
 		[join(REPO_ROOT, "sure", "site"), join(repoRoot, "sure", "site")],
 		[join(REAL_PACKAGE_DIR, "schemas"), join(packageDir, "schemas")],
 	];

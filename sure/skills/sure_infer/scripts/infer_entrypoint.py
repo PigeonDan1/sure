@@ -37,6 +37,7 @@ for _parent in Path(__file__).resolve().parents:
         break
 
 from sure.runtime.evaluation.task_registry import normalize_task, task_profile
+from runtime_roles import same_runtime_executable
 
 STAGES: tuple[str, ...] = (
     "guards",
@@ -173,8 +174,7 @@ def stage_guards() -> Ctx:
         )
 
     model_python = _env("MODEL_PYTHON") or _env("PYTHON_BIN") or "python"
-    resolved_model_python = shutil.which(model_python) or model_python
-    if Path(resolved_model_python).exists() and _real(resolved_model_python) == _real(sys.executable):
+    if same_runtime_executable(model_python, sys.executable):
         raise StageError("guards", "Harness Python and Model Python resolved to the same executable")
     # The Harness Python's own imports are proved by the compliance probe before
     # launch; the bundled scripts fail loudly on their own if that ever drifts.
@@ -308,7 +308,55 @@ def stage_config(ctx: Ctx) -> None:
 
 def stage_prepare(ctx: Ctx) -> None:
     summary = ctx.run_dir / "prepare_summary.json"
-    _run(ctx, "prepare", "prepare_sure_dataset.py", "--dataset", *ctx.requested_datasets, "--output", str(summary))
+    args = ["--dataset", *ctx.requested_datasets, "--output", str(summary)]
+    # Project onto a single, unambiguous dataset task when one exists and the
+    # model does not declare a conflicting concrete task (its declared_task is
+    # empty, a broad suite like SPEECH_UNDERSTANDING, or agrees with the dataset
+    # task). Otherwise the model's declared_task wins: the model's own task
+    # description outranks an ambiguous or conflicting dataset projection.
+    model_task = ""
+    resolved_input = _env("SURE_EVAL_INPUT_RESOLVED")
+    if resolved_input:
+        try:
+            payload = _read_json(Path(resolved_input))
+            model = payload.get("model") if isinstance(payload.get("model"), dict) else {}
+            declared_task = str(model.get("declared_task") or "").strip()
+            dataset_tasks: list[str] = []
+            for row in payload.get("datasets") or []:
+                if isinstance(row, dict) and row.get("task"):
+                    dataset_task = str(row["task"]).strip()
+                    if dataset_task and dataset_task not in dataset_tasks:
+                        dataset_tasks.append(dataset_task)
+            if len(dataset_tasks) == 1:
+                dataset_task = dataset_tasks[0]
+                if (
+                    not declared_task
+                    or normalize_task(declared_task) == "speech_understanding"
+                    or normalize_task(declared_task) == normalize_task(dataset_task)
+                ):
+                    model_task = dataset_task
+                else:
+                    model_task = declared_task
+            else:
+                model_task = declared_task
+        except Exception:
+            model_task = ""
+    if not model_task:
+        config_yaml = ctx.model_dir / "config.yaml"
+        if config_yaml.is_file():
+            try:
+                import yaml
+
+                config = yaml.safe_load(config_yaml.read_text(encoding="utf-8")) or {}
+                model = config.get("model") if isinstance(config.get("model"), dict) else {}
+                model_task = str(
+                    model.get("task") or config.get("task") or config.get("task_type") or ""
+                ).strip()
+            except Exception:
+                model_task = ""
+    if model_task:
+        args.extend(["--task", model_task])
+    _run(ctx, "prepare", "prepare_sure_dataset.py", *args)
     prepared = [
         str(item["dataset"])
         for item in _read_json(summary).get("prepared", [])
@@ -319,7 +367,6 @@ def stage_prepare(ctx: Ctx) -> None:
     ctx.datasets = prepared
     print(f"Concrete datasets: {' '.join(prepared)}", flush=True)
 
-    resolved_input = _env("SURE_EVAL_INPUT_RESOLVED")
     if resolved_input:
         for row in _read_json(Path(resolved_input)).get("datasets", []):
             if isinstance(row, dict) and row.get("name") and row.get("language"):
@@ -328,7 +375,6 @@ def stage_prepare(ctx: Ctx) -> None:
     if fallback_language:
         for dataset in prepared:
             ctx.languages.setdefault(dataset, fallback_language)
-
 
 def stage_materialize(ctx: Ctx) -> None:
     _run(

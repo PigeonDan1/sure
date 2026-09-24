@@ -20,6 +20,7 @@ from deployment_contract import document_timestamp, resolve_model_dir
 from finalize_model_bundle import (
     ensure_safe_bundle_targets,
     finalize,
+    normalize_portable_paths,
     resolve_weights_root,
     weights_integrity,
 )
@@ -208,7 +209,11 @@ class DockerDeliveryContractTests(unittest.TestCase):
             encoding="utf-8",
         )
         docker.chmod(0o755)
+        docker_bin = str(docker.resolve())
         env = os.environ.copy()
+        # resolve_docker_binary prefers /usr/bin/docker over PATH; pin the shim
+        # so live-inspect tests never call the runner's real Docker CLI.
+        env["SURE_ONBOARD_DOCKER_BIN"] = docker_bin
         env["PATH"] = str(bin_dir) + os.pathsep + env.get("PATH", "")
         env["SURE_HARNESS_RUNTIME_ID"] = "sure-harness-test"
         env["SURE_HARNESS_LOCK_SHA256"] = "c" * 64
@@ -216,9 +221,11 @@ class DockerDeliveryContractTests(unittest.TestCase):
 
     def stubbed_docker(self, command: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         """Answer the gate's two docker probes from inside the test process."""
-        if command[:2] == ["docker", "image"]:
+        # Production resolves an absolute CLI (/usr/bin/docker on Linux CI); match
+        # by basename so the stub stays tied to the argv shape, not the host path.
+        if command and Path(command[0]).name == "docker" and len(command) >= 2 and command[1] == "image":
             return subprocess.CompletedProcess(command, 0, json.dumps([self.image_ref]) + "\n", "")
-        if command[:2] == ["docker", "run"]:
+        if command and Path(command[0]).name == "docker" and len(command) >= 2 and command[1] == "run":
             return subprocess.CompletedProcess(command, 0, "/runtime/python\n", "")
         return subprocess.CompletedProcess(command, 1, "", f"unexpected docker command: {command}")
 
@@ -619,6 +626,30 @@ class DockerDeliveryContractTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(ValueError, "local evidence was not fully checked"):
                 build_package_gate(self.run_dir, self.model_dir)
+
+    def test_normalize_portable_paths_rewrites_nested_abs(self) -> None:
+        # finalize always rebuilds package_gate via write_package_gate; the
+        # ported rewrite is normalize_portable_paths — unit-test that directly.
+        # Only keys named `path` or ending `_path` are rewritten; model_dir is
+        # forced to "." by finalize itself before normalize runs.
+        package = {
+            "model_dir": str(self.model_dir),
+            "artifact_manifest_path": str(self.model_artifacts / "artifact_manifest.json"),
+            "local": {
+                "sample_output_path": str(self.model_artifacts / "sample_output.json"),
+            },
+            "docker": {
+                "build_result_path": str(self.run_artifacts / "docker_build_result.json"),
+            },
+            "outside_path": str(self.root / "elsewhere" / "x.json"),
+        }
+        value = normalize_portable_paths(package, self.run_dir, self.model_dir)
+        self.assertEqual(value["model_dir"], str(self.model_dir))  # not a *_path key
+        self.assertEqual(value["artifact_manifest_path"], "artifacts/artifact_manifest.json")
+        self.assertEqual(value["local"]["sample_output_path"], "artifacts/sample_output.json")
+        self.assertEqual(value["docker"]["build_result_path"], "artifacts/docker_build_result.json")
+        # out-of-root abs paths stay absolute (GitLab same); escape reject is ensure_safe_bundle_targets
+        self.assertEqual(value["outside_path"], str(self.root / "elsewhere" / "x.json"))
 
     def test_container_gate_rejects_harness_model_alias(self) -> None:
         self.validation["harness_runtime"]["python_executable"] = "python"
