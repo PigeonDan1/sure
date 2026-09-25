@@ -131,6 +131,27 @@ def gate_errors(run_dir: Path, result_path: Path) -> list[str]:
                 f"{dataset}: predictions/manifest.json sha256 {recorded.get('sha256')!r} does not match "
                 f"predictions/{dataset}.txt"
             )
+        if str(spec["agent"]["task"]).lower().replace("-", "_") in {"se", "speech_enhancement"}:
+            structured = prediction_file.with_suffix(".jsonl")
+            if not structured.is_file() or str(recorded.get("structured_sha256") or "") != _sha256(structured):
+                errors.append(f"{dataset}: missing or changed SE structured predictions")
+            else:
+                try:
+                    audio_rows = [json.loads(line) for line in structured.read_text(encoding="utf-8").splitlines() if line.strip()]
+                    if len(audio_rows) != expected:
+                        errors.append(f"{dataset}: SE structured row count differs from expected")
+                    projections = []
+                    for audio_row in audio_rows:
+                        audio = Path(audio_row["prediction"]["audio_path"])
+                        if not audio.is_file() or audio.stat().st_size == 0:
+                            errors.append(f"{dataset}: SE generated audio is missing or empty: {audio}")
+                        projections.append(f"{audio_row['key']}\t{audio_row['normalized_prediction']}")
+                        if str(audio) != audio_row["normalized_prediction"]:
+                            errors.append(f"{dataset}: SE path projections disagree")
+                    if projections != prediction_file.read_text(encoding="utf-8").splitlines():
+                        errors.append(f"{dataset}: SE structured predictions disagree with TSV")
+                except (KeyError, TypeError, ValueError) as exc:
+                    errors.append(f"{dataset}: invalid SE structured predictions: {exc}")
         if status_rows.get(dataset) != "completed":
             errors.append(f"{dataset}: prediction_generation_status.json status is {status_rows.get(dataset)!r}")
         reference = product_dir / "references" / "sure_benchmark" / "jsonl" / f"{dataset}.jsonl"

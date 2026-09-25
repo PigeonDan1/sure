@@ -318,7 +318,7 @@ def _build_tool_arguments(
     output_audio_dir: Path,
     tool_args: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    task_name = task.upper()
+    task_name = _normalize_task(task)
     if task_name == "KWS":
         arguments: dict[str, Any] = {
             argument_name: str(audio_path),
@@ -364,6 +364,11 @@ def _build_tool_arguments(
                 "noisy_audio_path": str(audio_path),
                 "output_path": output_audio_path,
             }
+            # Clean references and their transcripts are evaluation targets,
+            # not conditioning inputs for speech enhancement.
+            if tool_args:
+                arguments.update(tool_args)
+            return arguments
         elif task_name == "TSE":
             enrollment = _resolve_audio_field_path(
                 repo_root,
@@ -851,7 +856,7 @@ def _first_present(*values: Any) -> Any:
 
 
 def _normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict[str, Any]]:
-    task_name = task.upper()
+    task_name = _normalize_task(task)
     if isinstance(payload, dict):
         prediction = dict(payload.get("prediction") or {})
         if not prediction:
@@ -869,13 +874,17 @@ def _normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict
         if task_name in {"TTS", "VC", "SE", "TSE"}:
             value = (
                 prediction.get("audio_path")
+                or (prediction.get("enhanced_audio") if task_name == "SE" else None)
                 or prediction.get("path")
                 or prediction.get("generated_audio")
                 or prediction.get("converted_audio")
                 or payload.get("audio_path")
+                or (payload.get("enhanced_audio") if task_name == "SE" else None)
                 or payload.get("path")
                 or ""
             )
+            if task_name == "SE" and (not isinstance(value, (str, Path)) or not str(value).strip()):
+                raise ValueError("SE prediction requires a non-empty audio_path or enhanced_audio")
             normalized_value = _path_text(value, field="audio_path")
             normalized = {"audio_path": normalized_value}
             if task_name == "VC":
@@ -987,6 +996,8 @@ def _normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict
         normalized_value = _single_line_text(payload.get("text", ""))
         return normalized_value, {"text": normalized_value}
 
+    if task_name == "SE" and (not isinstance(payload, (str, Path)) or not str(payload).strip()):
+        raise ValueError("SE prediction requires a non-empty audio path")
     if task_name in {"TTS", "VC", "SE", "TSE"}:
         value = _path_text(payload, field="audio_path")
     elif task_name in {"SD", "SA-ASR", "SA_ASR"}:

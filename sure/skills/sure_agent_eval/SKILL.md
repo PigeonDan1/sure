@@ -29,6 +29,14 @@ stages:                     # run in declaration order; previous output feeds th
 
 Schema: `schemas/agent_spec.schema.json`; an example lives in `examples/agent_s2tt_example.yaml`. A stage resolves to **mcp_tool** mode when its approved `config.yaml` declares `server.command`, and to **api** mode when it declares `api.base_url`. The first stage must be an mcp_tool stage: the runner drives position 0 over the dataset's audio through that model's MCP server. `prompt_template` placeholders: `{text}`, `{target_language}`, `{source_language}`, `{dataset}`, `{key}`.
 
+SE is supported as a **single approved SE MCP stage**, with `agent.task: se`,
+audio/speech input and output, and SE datasets. See `examples/agent_se_example.yaml`.
+The runner sends noisy `audio_path` and a unique `output_path`; clean reference
+audio is reserved for scoring. The stage must write nonempty audio to that exact
+output path and return `audio_path` or `enhanced_audio`. An SE stage followed by
+a text API stage is rejected. Use `metrics=si_sdr` for paired noisy/clean data,
+after verifying the route in the pinned evaluator.
+
 Credential red line: an API stage's key is read from the environment variable **named** by `api_key_env` at execution time. Only the variable name is ever recorded — never the value, in no artifact and no log.
 
 ## Parameters
@@ -78,6 +86,8 @@ The `run_agent` product is deliberately compatible with the `/sure_infer` bundle
   protocol.yaml                          # agent chain identity + provenance (inference-only)
   prediction_generation_status.json      # per-dataset generation status (v2 shape)
   predictions/<dataset>.txt              # key<TAB>text TSV (the agent's final answer)
+  predictions/<dataset>.jsonl            # SE: structured audio prediction + sample rate
+  predictions/audio/<dataset>/*.wav      # SE: enhanced audio; TSV stores paths instead of text
   predictions/manifest.json              # per-dataset sha256 + row counts
   references/sure_benchmark/jsonl/<dataset>.jsonl
   evaluation_runs/agent_eval_<24-hex>/   # appended by the evaluate unit
@@ -104,6 +114,8 @@ Run host-side scripts with `cwd` = this skill package dir. The scripts import th
 ## Gate Checks (enforced by hooks)
 
 - `run_agent`: `check_agent_execution.py` validates the terminal record against the resolved spec and cross-checks the product tree of a succeeded run.
+- For SE, the execution gate also verifies structured JSONL hashes, TSV/JSONL
+  agreement, and existence of every nonempty enhanced audio file.
 - `evaluate`: `check_agent_eval_report.py` validates the report's agent identity against `agent_spec_resolved.json`, requires every selected dataset to carry at least one scored metric on success, and checks the batch directory.
 - `run_report`: `report_persisted` true, `execution_path_actual` declared, `run_dir` equals the recorded product directory, and the eval report's status agrees with the reported run status.
 

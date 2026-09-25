@@ -1,0 +1,52 @@
+# Researched ONNX route; the upstream PyTorch model is a different runtime.
+model_id: Xiaobin-Rong/gtcrn
+model_name: gtcrn
+task_type: se
+deployment_type: local
+repo:
+  url: https://github.com/Xiaobin-Rong/gtcrn
+  commit: null
+weights:
+  source: release_or_pypi
+  local_path: null
+  required: true
+  local_dir_name: checkpoints
+  cache_policy: model_local_first
+  url: https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx
+  sha256: e77603ac0c23dac3227dd2d7135b3a585cbee2679048aecfa886657d3ae1b534
+environment_hint:
+  preferred_backend: uv
+  python_version: '3.11'
+  requires_gpu: false
+  system_packages: []
+phase1_runtime_target:
+  - Import sherpa_onnx, numpy, and soundfile in the pinned Model Runtime
+  - Load the hash-verified GTCRN ONNX checkpoint once on CPU
+  - Enhance both SE fixture inputs and validate saved mono 16 kHz audio
+entrypoints:
+  import_test: import sherpa_onnx
+  load_test: sherpa_onnx.OfflineSpeechDenoiser with OfflineSpeechDenoiserGtcrnModelConfig
+  infer_test: denoiser(mono_float32_samples, 16000); save returned samples at returned sample_rate
+runtime_strategy:
+  type: cli_or_library
+  framework: sherpa-onnx
+  load_surface: Load checkpoints/gtcrn_simple.onnx using OfflineSpeechDenoiser
+  inference_surface: Run speech enhancement with the noisy waveform only
+  evidence_terms: [sherpa-onnx, gtcrn, OfflineSpeechDenoiser]
+fixture:
+  fixture_id: se/librispeech_noise_smoke
+  fixture_source: task_registry
+  fixture_root: fixtures/tasks/se/librispeech_noise_smoke
+  fixture_status: ready
+  fixture_index: fixtures/tasks/se/README.md
+  task_specific: true
+  fallback_allowed: false
+  audio: fixtures/tasks/se/librispeech_noise_smoke/noisy_1580.wav
+  reference_audio: fixtures/tasks/se/librispeech_noise_smoke/reference_1580.wav
+io_contract:
+  input_type: audio_path
+  primary_field: audio_path
+  output_type: json
+  required_fields: [audio_path, sample_rate]
+  nonempty_fields: [audio_path]
+  json_serializable: true

@@ -48,6 +48,7 @@ DEVICES = {"auto", "cuda", "cpu", "mps"}
 ALL_TASK_PLAYBOOKS = [
     "references/task_playbooks/ASR.md",
     "references/task_playbooks/LID.md",
+    "references/task_playbooks/SE.md",
     "references/task_playbooks/SPEECH_UNDERSTANDING.md",
     "references/task_playbooks/TTS.md",
     "references/task_playbooks/VC.md",
@@ -232,6 +233,7 @@ def task_playbooks_for(task_type: str) -> list[str]:
             "references/task_playbooks/SPEECH_UNDERSTANDING.md",
             "references/task_playbooks/ASR.md",
             "references/task_playbooks/LID.md",
+            "references/task_playbooks/SE.md",
             "references/task_playbooks/KWS.md",
             "references/task_playbooks/TTS.md",
             "references/task_playbooks/VC.md",
@@ -240,12 +242,14 @@ def task_playbooks_for(task_type: str) -> list[str]:
         return ["references/task_playbooks/ASR.md"]
     if task == "lid":
         return ["references/task_playbooks/LID.md"]
+    if task == "se":
+        return ["references/task_playbooks/SE.md"]
     if task == "sa_asr":
         return [
             "references/task_playbooks/SPEECH_UNDERSTANDING.md",
             "references/task_playbooks/ASR.md",
         ]
-    if task in {"classification", "s2tt", "sd", "se", "ser", "slu", "sv", "tse", "vad"}:
+    if task in {"classification", "s2tt", "sd", "ser", "slu", "sv", "tse", "vad"}:
         return ["references/task_playbooks/SPEECH_UNDERSTANDING.md"]
     if task == "tts":
         return ["references/task_playbooks/TTS.md"]

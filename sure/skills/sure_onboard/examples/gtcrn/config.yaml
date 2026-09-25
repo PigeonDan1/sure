@@ -1,0 +1,17 @@
+name: gtcrn
+model:
+  name: gtcrn
+  task: SE
+  checkpoint: checkpoints/gtcrn_simple.onnx
+runtime:
+  device: cpu
+tools:
+  - name: enhance_speech
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+        output_path:
+          type: string
+      required: [audio_path, output_path]

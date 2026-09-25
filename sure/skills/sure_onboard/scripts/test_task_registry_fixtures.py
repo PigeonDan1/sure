@@ -15,9 +15,38 @@ CHECK = SCRIPTS_DIR / "check_fixture.py"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from materialize_onboard_inputs import task_playbooks_for
+from prepare_fixture import load_samples
 
 
 class TaskRegistryFixtureTests(unittest.TestCase):
+    def test_se_fixture_accepts_audio_pairs_without_transcripts(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            staged = root / "model/fixture/se/paired"
+            staged.mkdir(parents=True)
+            (staged / "noisy.wav").write_bytes(b"noisy")
+            (staged / "clean.wav").write_bytes(b"clean")
+            row = {"key": "se_1", "noisy_audio": "noisy.wav", "reference_audio": "clean.wav"}
+            gt = staged / "gt.jsonl"
+            gt.write_text(json.dumps(row) + "\n", encoding="utf-8")
+            prepared = load_samples(staged, "se")
+            self.assertEqual(prepared[0]["audio_path"], str(staged / "noisy.wav"))
+            self.assertEqual(prepared[0]["annotation_fields"], ["reference_audio"])
+            manifest = root / "fixture_manifest.json"
+            manifest.write_text(json.dumps({"model_dir": str(root / "model"), "task_type": "se",
+                "staged_dir": str(staged), "gt_jsonl": str(gt), "samples": [row], "sample_count": 1}), encoding="utf-8")
+            command = [sys.executable, str(CHECK), "--run-dir", str(root), "--produces", str(manifest)]
+            checked = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(checked.returncode, 0, checked.stderr)
+            (staged / "clean.wav").unlink()
+            checked = subprocess.run(command, capture_output=True, text=True)
+            self.assertNotEqual(checked.returncode, 0)
+            self.assertIn("reference_audio", checked.stderr)
+
+    def test_se_and_aliases_use_the_audio_playbook(self) -> None:
+        for task in ("se", "speech-enhancement", "speech_enhancement"):
+            self.assertEqual(task_playbooks_for(task), ["references/task_playbooks/SE.md"])
+
     def test_lid_uses_its_task_specific_playbook(self) -> None:
         self.assertEqual(task_playbooks_for("lid"), ["references/task_playbooks/LID.md"])
 
@@ -28,6 +57,7 @@ class TaskRegistryFixtureTests(unittest.TestCase):
                 "references/task_playbooks/SPEECH_UNDERSTANDING.md",
                 "references/task_playbooks/ASR.md",
                 "references/task_playbooks/LID.md",
+                "references/task_playbooks/SE.md",
                 "references/task_playbooks/KWS.md",
                 "references/task_playbooks/TTS.md",
                 "references/task_playbooks/VC.md",
