@@ -140,6 +140,12 @@ def _tool_schema(task: str) -> dict[str, Any]:
             "prompt_audio_path": {"type": "string"},
             "output_path": {"type": "string"},
         }
+    elif normalized == "se":
+        required = ["audio_path"]
+        properties = {
+            "audio_path": {"type": "string"},
+            "output_path": {"type": "string"},
+        }
     elif normalized == "kws":
         required = ["audio_path", "keywords"]
         properties = {

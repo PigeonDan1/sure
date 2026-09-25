@@ -179,6 +179,30 @@ class ResolveAgentTests(unittest.TestCase):
         self.assertEqual(asr["env"], {"MODEL_PATH": "weights", "DEVICE": "cpu"})
         self.assertEqual(asr["working_dir"], str(self.models_root / "asr_model" / "runtime"))
 
+    def test_se_requires_an_audio_stage_and_se_dataset(self) -> None:
+        se_config = {**ASR_CONFIG, "model": {"task": "SE"}, "tools": [{"name": "enhance_speech"}]}
+        write_model(self.models_root, "se_model", se_config)
+        spec = "agent:\n  name: denoise\n  task: se\n  input: speech\n  output: audio\nstages:\n  - id: enhance\n    model: se_model\n"
+        self.spec_path.write_text(spec, encoding="utf-8")
+        args = self.make_args(metrics="si_sdr", output_dir=str(self.tmp / "se-output"))
+        with self.assertRaisesRegex(ValueError, "SE datasets"):
+            resolve_agent.resolve_agent(args, approved_root=self.models_root)
+        (self.dataset_root / "ds.jsonl").write_text('{"task":"SE","audio":{"speech":{"language":"en"}}}', encoding="utf-8")
+        payload = resolve_agent.resolve_agent(args, approved_root=self.models_root)
+        self.assertEqual(payload["agent"]["output"], "audio")
+        self.assertEqual(payload["stages"][0]["task"], "SE")
+        self.spec_path.write_text(spec.replace("output: audio", "output: text"), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "audio/speech"):
+            resolve_agent.resolve_agent(args, approved_root=self.models_root)
+        self.spec_path.write_text(spec.replace("model: se_model", "model: asr_model"), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "one approved SE MCP stage"):
+            resolve_agent.resolve_agent(args, approved_root=self.models_root)
+
+    def test_se_cannot_feed_a_text_agent(self) -> None:
+        write_model(self.models_root, "asr_model", {**ASR_CONFIG, "model": {"task": "SE"}})
+        with self.assertRaisesRegex(ValueError, "SE stage produces audio"):
+            resolve_agent.resolve_agent(self.make_args(), approved_root=self.models_root)
+
     def test_unknown_stage_model_fails(self) -> None:
         spec = AGENT_YAML.replace("model: asr_model", "model: missing_model")
         self.spec_path.write_text(spec, encoding="utf-8")

@@ -532,6 +532,7 @@ def _runtime_evidence_text(candidate: dict[str, Any], card_text: str) -> str:
 def _derive_runtime_strategy(
     candidate: dict[str, Any],
     card_text: str,
+    task_type: str,
     source: str,
     evidence_url: str | None,
     field_evidence: list[dict[str, Any]],
@@ -544,7 +545,7 @@ def _derive_runtime_strategy(
             "type": "cli_or_library",
             "framework": "sherpa-onnx",
             "load_surface": "load ONNX checkpoint files from the model repository with sherpa-onnx",
-            "inference_surface": "run sherpa-onnx ASR inference through its Python API or CLI on the selected SURE fixture",
+            "inference_surface": f"run sherpa-onnx {task_type.upper()} inference through its Python API or CLI on the selected SURE fixture",
             "evidence_terms": [term for term in ("sherpa-onnx", "onnx") if term in combined],
         }
     elif "onnxruntime" in combined or re.search(r"\bonnx\b", combined):
@@ -858,7 +859,7 @@ def synthesize_model_input(candidate: dict[str, Any], task: str) -> tuple[dict[s
     field_evidence.append(_field_evidence(source, "repo.commit", candidate.get("commit"), "medium", evidence_url, "provider.commit"))
     field_evidence.append(_field_evidence(source, "weights.source", weights_source, "strong" if weights_source else "weak", evidence_url, "provider.weights_source"))
 
-    runtime_strategy = _derive_runtime_strategy(candidate, card_text, source, evidence_url, field_evidence)
+    runtime_strategy = _derive_runtime_strategy(candidate, card_text, task_type, source, evidence_url, field_evidence)
     entrypoints = _derive_entrypoints(candidate, blocks, task_type, runtime_strategy, source, evidence_url, missing_or_weak, field_evidence)
     environment_hint = _derive_environment(card_text, blocks, source, evidence_url, missing_or_weak, field_evidence)
     fixture, io_contract = _derive_fixture_and_contract(task_type, candidate, card_text, entrypoints, source, evidence_url, missing_or_weak, field_evidence)

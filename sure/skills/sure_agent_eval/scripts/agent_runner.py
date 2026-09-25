@@ -43,7 +43,9 @@ sys.path.insert(0, str(SCRIPT_DIR.parents[2] / "runtime" / "harness"))
 sys.path.insert(0, str(HARNESS_ROOT))
 
 from agent_spec import render_prompt  # noqa: E402
+from generate_predictions_via_server import _normalize_prediction_payload  # noqa: E402
 from model_child_env import model_child_env  # noqa: E402
+from sure.runtime.evaluation.task_registry import normalize_task  # noqa: E402
 from sure.site.loader import load_site_policy  # noqa: E402
 from sure_eval.core.config import Config  # noqa: E402
 from sure_eval.datasets.dataset_manager import DatasetManager  # noqa: E402
@@ -300,6 +302,7 @@ def run_agent(
     artifacts_dir = run_dir / "artifacts"
     product_dir = Path(spec["runtime"]["product_dir"])
     agent = spec["agent"]
+    is_se = normalize_task(str(agent["task"])) == "se"
     stages = list(spec["stages"])
     datasets = list(spec["datasets"])
     log_path = product_dir / "agent_runner.log"
@@ -341,6 +344,9 @@ def run_agent(
     manifest: dict[str, Any] = {"schema": "sure.agent_eval.prediction_manifest.v1", "datasets": {}}
 
     try:
+        if is_se and (len(stages) != 1 or stages[0]["mode"] != "mcp_tool" or normalize_task(stages[0]["task"]) != "se"):
+            result["failed_stage"] = "agent_contract"
+            raise ValueError("SE agents require one SE MCP stage")
         manager = _dataset_manager(_projection_root(product_dir), str(spec["runtime"]["dataset_source_key"]))
         mcp_callers: dict[str, McpCaller] = {}
         for dataset in datasets:
@@ -371,6 +377,7 @@ def run_agent(
                 raise
 
             prediction_path = product_dir / "predictions" / f"{dataset_id}.txt"
+            structured_rows: list[dict[str, Any]] = []
             generated = 0
             with prediction_path.open("w", encoding="utf-8") as predictions:
                 for row in rows:
@@ -382,7 +389,28 @@ def run_agent(
                             if position == 0:
                                 if stage["id"] not in mcp_callers:
                                     mcp_callers[stage["id"]] = caller_factory(stage)
-                                answer = extract_text(mcp_callers[stage["id"]]({"audio_path": value}))
+                                arguments = {"audio_path": value}
+                                if is_se:
+                                    audio_dir = product_dir / "predictions" / "audio" / dataset_id
+                                    audio_dir.mkdir(parents=True, exist_ok=True)
+                                    output_path = (audio_dir / f"{hashlib.sha256(key.encode('utf-8')).hexdigest()}.wav").resolve()
+                                    arguments["output_path"] = str(output_path)
+                                raw_result = mcp_callers[stage["id"]](arguments)
+                                if is_se:
+                                    answer, prediction = _normalize_prediction_payload(raw_result, task="SE")
+                                    actual = Path(answer).resolve()
+                                    if actual != output_path or not actual.is_file() or actual.stat().st_size == 0:
+                                        raise ValueError("SE stage must write nonempty audio to the requested output_path")
+                                    answer = str(actual)
+                                    prediction.update(audio_path=answer, enhanced_audio=answer)
+                                    structured_rows.append({
+                                        "key": key, "dataset": dataset_id, "task": "SE",
+                                        "language": str(dataset.get("language") or "any"),
+                                        "prediction": prediction, "normalized_prediction": answer,
+                                        "raw_response": raw_result,
+                                    })
+                                else:
+                                    answer = extract_text(raw_result)
                             else:
                                 prompt = render_prompt(
                                     str(stage.get("prompt_template") or ""),
@@ -401,13 +429,23 @@ def run_agent(
                         result["failed_dataset"] = dataset_id
                         result["error"] = f"sample {key}: {exc}"
                         raise
-                    predictions.write(f"{key}\t{_tsv_safe(value)}\n")
+                    predictions.write(f"{key}\t{value if is_se else _tsv_safe(value)}\n")
                     generated += 1
             manifest["datasets"][dataset_id] = {
                 "prediction_file": f"predictions/{dataset_id}.txt",
                 "sha256": _sha256(prediction_path),
                 "rows": generated,
             }
+            if is_se:
+                structured_path = prediction_path.with_suffix(".jsonl")
+                structured_path.write_text(
+                    "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in structured_rows),
+                    encoding="utf-8",
+                )
+                manifest["datasets"][dataset_id].update(
+                    structured_prediction_file=f"predictions/{dataset_id}.jsonl",
+                    structured_sha256=_sha256(structured_path),
+                )
             status_rows.append(
                 {
                     "dataset": dataset_id,

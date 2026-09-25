@@ -154,7 +154,8 @@ def main() -> int:
             return fail(f"{gt_jsonl}:{line_no} is not valid JSON: {exc}")
         if not isinstance(row, dict):
             return fail(f"{gt_jsonl}:{line_no} must be a JSON object")
-        audio = next((row.get(field) for field in AUDIO_FIELDS if row.get(field)), None)
+        input_fields = ("noisy_audio", "audio", "wav", "audio_path", "source_audio") if task == "se" else AUDIO_FIELDS
+        audio = next((row.get(field) for field in input_fields if row.get(field)), None)
         if not isinstance(audio, str) or not audio:
             return fail(f"{gt_jsonl}:{line_no} must contain a non-empty audio/wav field")
         audio_path = Path(audio)
@@ -168,7 +169,12 @@ def main() -> int:
         annotation_fields = [
             field for field in ANNOTATION_FIELDS if field in row and annotation_is_nonempty(row[field])
         ]
-        if not annotation_fields:
+        if task == "se":
+            if not any(isinstance(row.get(field), str) and row[field].strip() for field in ("noisy_audio", "audio", "wav", "audio_path", "source_audio")):
+                return fail(f"{gt_jsonl}:{line_no} task se requires noisy input audio")
+            if not isinstance(row.get("reference_audio"), str) or not row["reference_audio"].strip():
+                return fail(f"{gt_jsonl}:{line_no} task se requires reference_audio for paired smoke validation")
+        elif not annotation_fields:
             return fail(
                 f"{gt_jsonl}:{line_no} must contain at least one annotation field "
                 f"({', '.join(ANNOTATION_FIELDS)})"
@@ -182,6 +188,8 @@ def main() -> int:
                 return fail(f"{gt_jsonl}:{line_no} {field} must stay inside staged_dir")
             if not (staged_dir / role_path).is_file():
                 return fail(f"{gt_jsonl}:{line_no} referenced {field} does not exist: {value}")
+            if task == "se" and (staged_dir / role_path).stat().st_size == 0:
+                return fail(f"{gt_jsonl}:{line_no} SE audio must be nonempty: {field}")
         if task == "sa_asr" and "segments" not in row:
             return fail(f"{gt_jsonl}:{line_no} task sa_asr requires speaker-attributed segments")
         parsed_rows.append(row)

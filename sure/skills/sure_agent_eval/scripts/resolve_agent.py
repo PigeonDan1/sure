@@ -39,6 +39,7 @@ from agent_spec import (  # noqa: E402
 from deployment_binding import DeploymentBindingError, load_deployment_binding  # noqa: E402
 from resolve_eval_input import _resolve_output_dir  # noqa: E402
 from resolve_model_dir import resolve_approved_model_identity  # noqa: E402
+from sure.runtime.evaluation.task_registry import normalize_task  # noqa: E402
 from sure_eval.datasets.source_resolver import (  # noqa: E402
     is_source_entry,
     read_source_metadata,
@@ -240,6 +241,15 @@ def resolve_agent(
     ]
     dataset_source_key = args.dataset_source_key or None
     resolved_datasets = [_resolve_dataset(entry, dataset_source_key=dataset_source_key) for entry in datasets]
+    if normalize_task(str(agent["task"])) == "se":
+        if len(stages) != 1 or stages[0]["mode"] != "mcp_tool" or normalize_task(stages[0]["task"]) != "se":
+            raise ValueError("SE agents require one approved SE MCP stage; audio-to-text chains are not SE")
+        if agent["input"] not in {"audio", "speech"} or agent["output"] not in {"audio", "speech"}:
+            raise ValueError("SE agents require audio/speech input and output")
+        if any(normalize_task(item["task"]) != "se" for item in resolved_datasets):
+            raise ValueError("SE agents require SE datasets with noisy and reference audio roles")
+    elif any(normalize_task(stage["task"]) == "se" for stage in stages):
+        raise ValueError("An SE stage produces audio; use a single-stage SE agent or /sure_infer")
     names = [item["dataset"] for item in resolved_datasets]
     if len(set(names)) != len(names):
         raise ValueError(f"duplicate dataset ids after resolution: {names}")

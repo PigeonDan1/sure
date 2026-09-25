@@ -23,6 +23,7 @@ from typing import Any
 from dataset_alias import resolve_dataset_alias
 from sure_eval.core.config import Config
 from sure_eval.core.logging import get_logger
+from .se_projection import project_se_samples
 from .source_resolver import (
     DatasetSourceRef,
     is_source_entry,
@@ -737,6 +738,8 @@ class DatasetManager:
             return "s2tt_translation_v1"
         if task == "SV":
             return "sv_embeddings_v1"
+        if task == "SE":
+            return "se_audio_v1"
         return f"{self._task_slug(task)}_readback_v1"
 
     def _convert_source_root_to_jsonl(self, ref: DatasetSourceRef, task: str | None = None) -> Path:
@@ -768,9 +771,9 @@ class DatasetManager:
             raise FileNotFoundError(f"source sample.jsonl not found: {sample_jsonl_path}")
         if not raw_dir.exists():
             raise FileNotFoundError(f"source raw_dir not found: {raw_dir}")
-        # Native projectors (ASR/KWS/LID/VAD/S2TT/SV). Everything else is a
+        # Native projectors (ASR/KWS/LID/VAD/S2TT/SV/SE). Everything else is a
         # readback projection of ASR-shaped rows (text as target, audio as path).
-        native_tasks = {"ASR", "KWS", "LID", "VAD", "S2TT", "SV"}
+        native_tasks = {"ASR", "KWS", "LID", "VAD", "S2TT", "SV", "SE"}
         source_meta = read_source_metadata(ref)
         # Keep S2TT discovery when caller passed ASR default but ds declares S2TT
         # and no multi-task intent is in play — only when task is still ASR and
@@ -787,7 +790,7 @@ class DatasetManager:
             # ponytail: open-ended readback for TTS/VC only; expand if more synth tasks land.
             raise ValueError(
                 f"source-root projection for task {task!r} is not implemented; "
-                f"supported tasks: ASR, KWS, LID, VAD, S2TT, SV, TTS, VC"
+                f"supported tasks: ASR, KWS, LID, VAD, S2TT, SV, SE, TTS, VC"
             )
 
         ds_meta = self._load_single_json_object(ds_jsonl_path)
@@ -810,7 +813,15 @@ class DatasetManager:
         }
         # Readback (TTS/VC) reuses ASR-shaped row projection with task stamped.
         row_task = "ASR" if task in {"TTS", "VC"} else task
-        if task == "KWS":
+        if task == "SE":
+            rows, skipped, source_records = project_se_samples(
+                sample_jsonl_path=sample_jsonl_path,
+                raw_dir=raw_dir,
+                language=language,
+                dataset_label=projection_name,
+                metadata_base=metadata_base,
+            )
+        elif task == "KWS":
             rows, skipped, source_records = self._project_kws_sample_rows(
                 sample_jsonl_path=sample_jsonl_path,
                 raw_dir=raw_dir,
@@ -887,7 +898,16 @@ class DatasetManager:
             source_payload=source_payload,
         )
 
-        if task == "KWS":
+        if task == "SE":
+            fields = {
+                "key": "key|sample_id|noisy_audio stem",
+                "path": "noisy_audio|attribute.path|audio|path",
+                "noisy_audio": "noisy_audio|attribute.path|audio|path",
+                "reference_audio": "reference_audio (optional for no-reference metrics)",
+                "task": "constant:SE",
+                "language": "row.language|ds.audio.speech.language",
+            }
+        elif task == "KWS":
             fields = {
                 "key": "key|sample_id",
                 "path": "attribute.path|path|audio|wav",
@@ -960,7 +980,14 @@ class DatasetManager:
             mapping_text = json.dumps(mapping, indent=2, ensure_ascii=False) + "\n"
         (projection_dir / "mapping.yaml").write_text(mapping_text, encoding="utf-8")
 
-        if task == "KWS":
+        if task == "SE":
+            io_contract = {
+                "task": "SE",
+                "input": {"primary_field": "path", "type": "audio_path", "required_fields": ["key", "path"]},
+                "output": {"prediction_format": "jsonl+tsv_projection", "primary_field": "audio_path", "type": "audio_path"},
+                "reference": {"primary_field": "reference_audio", "type": "audio_path", "required_for": ["si_sdr", "stoi", "pesq"]},
+            }
+        elif task == "KWS":
             io_contract = {
                 "task": "KWS",
                 "input": {

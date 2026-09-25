@@ -1,0 +1,8 @@
+agent:
+  name: gtcrn_se
+  task: se
+  input: speech
+  output: audio
+stages:
+  - id: enhance
+    model: gtcrn
