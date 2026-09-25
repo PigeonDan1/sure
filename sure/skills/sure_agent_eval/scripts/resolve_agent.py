@@ -213,6 +213,24 @@ def _split_csv(value: str) -> list[str]:
     return [item.strip() for item in str(value).split(",") if item.strip()]
 
 
+def _validate_agent_task(agent: dict, stages: list[dict], datasets: list[dict]) -> None:
+    task = str(agent.get("task") or "").lower()
+    if task == "se":
+        if str(agent.get("input") or "").lower() != "speech" or str(agent.get("output") or "").lower() != "speech":
+            raise ValueError("SE agent must declare speech input and speech output")
+        if (
+            len(stages) != 1
+            or stages[0]["mode"] != "mcp_tool"
+            or stages[0]["task"] != "SE"
+            or "enhance_speech" not in stages[0]["tool_names"]
+        ):
+            raise ValueError("SE agent requires one approved SE MCP-tool stage")
+        if any(str(dataset["task"]).upper() != "SE" for dataset in datasets):
+            raise ValueError("SE agent requires SE datasets")
+    elif any(str(dataset["task"]).upper() == "SE" for dataset in datasets):
+        raise ValueError("SE datasets require an SE speech-to-speech agent")
+
+
 def resolve_agent(
     args: argparse.Namespace,
     *,
@@ -243,6 +261,7 @@ def resolve_agent(
     names = [item["dataset"] for item in resolved_datasets]
     if len(set(names)) != len(names):
         raise ValueError(f"duplicate dataset ids after resolution: {names}")
+    _validate_agent_task(agent, stages, resolved_datasets)
 
     # The same boundary /sure_infer applies to output_dir: absolute, outside the
     # configured forbidden output roots, creatable and writable. The extension

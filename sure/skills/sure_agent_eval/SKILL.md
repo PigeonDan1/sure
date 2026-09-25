@@ -7,6 +7,8 @@ description: Evaluate an Agent (an ordered chain of approved models, e.g. ASR ->
 
 Evaluate an **Agent** — an input → output system built from an ordered chain of approved models — over one or more datasets, and score its answers. Typical case: a speech-translation (AST/S2TT) agent whose stage 1 is an approved ASR model (speech → text via its MCP tool) and whose later stages are LLMs onboarded in the API-model pattern (text → translated text). The product is an inference bundle (`predictions/`, `protocol.yaml`, `prediction_generation_status.json`, `references/sure_benchmark/jsonl/`) plus an evaluation batch under `evaluation_runs/<batch-id>/` inside that bundle.
 
+SE supports a single approved `enhance_speech` MCP stage. Set `agent.task: se`, `input: speech`, `output: speech`, and use an SE dataset with `metrics=si_sdr` or `metrics=stoi`. The stage receives `audio_path`, `noisy_audio_path`, and a requested `output_path`; it must write non-empty enhanced audio to that path and return it as `audio_path`. The bundle stores audio below `predictions_audio/<dataset>/`, its path in the prediction TSV, and a matching structured `predictions/<dataset>.jsonl` row for external audio evaluation. Multi-stage audio chains are outside this contract.
+
 **Prerequisite**: run `/sure_init` first to select an agent, configure auth, and validate the environment for this project. Every stage model must already be approved (`/sure_onboard` → `/sure_approve`) below `storage.approved_models_roots[0]`.
 
 Control principle: **agent declares, scripts execute.** The agent spec (`agent.yaml`) declares the chain and the task; `scripts/resolve_agent.py` (run by the hook at `pre_start`) validates it and resolves every stage to its approved model; `scripts/agent_runner.py` executes the chain; `scripts/run_agent_eval.py` scores the bundle; the hook gates enforce that every artifact is in the right place, the right format, and the right value domain.
@@ -29,6 +31,19 @@ stages:                     # run in declaration order; previous output feeds th
 
 Schema: `schemas/agent_spec.schema.json`; an example lives in `examples/agent_s2tt_example.yaml`. A stage resolves to **mcp_tool** mode when its approved `config.yaml` declares `server.command`, and to **api** mode when it declares `api.base_url`. The first stage must be an mcp_tool stage: the runner drives position 0 over the dataset's audio through that model's MCP server. `prompt_template` placeholders: `{text}`, `{target_language}`, `{source_language}`, `{dataset}`, `{key}`.
 
+SE example:
+
+```yaml
+agent:
+  name: metricgan_se
+  task: se
+  input: speech
+  output: speech
+stages:
+  - id: enhance
+    model: speechbrain__metricgan-plus-voicebank
+```
+
 Credential red line: an API stage's key is read from the environment variable **named** by `api_key_env` at execution time. Only the variable name is ever recorded — never the value, in no artifact and no log.
 
 ## Parameters
@@ -36,7 +51,7 @@ Credential red line: an API stage's key is read from the environment variable **
 | Parameter | Required | Meaning |
 |-----------|----------|---------|
 | `agent` | ✅ | Path to the agent spec (`agent.yaml`). |
-| `datasets` | ✅ | Comma-separated source paths below a configured `allowed_source_roots` entry, each `<path>[@<version>]`. A flat source is `<name>__unversioned`. Dataset metadata (ds.jsonl `task` / `audio.speech.translation_language`), not a user flag, determines ASR vs S2TT. |
+| `datasets` | ✅ | Comma-separated source paths below a configured `allowed_source_roots` entry, each `<path>[@<version>]`. A flat source is `<name>__unversioned`. Dataset metadata (ds.jsonl `task` / `audio.speech.translation_language`) determines the task. |
 | `metrics` | ✅ | Comma-separated metrics, e.g. `metrics=bleu,chrf`; each resolves to the engine's default pipeline for the dataset's task and language. |
 | `dataset_source_key` | — | Key in site policy `datasets.allowed_source_roots` that authorizes the supplied source paths. |
 | `max_samples` | — | Sample cap for bounded validation runs. Omitted or `0` means full dataset. Recorded as `runtime.max_samples`; `scripts/agent_runner.py` reads it from the plan. |

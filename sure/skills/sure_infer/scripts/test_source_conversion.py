@@ -575,5 +575,64 @@ class SourceConversionS2TTTests(unittest.TestCase):
         self.assertIn("missing transcription text", str(ctx.exception))
 
 
+class SESourceConversionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.dataset_root = self.tmp / "se_dataset"
+        self.dataset_root.mkdir()
+        self._env = mock.patch.dict(
+            os.environ, {source_resolver.SOURCE_ROOT_ENV: str(self.tmp)}
+        )
+        self._env.start()
+        self.noisy = self.dataset_root / "noisy.wav"
+        self.clean = self.dataset_root / "clean.wav"
+        self.noisy.write_bytes(b"RIFFnoisy")
+        self.clean.write_bytes(b"RIFFclean")
+        (self.dataset_root / "ds.jsonl").write_text(
+            json.dumps({"supported_tasks": ["SE"], "audio": {"speech": {"language": "en"}}}) + "\n",
+            encoding="utf-8",
+        )
+        self.manager = make_manager(self.tmp)
+
+    def tearDown(self) -> None:
+        self._env.stop()
+        self._tmp.cleanup()
+
+    def _write_sample(self, reference: str | None) -> None:
+        record = {
+            "sample_id": "utt1",
+            "attribute": {"path": "noisy.wav", "size": self.noisy.stat().st_size, "sample_rate": 16000},
+            "annotation": [{"reference_audio": reference}] if reference is not None else [],
+        }
+        (self.dataset_root / "sample.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    def test_se_projection_preserves_noisy_and_clean_roles(self) -> None:
+        self._write_sample("clean.wav")
+        ref = source_resolver.resolve_site_source_entry(str(self.dataset_root))
+        jsonl_path = self.manager._convert_source_root_to_jsonl(ref)
+        row = json.loads(jsonl_path.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(row["task"], "SE")
+        self.assertEqual(row["path"], str(self.noisy))
+        self.assertEqual(row["noisy_audio"], str(self.noisy))
+        self.assertEqual(row["reference_audio"], str(self.clean))
+        contract = json.loads(
+            (self.manager.sure_dir / "se_dataset" / "projections" / "se_enhancement_v1" / "io_contract.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(contract["reference"]["primary_field"], "reference_audio")
+
+    def test_se_projection_rejects_missing_reference(self) -> None:
+        self._write_sample(None)
+        ref = source_resolver.resolve_site_source_entry(str(self.dataset_root))
+        with self.assertRaisesRegex(ValueError, "missing reference_audio"):
+            self.manager._convert_source_root_to_jsonl(ref)
+
+    def test_se_projection_rejects_nonexistent_reference(self) -> None:
+        self._write_sample("missing.wav")
+        ref = source_resolver.resolve_site_source_entry(str(self.dataset_root))
+        with self.assertRaisesRegex(ValueError, "reference_audio_not_found"):
+            self.manager._convert_source_root_to_jsonl(ref)
+
+
 if __name__ == "__main__":
     unittest.main()

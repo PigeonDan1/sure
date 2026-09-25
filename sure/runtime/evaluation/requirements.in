@@ -8,3 +8,7 @@ PyYAML>=6.0.0
 rich>=13.0.0
 structlog>=23.0.0
 typer>=0.16.0,<1.0.0
+# CPU speech-enhancement scoring and audio decoding. Keep model packages separate.
+pystoi==0.4.1
+scipy==1.15.3
+soundfile==0.13.1

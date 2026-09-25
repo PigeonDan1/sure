@@ -122,6 +122,11 @@ def first_fixture_payload() -> dict[str, Any]:
             if not isinstance(item, dict):
                 continue
             payload: dict[str, Any] = {}
+            if TASK_TYPE.lower() == "se":
+                noisy = item.get("audio") or item.get("noisy_audio") or item.get("wav")
+                if not isinstance(noisy, str) or not noisy.strip():
+                    raise ValueError("SE fixture requires noisy audio; reference_audio is scoring-only")
+                return {"audio_path": str((gt_path.parent / noisy).resolve())}
             audio = item.get("audio") or item.get("wav") or item.get("prompt_audio") or item.get("reference_audio")
             if isinstance(audio, str):
                 payload["audio_path"] = str((gt_path.parent / audio).resolve())
@@ -218,6 +223,14 @@ def validate_contract(sample: dict[str, Any], contract: dict[str, Any]) -> list[
             violations.append("embedding must contain only finite numbers")
     elif isinstance(primary, str) and not is_nonempty(sample.get(primary)):
         violations.append(f"primary output field must be non-empty: {primary}")
+    if TASK_TYPE.lower() == "se" and primary == "audio_path":
+        audio = sample.get(primary)
+        if not isinstance(audio, str) or not audio.strip():
+            violations.append("SE audio_path must be a non-empty file path")
+        else:
+            path = Path(audio)
+            if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+                violations.append("SE audio_path must name an existing non-empty file")
     if contract.get("json_serializable") is True:
         try:
             json.dumps(sample)
@@ -257,9 +270,25 @@ def stage_infer() -> bool:
     try:
         wrapper = load_wrapper()
         payload = first_fixture_payload()
+        if TASK_TYPE.lower() == "se":
+            output_dir = ARTIFACTS_DIR / "outputs"
+            output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = output_dir.resolve() / "enhanced.wav"
+            if output_path.resolve() == Path(payload["audio_path"]).resolve():
+                raise ValueError("SE output_path must not overwrite the noisy input")
+            if output_path.exists() or output_path.is_symlink():
+                output_path.unlink()
+            payload["output_path"] = str(output_path)
         sample = run_predict(wrapper, payload)
         if not sample:
             raise AssertionError("prediction output is empty")
+        if TASK_TYPE.lower() == "se":
+            audio = sample.get("audio_path")
+            if not isinstance(audio, str) or Path(audio).resolve() != Path(payload["output_path"]):
+                raise ValueError("SE wrapper must return the requested output_path as audio_path")
+            violations = validate_contract(sample, load_io_contract())
+            if violations:
+                raise ValueError("; ".join(violations))
         write_json(SAMPLE_OUTPUT, sample)
     except Exception as exc:  # noqa: BLE001
         append_log("VALIDATE_INFER", "failed", str(exc))

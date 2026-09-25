@@ -40,7 +40,7 @@
 		},
 		"model_name": { "type": "string" },
 		"model_dir": { "type": "string" },
-		"task_type": { "enum": ["asr", "s2tt", "sv", "tts", "vc"] },
+		"task_type": { "enum": ["asr", "s2tt", "se", "sv", "tts", "vc"] },
 		"fixture_path": { "type": ["string", "null"] },
 		"device": { "enum": ["auto", "cuda", "cpu"] },
 		"execution_request": { "enum": ["local", "vc"] },

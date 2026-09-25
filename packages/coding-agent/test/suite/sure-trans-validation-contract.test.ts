@@ -33,10 +33,10 @@ describe("the validation artifacts SKILL.md asks the agent to write", () => {
 	}
 });
 
-describe("sure_trans SV state-machine contract", () => {
-	it("accepts SV as a transformation task", () => {
+describe("sure_trans audio state-machine contract", () => {
+	it.each(["sv", "se"])("accepts %s as a transformation task", (task) => {
 		const unit = TRANS_UNITS.find((candidate) => candidate.id === "load_trans_input");
-		expect(unit?.allowedValues?.task_type).toContain("sv");
+		expect(unit?.allowedValues?.task_type).toContain(task);
 	});
 
 	it("leaves task-specific fixture fields to the fixture schema", () => {

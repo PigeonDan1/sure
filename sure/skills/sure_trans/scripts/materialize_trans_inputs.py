@@ -40,10 +40,11 @@ MODEL_FRAMEWORK_ALIASES = {
 MODEL_FRAMEWORK = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 BACKENDS = {"uv", "conda", "docker"}
 
-TASK_TYPES = {"asr", "s2tt", "sv", "tts", "vc"}
+TASK_TYPES = {"asr", "s2tt", "se", "sv", "tts", "vc"}
 TASK_MARKERS = {
     "asr": ("asr", "transcribe", "speech recognition", "speech_recognition"),
     "s2tt": ("s2tt", "speech translation", "translate_audio", "speech_to_text_translation"),
+    "se": ("speech enhancement", "speech_enhancement", "enhance_speech", "denoise"),
     "sv": ("speaker verification", "speaker_verification", "embed_speaker"),
     "tts": ("tts", "text to speech", "text-to-speech", "synthesize_speech"),
     "vc": ("voice conversion", "voice_conversion", "convert_voice", "reference_audio_path"),
@@ -112,7 +113,7 @@ def resolve_task_type(explicit: str | None, inference_entrypoint: Path, model_pa
     winners = [task_type for task_type, score in scores.items() if score == highest and score > 0]
     if len(winners) != 1:
         raise ValueError(
-            "task_type could not be inferred unambiguously; pass task_type=asr|s2tt|sv|tts|vc"
+            "task_type could not be inferred unambiguously; pass task_type=asr|s2tt|se|sv|tts|vc"
         )
     task_type = winners[0]
     if task_profile(task_type).get("ready") is not True:

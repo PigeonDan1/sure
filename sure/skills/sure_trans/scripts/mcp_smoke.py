@@ -41,7 +41,7 @@ def tool_arguments(tool: str, audio: Path) -> dict[str, str]:
 
 
 def primary_output_field(tool: str) -> str:
-    if tool in {"synthesize_speech", "convert_voice"}:
+    if tool in {"synthesize_speech", "convert_voice", "enhance_speech"}:
         return "audio_path"
     if tool == "embed_speaker":
         return "embedding"

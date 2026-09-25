@@ -364,6 +364,12 @@ def main() -> int:
 
 def tool_contract(task_type: str) -> tuple[str, dict]:
     tool_name = str(task_profile(task_type)["tool_name"])
+    if task_type == "se":
+        return tool_name, {
+            "type": "object",
+            "properties": {"audio_path": {"type": "string"}, "output_path": {"type": "string"}},
+            "required": ["audio_path"],
+        }
     if task_type == "tts":
         return tool_name, {
             "type": "object",
@@ -382,6 +388,17 @@ def tool_contract(task_type: str) -> tuple[str, dict]:
 
 
 def io_contract_for(task_type: str) -> dict:
+    if task_type == "se":
+        return {
+            "input_type": "audio_path",
+            "output_type": "audio",
+            "input": {"audio_path": "string"},
+            "output": {"audio_path": "string"},
+            "primary_field": "audio_path",
+            "required_fields": ["audio_path"],
+            "nonempty_fields": ["audio_path"],
+            "json_serializable": True,
+        }
     if task_type == "tts":
         return {
             "input_type": "text_and_audio_path",
