@@ -35,6 +35,8 @@ def main():
     parser.add_argument("--model-cache", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--metric", action="append", default=[])
+    parser.add_argument("--example-dir", type=Path, default=EXAMPLE,
+                        help="SE example with model.py, server.py and config.yaml")
     parser.add_argument("--fixture-dir", type=Path,
                         default=REPO / "fixtures/tasks/se/librispeech_noise_smoke")
     args = parser.parse_args()
@@ -42,6 +44,12 @@ def main():
     output.mkdir(parents=True, exist_ok=False)
     model_python = args.model_python.absolute()  # Keep the venv symlink.
     cache = args.model_cache.resolve()
+    example = args.example_dir.resolve()
+    example_config = yaml.safe_load((example / "config.yaml").read_text())
+    model_id = example_config["model"]["id"]
+    model_name = model_id.replace("/", "__")
+    if str(example_config["model"]["task"]).upper() != "SE":
+        raise ValueError("The development smoke requires an SE example")
     harness_root = Path(sys.prefix)
     manifest_path = harness_root / "runtime-manifest.json"
     manifest = json.loads(manifest_path.read_text())
@@ -80,11 +88,11 @@ def main():
         model_dir = output / skill
         model_dir.mkdir()
         for filename in ("model.py", "server.py", "config.yaml"):
-            shutil.copy2(EXAMPLE / filename, model_dir / filename)
+            shutil.copy2(example / filename, model_dir / filename)
         shutil.copytree(fixture, model_dir / "fixture/se")
         template = (REPO / f"sure/skills/{skill}/scripts/templates/validate.py").read_text()
-        for key, value in {"__MODEL_ID__": "speechbrain/metricgan-plus-voicebank",
-                           "__MODEL_NAME__": "speechbrain__metricgan-plus-voicebank",
+        for key, value in {"__MODEL_ID__": model_id,
+                           "__MODEL_NAME__": model_name,
                            "__TASK_TYPE__": "SE", "__WRAPPER_CLASS__": "ModelWrapper",
                            "__PREDICT_METHOD__": "predict", "__IO_CONTRACT_JSON__": json.dumps(contract)}.items():
             template = template.replace(key, value)
@@ -115,11 +123,11 @@ def main():
     product = output / "agent-product"
     # In-memory development plan. No forged approval/runtime inventory or resolved-spec artifact.
     spec = {
-        "agent": {"name": "metricgan_se_development_smoke", "task": "se", "input": "speech",
+        "agent": {"name": "se_development_smoke", "task": "se", "input": "speech",
                   "output": "speech", "spec_sha256": "0" * 64},
-        "stages": [{"id": "enhance", "model": "speechbrain__metricgan-plus-voicebank", "mode": "mcp_tool",
-                    "task": "SE", "tool_names": ["enhance_speech"], "model_dir": str(EXAMPLE),
-                    "working_dir": str(EXAMPLE), "server_command": [str(model_python), str(EXAMPLE / "server.py")],
+        "stages": [{"id": "enhance", "model": model_name, "mode": "mcp_tool",
+                    "task": "SE", "tool_names": ["enhance_speech"], "model_dir": str(example),
+                    "working_dir": str(example), "server_command": [str(model_python), str(example / "server.py")],
                     "env": {key: environment[key] for key in ("SURE_SE_MODEL_CACHE", "SURE_SE_DEVICE", "OMP_NUM_THREADS", "MKL_NUM_THREADS")}}],
         "datasets": [{"dataset": dataset, "task": "SE", "source_root": str(source), "version_id": "unversioned"}],
         "runtime": {"product_dir": str(product), "dataset_source_key": "default"},
@@ -180,7 +188,7 @@ def main():
                     for result in json.loads((output / name / "payload.json").read_text())["results"]]
               for name in ("enhanced", "noisy_baseline")}
     write_json(output / "summary.json", {"scope": "development backend smoke; not a completed or approved slash-command run",
-               "model": "speechbrain/metricgan-plus-voicebank", "samples": len(samples), "scores": scores,
+               "model": model_id, "samples": len(samples), "scores": scores,
                "validated": ["onboard wrapper", "trans wrapper", "infer tool arguments and output projection", "agent MCP inference", "SE projection", "external evaluation", "approval rejects incomplete bundle"],
                "not_validated": ["sealed model runtime", "positive approval and publication", "approved model resolution", "slash-command terminal gates"]})
     print(output / "summary.json")

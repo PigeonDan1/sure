@@ -616,7 +616,7 @@ def _derive_entrypoints(
     )
     infer_test = explicit_hints.get("infer_test") or _first_python_statement(
         blocks,
-        (".generate(", "generate_transcription(", ".synthesize(", ".transcribe(", "transcribe(", ".convert(", ".infer(", ".enhance_batch(", ".enhance_file(", "pipeline("),
+        (".generate(", "generate_transcription(", ".synthesize(", ".transcribe(", "transcribe(", ".convert(", ".infer(", ".enhance_batch(", ".enhance_file(", ".separate_batch(", ".separate_file(", "pipeline("),
     )
     if infer_test and load_test and infer_test == load_test:
         infer_test = None

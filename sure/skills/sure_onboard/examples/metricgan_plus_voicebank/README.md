@@ -64,6 +64,11 @@ The generator uses three distinct, attributed LibriSpeech utterances already
 in the repository and records sources, seeds, transforms, and hashes. Both
 sets are development fixtures, not a VoiceBank/DEMAND quality benchmark.
 
+The same runner accepts `--example-dir` to select another SE adapter with
+`model.py`, `server.py`, and `config.yaml`; model identity is read from that
+configuration. See the [SepFormer example](../sepformer_wham16k/README.md) for a
+second architecture using the same fixtures and validation path.
+
 Feed can now extract SpeechBrain's documented `from_hparams` / `enhance_batch`
 entrypoints and narrow the broad `audio-to-audio` tag to SE:
 

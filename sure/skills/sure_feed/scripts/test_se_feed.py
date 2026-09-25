@@ -49,6 +49,28 @@ python train.py hparams/train.yaml --data_folder=your_data_folder
         self.assertIn("missing:entrypoints.infer_test", missing)
         self.assertTrue(model_input["entrypoints"]["infer_test"].startswith("UNRESOLVED"))
 
+    def test_sepformer_enhancement_uses_separation_api(self):
+        for method in ("separate_file", "separate_batch"):
+            with self.subTest(method=method):
+                candidate = self.candidate()
+                candidate.update(
+                    model_id="speechbrain/sepformer-wham16k-enhancement",
+                    repo="https://huggingface.co/speechbrain/sepformer-wham16k-enhancement",
+                    tags=["audio-to-audio", "Speech Enhancement", "SepFormer"],
+                    model_card_text='''```python
+from speechbrain.inference.separation import SepformerSeparation as separator
+model = separator.from_hparams(source="speechbrain/sepformer-wham16k-enhancement")
+est_sources = model.METHOD(noisy)
+```'''.replace("METHOD", method),
+                )
+                matched, task, *_ = infer_task(candidate, "auto")
+                self.assertTrue(matched)
+                self.assertEqual(task, "se")
+                model_input, missing, _ = synthesize_model_input(candidate, task)
+                self.assertIn(f".{method}(", model_input["entrypoints"]["infer_test"])
+                self.assertFalse(any(field.startswith("missing:entrypoints") for field in missing))
+                self.assertNotIn("missing:phase1_runtime_target", missing)
+
 
 if __name__ == "__main__":
     unittest.main()
