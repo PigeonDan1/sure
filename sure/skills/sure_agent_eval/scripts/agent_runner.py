@@ -19,6 +19,7 @@ stay on disk and the record names failed_stage/failed_dataset/error.
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 import hashlib
 import json
 import os
@@ -229,6 +230,17 @@ def extract_text(result: Any) -> str:
     return ""
 
 
+def extract_audio_path(result: Any, destination: Path) -> str:
+    raw = result.get("audio_path") if isinstance(result, dict) else None
+    if not isinstance(raw, str) or not raw:
+        raise ValueError("SE model result must contain audio_path")
+    if Path(raw) != destination or destination.is_symlink() or not destination.is_file():
+        raise ValueError("SE model must write enhanced audio to the requested output_path")
+    if destination.stat().st_size == 0:
+        raise ValueError("SE model produced empty enhanced audio")
+    return str(destination)
+
+
 def call_chat_completion(api: dict[str, Any], prompt: str, *, env: dict[str, str] | None = None) -> str:
     """One OpenAI-compatible chat completion against an API-model stage."""
     environ = env if env is not None else os.environ
@@ -302,6 +314,15 @@ def run_agent(
     agent = spec["agent"]
     stages = list(spec["stages"])
     datasets = list(spec["datasets"])
+    se_mode = str(agent["task"]).lower() == "se"
+    if se_mode and (
+        len(stages) != 1
+        or str(stages[0].get("task") or "").upper() != "SE"
+        or "enhance_speech" not in stages[0].get("tool_names", [])
+        or str(agent.get("output") or "").lower() != "speech"
+        or any(str(dataset.get("task") or "").upper() != "SE" for dataset in datasets)
+    ):
+        raise ValueError("SE agent requires one SE model, speech output, and SE datasets")
     log_path = product_dir / "agent_runner.log"
     product_dir.mkdir(parents=True, exist_ok=True)
     (product_dir / "predictions").mkdir(parents=True, exist_ok=True)
@@ -371,8 +392,13 @@ def run_agent(
                 raise
 
             prediction_path = product_dir / "predictions" / f"{dataset_id}.txt"
+            structured_path = prediction_path.with_suffix(".jsonl")
+            audio_output_dir = product_dir / "predictions_audio" / dataset_id
+            if se_mode:
+                audio_output_dir.mkdir(parents=True, exist_ok=True)
             generated = 0
-            with prediction_path.open("w", encoding="utf-8") as predictions:
+            structured_output = structured_path.open("w", encoding="utf-8") if se_mode else nullcontext(None)
+            with prediction_path.open("w", encoding="utf-8") as predictions, structured_output as structured:
                 for row in rows:
                     key = str(row.get("key") or "")
                     position = 0
@@ -382,7 +408,18 @@ def run_agent(
                             if position == 0:
                                 if stage["id"] not in mcp_callers:
                                     mcp_callers[stage["id"]] = caller_factory(stage)
-                                answer = extract_text(mcp_callers[stage["id"]]({"audio_path": value}))
+                                if se_mode:
+                                    output_path = audio_output_dir / f"{generated:06d}.wav"
+                                    if output_path.exists() or output_path.is_symlink():
+                                        output_path.unlink()
+                                    answer = extract_audio_path(
+                                        mcp_callers[stage["id"]](
+                                            {"audio_path": value, "noisy_audio_path": value, "output_path": str(output_path)}
+                                        ),
+                                        output_path,
+                                    )
+                                else:
+                                    answer = extract_text(mcp_callers[stage["id"]]({"audio_path": value}))
                             else:
                                 prompt = render_prompt(
                                     str(stage.get("prompt_template") or ""),
@@ -401,13 +438,35 @@ def run_agent(
                         result["failed_dataset"] = dataset_id
                         result["error"] = f"sample {key}: {exc}"
                         raise
-                    predictions.write(f"{key}\t{_tsv_safe(value)}\n")
+                    if se_mode and any(character in value for character in "\t\r\n"):
+                        raise ValueError("SE enhanced audio path cannot contain a TSV separator")
+                    predictions.write(f"{key}\t{value if se_mode else _tsv_safe(value)}\n")
+                    if se_mode:
+                        structured.write(
+                            json.dumps(
+                                {
+                                    "key": key,
+                                    "dataset": dataset_id,
+                                    "task": "SE",
+                                    "language": str(row.get("language") or "en"),
+                                    "prediction": {"audio_path": value, "enhanced_audio": value},
+                                    "normalized_prediction": value,
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
                     generated += 1
             manifest["datasets"][dataset_id] = {
                 "prediction_file": f"predictions/{dataset_id}.txt",
                 "sha256": _sha256(prediction_path),
                 "rows": generated,
             }
+            if se_mode:
+                manifest["datasets"][dataset_id].update(
+                    structured_prediction_file=f"predictions/{dataset_id}.jsonl",
+                    structured_sha256=_sha256(structured_path),
+                )
             status_rows.append(
                 {
                     "dataset": dataset_id,

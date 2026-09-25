@@ -332,6 +332,13 @@ def infer_task(candidate: dict[str, Any], requested_task: str) -> tuple[bool, st
 
     pipeline_tag = str(candidate.get("pipeline_tag") or "")
     pipeline_task = PIPELINE_TO_TASK.get(pipeline_tag)
+    if pipeline_tag == "audio-to-audio" and any(
+        canonical_task(str(tag)) == "se" for tag in candidate.get("tags") or []
+    ):
+        ev.append(evidence(source, "pipeline_tag", pipeline_tag, "strong", url))
+        ev.append(evidence(source, "tags", "speech-enhancement", "strong", url))
+        ev.append(evidence(source, "task_narrowing.final_task", "se", "strong", url))
+        return target in {"auto", "se"}, "se", 0.95, ev, "research_narrowing"
     if pipeline_task in BROAD_PIPELINE_TASKS:
         narrowed, score, narrowing_ev, match_source = _narrow_task_from_research(candidate, pipeline_task, target, source, url)
         if narrowed:
@@ -484,6 +491,8 @@ def _first_shell_command(blocks: list[dict[str, str]], patterns: tuple[str, ...]
                 continue
             if _is_setup_shell_command(stripped):
                 continue
+            if re.search(r"\b(?:python[0-9.]*|torchrun|accelerate\s+launch)\s+(?:\S*/)?(?:train|training|finetune)\.py(?:\s|$)", stripped):
+                continue
             if any(pattern in stripped for pattern in patterns):
                 return _balanced_statement(lines, idx)
     return None
@@ -603,11 +612,11 @@ def _derive_entrypoints(
     import_test = explicit_hints.get("import_test") or _first_python_import(blocks, str(library_name) if library_name else None)
     load_test = explicit_hints.get("load_test") or _first_python_statement(
         blocks,
-        (".from_pretrained(", "load_model(", "load_pretrained(", "pipeline("),
+        (".from_pretrained(", ".from_hparams(", "load_model(", "load_pretrained(", "pipeline("),
     )
     infer_test = explicit_hints.get("infer_test") or _first_python_statement(
         blocks,
-        (".generate(", "generate_transcription(", ".synthesize(", ".transcribe(", "transcribe(", ".convert(", ".infer(", "pipeline("),
+        (".generate(", "generate_transcription(", ".synthesize(", ".transcribe(", "transcribe(", ".convert(", ".infer(", ".enhance_batch(", ".enhance_file(", "pipeline("),
     )
     if infer_test and load_test and infer_test == load_test:
         infer_test = None

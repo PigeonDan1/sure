@@ -17,7 +17,7 @@ except ImportError:  # pragma: no cover - adapter images may not ship PyYAML
     yaml = None
 
 
-TASK_TYPES = ("asr", "s2tt", "sv", "tts", "vc")
+TASK_TYPES = ("asr", "s2tt", "se", "sv", "tts", "vc")
 
 
 def _audio_input_schema(*, source: bool = False, reference: bool = False) -> dict[str, Any]:
@@ -45,6 +45,25 @@ _DEFAULTS: dict[str, dict[str, Any]] = {
             "primary_field": "text",
             "required_fields": ["text"],
             "nonempty_fields": ["text"],
+            "json_serializable": True,
+        },
+    },
+    "se": {
+        "tool_name": "enhance_speech",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "audio_path": {"type": "string"},
+                "output_path": {"type": "string"},
+            },
+            "required": ["audio_path"],
+        },
+        "io_contract": {
+            "input_type": "audio_path",
+            "output_type": "audio",
+            "primary_field": "audio_path",
+            "required_fields": ["audio_path"],
+            "nonempty_fields": ["audio_path"],
             "json_serializable": True,
         },
     },

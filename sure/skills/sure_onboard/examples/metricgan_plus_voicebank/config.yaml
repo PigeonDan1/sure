@@ -1,0 +1,10 @@
+name: speechbrain_metricgan_plus_voicebank
+task: SE
+model:
+  id: speechbrain/metricgan-plus-voicebank
+  task: SE
+server:
+  command: [python, server.py]
+tools:
+  - name: enhance_speech
+    description: Enhance noisy speech and return a WAV path
