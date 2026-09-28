@@ -2,9 +2,13 @@
 """Resolve dataset source roots into canonical dataset identities.
 
 Main-flow evaluation accepts dataset inputs only as source roots under the
-active site policy's configured storage root; ``SURE_DATASET_SOURCE_ROOT``
-remains an explicit test and local-run override. The canonical dataset id
-derived here is ``<source_dataset_name>__<version_id>`` with no task suffix.
+active site policy's configured ``allowed_source_roots``. Acceptance is the
+union of those roots: each dataset entry is matched independently and is
+accepted when it lives under any of them, so one run may draw datasets from
+several configured roots. ``dataset_source_key`` is validated and recorded but
+no longer selects the root. ``SURE_DATASET_SOURCE_ROOT`` remains an explicit
+test and local-run override and carries a host path only. The canonical dataset
+id derived here is ``<source_dataset_name>__<version_id>`` with no task suffix.
 """
 
 from __future__ import annotations
@@ -69,9 +73,14 @@ class DatasetSourceRef:
     ds_jsonl: str
     raw_dir: str
     supported_tasks: tuple[str, ...] = ()
+    # The configured root key this dataset's own path matched (None when no root matched,
+    # which only happens on the error path), and every key it matched when roots nest.
+    source_root_key: str | None = None
+    source_root_keys: tuple[str, ...] = ()
 
 
-def _configured_source_roots() -> dict[str, str]:
+def configured_source_roots() -> dict[str, str]:
+    """Every configured allowed_source_roots entry, as key -> path."""
     source_roots = DEFAULT_SOURCE_ROOTS
     if not source_roots:
         resolved = load_site_policy(required=True)
@@ -81,7 +90,7 @@ def _configured_source_roots() -> dict[str, str]:
 
 def get_allowed_source_root(key: str) -> str:
     """Look up a dataset source root by key from the configured allowed_source_roots."""
-    source_roots = _configured_source_roots()
+    source_roots = configured_source_roots()
     if key not in source_roots:
         available = ", ".join(sorted(source_roots.keys())) if source_roots else "none"
         raise SourceResolutionError(
@@ -90,18 +99,39 @@ def get_allowed_source_root(key: str) -> str:
     return source_roots[key]
 
 
-def accepted_source_root(key: str | None = None) -> str:
+def accepted_source_roots() -> dict[str, str]:
+    """The roots a dataset path may live under: the configured set, or a path-only override.
+
+    ``SURE_DATASET_SOURCE_ROOT`` carries a host path, never a key. A value that merely
+    fits the key grammar is not looked up in ``allowed_source_roots`` — doing so would
+    collapse the union back onto one root — so it is ignored and the configured set applies.
+    """
     override = os.environ.get(SOURCE_ROOT_ENV, "").strip()
-    if override:
-        # A key fits sure.site.loader's key grammar; anything else (a posix path, a Windows path
-        # with no "/" in it) is the pre-map raw-path override.
-        if _SOURCE_KEY_RE.fullmatch(override):
-            return get_allowed_source_root(override)
-        return override
-    if key:
-        return get_allowed_source_root(key)
-    # Default to "default" key if not specified
-    return get_allowed_source_root("default")
+    if override and not _SOURCE_KEY_RE.fullmatch(override):
+        return {"": override}
+    return configured_source_roots()
+
+
+def accepted_source_root() -> str:
+    """Legacy single-root view: the first accepted root. Kept for the compatibility probe."""
+    roots = accepted_source_roots()
+    if not roots:
+        raise SourceResolutionError("no dataset source roots are configured in allowed_source_roots")
+    return next(iter(roots.values()))
+
+
+def _match_source_root(path: Path, source_roots: dict[str, str]) -> tuple[str | None, tuple[str, ...]]:
+    """Attribute ``path`` to a configured root: longest match, key name breaking ties.
+
+    Returns the selected key (None when no root matches) and every matched key. Roots may
+    nest, so one path can match several; under a union that is legal and only attribution
+    is affected, so the choice is deterministic rather than an ambiguity error.
+    """
+    matched = [(key, Path(root)) for key, root in source_roots.items() if _is_under(path, Path(root))]
+    if not matched:
+        return None, ()
+    selected = max(matched, key=lambda item: (len(str(item[1])), item[0]))
+    return selected[0], tuple(sorted(key for key, _ in matched))
 
 
 def split_source_entry(entry: str) -> tuple[str, str | None]:
@@ -132,21 +162,15 @@ def _is_under(path: Path, root: Path) -> bool:
         return False
 
 
-def _rejected_root_hint(path: Path) -> str:
-    """What the caller should have passed, so a rejection is not a guessing game.
-
-    The site configures several roots under distinct keys. Saying only "must live
-    under <default>" left every caller with a path under another configured key to
-    find that key by trial: twenty runs died on this one message in two days.
-    """
+def _rejected_root_hint() -> str:
+    """Name the permitted roots, so a rejection is not a guessing game."""
     try:
-        source_roots = _configured_source_roots()
+        source_roots = accepted_source_roots()  # reflects a path override when one is set
     except Exception:  # a rejection message must not fail on top of the rejection
         return ""
-    for key, candidate in sorted(source_roots.items()):
-        if _is_under(path, Path(candidate)):
-            return f"This path is under allowed_source_roots key '{key}'; pass dataset_source_key={key}. "
-    listed = ", ".join(f"{key}={value}" for key, value in sorted(source_roots.items()))
+    listed = ", ".join(
+        value if not key else f"{key}={value}" for key, value in sorted(source_roots.items())
+    )
     return f"Configured allowed_source_roots: {listed}. " if listed else ""
 
 
@@ -158,13 +182,16 @@ def resolve_site_source_entry(entry: str, explicit_version: str | None = None, d
             f"caller says {explicit_version}"
         )
     explicit_version = explicit_version or embedded_version
-    root = Path(accepted_source_root(dataset_source_key))
+    if dataset_source_key:
+        # Validated for typo protection only: a key never selects or narrows the boundary.
+        get_allowed_source_root(dataset_source_key)
     path = Path(raw_root)
-    if not _is_under(path, root):
+    source_root_key, source_root_keys = _match_source_root(path, accepted_source_roots())
+    if source_root_key is None:
         raise SourceResolutionError(
-            f"dataset source root must live under {root}, got: {path}. "
-            f"{_rejected_root_hint(path)}"
-            f"Expected form: {root}/.../<source_dataset_name>"
+            f"dataset source root must live under one of the configured allowed_source_roots, "
+            f"got: {path}. {_rejected_root_hint()}"
+            f"Expected form: <allowed_source_root>/.../<source_dataset_name>"
         )
     if not path.is_dir():
         raise SourceResolutionError(f"dataset source root does not exist: {path}")
@@ -220,6 +247,8 @@ def resolve_site_source_entry(entry: str, explicit_version: str | None = None, d
         ds_jsonl=str(ds_jsonl),
         raw_dir=str(raw_dir),
         supported_tasks=read_source_supported_tasks(str(ds_jsonl)),
+        source_root_key=source_root_key,
+        source_root_keys=source_root_keys,
     )
 
 

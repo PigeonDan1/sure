@@ -189,13 +189,24 @@ try {
 
 	const datasetProbe = run("python3", [
 		"-c",
-		"import sys; sys.path.insert(0, 'sure/skills/sure_infer/scripts'); from sure_eval.datasets.source_resolver import accepted_source_root; print(accepted_source_root())",
+		"import json, sys; sys.path.insert(0, 'sure/skills/sure_infer/scripts'); from sure_eval.datasets.source_resolver import accepted_source_roots; print(json.dumps(sorted(accepted_source_roots().values())))",
 	]);
-	// Get the single configured root from the key-value map
+	// The resolver accepts every configured root, not one selected entry.
 	const sourceRoots = expectedPolicy.datasets.allowed_source_roots;
-	const expectedDatasetRoot = Array.isArray(sourceRoots) ? sourceRoots[0] : Object.values(sourceRoots)[0];
-	const datasetMatches = datasetProbe.status === 0 && datasetProbe.stdout.trim() === expectedDatasetRoot;
-	record("dataset-root", "path", datasetMatches, datasetMatches ? expectedDatasetRoot : datasetProbe.stderr.trim() || datasetProbe.stdout.trim());
+	const expectedDatasetRoots = (Array.isArray(sourceRoots) ? sourceRoots : Object.values(sourceRoots)).slice().sort();
+	let datasetMatches = false;
+	let datasetDetail = datasetProbe.stderr.trim() || datasetProbe.stdout.trim();
+	if (datasetProbe.status === 0) {
+		try {
+			datasetMatches = JSON.stringify(JSON.parse(datasetProbe.stdout)) === JSON.stringify(expectedDatasetRoots);
+		} catch {
+			datasetMatches = false;
+		}
+		if (datasetMatches) {
+			datasetDetail = expectedDatasetRoots.join(", ");
+		}
+	}
+	record("dataset-root", "path", datasetMatches, datasetDetail);
 
 	const explicitConfig = join(testRoot, "explicit.yaml");
 	const environmentConfig = join(testRoot, "environment.yaml");

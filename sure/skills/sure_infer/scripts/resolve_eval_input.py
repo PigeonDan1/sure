@@ -558,7 +558,7 @@ def _dataset_details(
     requested_metrics: list[str],
     engine_root: Path | None,
     model_task: str = "",
-    dataset_source_key: str = "default",
+    dataset_source_key: str = "",
 ) -> list[dict[str, Any]]:
     expanded = manager.expand_dataset_names(names)
     details: list[dict[str, Any]] = []
@@ -581,9 +581,13 @@ def _dataset_details(
         # per-task projection happens to be cached. Re-resolve it every time so
         # a stale LID/ASR projection cannot override the current model intent.
         source_entry = is_source_entry(requested_name)
+        source_root_key: str | None = None
         if source_entry:
             ref = resolve_site_source_entry(requested_name, dataset_source_key=dataset_source_key)
             dataset_name = ref.dataset_id
+            # Attribution comes from this dataset's own requested path, never from the cached
+            # metadata above: a warm projection's recorded root is not what this run asked for.
+            source_root_key = ref.source_root_key
             source_root = source_root or ref.source_root
             source_name = source_name or ref.source_dataset_name
             version_id = version_id or ref.version_id
@@ -619,6 +623,9 @@ def _dataset_details(
             detail["source_dataset_name"] = str(source_name)
         if version_id:
             detail["version_id"] = str(version_id)
+        if source_root_key is not None:
+            # "" when the accepted root came from a path override and so has no configured key.
+            detail["source_root_key"] = source_root_key
         if source_supported_tasks:
             detail["supported_tasks"] = list(source_supported_tasks)
         if dataset_task and dataset_task != task:
@@ -853,7 +860,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--datasets-root")
     parser.add_argument("--output")
     parser.add_argument("--output-dir", default="")
-    parser.add_argument("--dataset-source-key", default="default")
+    parser.add_argument("--dataset-source-key", default="")
     return parser
 
 

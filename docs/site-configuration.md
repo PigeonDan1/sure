@@ -69,7 +69,7 @@ The machine-readable contract is [sure/site/policy.schema.json](../sure/site/pol
 | `storage.approved_results_roots` | optional | Read-only roots containing human-approved inference results; `/sure_eval` reads them only when configured, otherwise it scores the local `/sure_infer` run |
 | `storage.forbidden_output_roots` | yes | Roots where automated `output_dir` writes are forbidden |
 | `storage.runtime_root` | yes | Site-owned cache root for content-addressed Model Python runtimes and adapters |
-| `datasets.allowed_source_roots` | yes | Key-value map of dataset source key → absolute path accepted by the strict dataset source resolver. Each request specifies a `dataset_source_key` to select which root to use. |
+| `datasets.allowed_source_roots` | yes | Key-value map of dataset source label → absolute path accepted by the strict dataset source resolver. Acceptance is the union of every entry: each dataset path is matched independently, so one run may draw datasets from several entries. A request's `dataset_source_key` is validated and recorded, but does not select which root applies. |
 | `datasets.projection_root` | optional | Writable root for generated dataset JSONL indexes and metadata; raw data remains in the allowed source root |
 | `execution.surfaces` | yes | Enabled execution surfaces: `local`, `vc`, or both |
 | `execution.local_runtimes` | optional | Permitted local runtimes: `python`, `container`, or both; omission remains container-only |
@@ -80,7 +80,7 @@ The machine-readable contract is [sure/site/policy.schema.json](../sure/site/pol
 
 Unknown fields, duplicate list values, unsupported surfaces, and relative paths are rejected. Policy files may contain credential environment-variable names, but never credential values.
 
-Policy v1 accepts exactly one path in each storage root list. The `datasets.allowed_source_roots` field uses a key-value map instead, allowing multiple source directories to be configured with distinct keys. Requests select which key to use via the `dataset_source_key` parameter.
+Policy v1 accepts exactly one path in each storage root list. The `datasets.allowed_source_roots` field uses a key-value map instead, allowing multiple source directories to be configured with distinct labels. Every entry is part of the accepted set: a dataset path is accepted when it lives under any of them, each dataset entry is matched on its own, and each resolved dataset records the label it matched. The `dataset_source_key` parameter is a request log — it is validated against the configured labels and recorded, but it does not narrow the accepted set. Because every configured root is reachable without a per-run opt-in, a hardened site must not list a directory it does not want readable.
 
 `storage.approved_models_roots[0]` is the single approval-root setting. `/sure_approve` publishes a verified model package only to `<approved_models_roots[0]>/<model>`, and `/sure_infer model=<model>` resolves that exact child directory from the same root. Neither command accepts a per-run approval-root override, so a deployment configures this location once rather than keeping publication and discovery settings in sync manually.
 

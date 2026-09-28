@@ -158,6 +158,8 @@ class ResolveAgentTests(unittest.TestCase):
         self.assertEqual(translate["prompt_template"], "Translate to {target_language}: {text}")
         (dataset,) = payload["datasets"]
         self.assertEqual(dataset["dataset"], "mini_s2tt__unversioned")
+        # an override root carries no configured key, and that is recorded as such
+        self.assertEqual(dataset["source_root_key"], "")
         self.assertEqual(dataset["task"], "S2TT")
         self.assertEqual(dataset["language"], "zh")
         self.assertEqual(dataset["translation_language"], "en")

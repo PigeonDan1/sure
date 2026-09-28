@@ -108,6 +108,7 @@
 					"source_root": { "type": "string" },
 					"source_dataset_name": { "type": "string" },
 					"version_id": { "type": "string" },
+					"source_root_key": { "type": "string" },
 					"task": { "type": "string" },
 					"language": { "type": "string" },
 					"translation_language": { "type": "string" },
@@ -122,7 +123,7 @@
 		"metrics": { "type": "array", "minItems": 1, "items": { "type": "string" } },
 		"runtime": {
 			"type": "object",
-			"required": ["product_dir", "output_dir", "dataset_source_key", "max_samples", "device"],
+			"required": ["product_dir", "output_dir", "max_samples", "device"],
 			"properties": {
 				"product_dir": { "type": "string" },
 				"output_dir": { "type": ["string", "null"] },

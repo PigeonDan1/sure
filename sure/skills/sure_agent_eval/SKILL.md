@@ -38,7 +38,7 @@ Credential red line: an API stage's key is read from the environment variable **
 | `agent` | ✅ | Path to the agent spec (`agent.yaml`). |
 | `datasets` | ✅ | Comma-separated source paths below a configured `allowed_source_roots` entry, each `<path>[@<version>]`. A flat source is `<name>__unversioned`. Dataset metadata (ds.jsonl `task` / `audio.speech.translation_language`), not a user flag, determines ASR vs S2TT. |
 | `metrics` | ✅ | Comma-separated metrics, e.g. `metrics=bleu,chrf`; each resolves to the engine's default pipeline for the dataset's task and language. |
-| `dataset_source_key` | — | Key in site policy `datasets.allowed_source_roots` that authorizes the supplied source paths. |
+| `dataset_source_key` | — | Recorded only: validated against the site policy `datasets.allowed_source_roots` labels and written into the resolved spec as the request. It does not select which root applies — every configured root is accepted, and each dataset records the label it matched (`source_root_key`). Omit it; a single run may mix datasets from different configured roots. |
 | `max_samples` | — | Sample cap for bounded validation runs. Omitted or `0` means full dataset. Recorded as `runtime.max_samples`; `scripts/agent_runner.py` reads it from the plan. |
 | `device` | — | Evaluation device (`cpu` default). Never changes prediction identity. Recorded as `runtime.device`; `scripts/run_agent_eval.py` reads it from the plan. |
 | `output_dir` | — | Absolute directory that becomes this invocation's product directory, replacing `sure/results/agents/<agent_name>/<run_id>`. Must be outside every configured `forbidden_output_roots` entry. Quote the value when the path contains spaces: `output_dir="/data/My Runs/job"`. |

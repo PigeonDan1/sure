@@ -213,6 +213,33 @@ class DatasetDetailsSourceTests(unittest.TestCase):
         self.assertEqual(detail["source_root"], str(self.dataset_root))
         self.assertEqual(detail["source_dataset_name"], "demo_ds")
         self.assertEqual(detail["version_id"], "v1.0.2")
+        # an override root carries no configured key, and that is recorded as such
+        self.assertEqual(detail["source_root_key"], "")
+
+    def test_source_entry_records_the_matched_root_key(self) -> None:
+        roots = {"default": str(self.source_root), "smoke": str(self.tmp / "smoke")}
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop(source_resolver.SOURCE_ROOT_ENV, None)
+            with mock.patch.object(source_resolver, "DEFAULT_SOURCE_ROOTS", roots):
+                details = resolve_eval_input._dataset_details(
+                    self.manager, [str(self.dataset_root)], [], None
+                )
+        self.assertEqual(details[0]["source_root_key"], "default")
+
+    def test_two_datasets_under_two_configured_roots_resolve_in_one_call(self) -> None:
+        second_root = self.tmp / "second"
+        other_root = make_source_tree(second_root, "other_ds", "v1.0.3")
+        roots = {"default": str(self.source_root), "smoke": str(second_root)}
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop(source_resolver.SOURCE_ROOT_ENV, None)
+            with mock.patch.object(source_resolver, "DEFAULT_SOURCE_ROOTS", roots):
+                details = resolve_eval_input._dataset_details(
+                    self.manager, [str(self.dataset_root), str(other_root)], [], None
+                )
+        self.assertEqual(
+            [(detail["name"], detail["source_root_key"]) for detail in details],
+            [("demo_ds__v1.0.2", "default"), ("other_ds__v1.0.3", "smoke")],
+        )
 
     def test_converted_source_entry_reads_jsonl_metadata(self) -> None:
         self.manager.download_and_convert(str(self.dataset_root))

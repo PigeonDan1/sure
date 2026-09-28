@@ -200,7 +200,7 @@ class DatasetManager:
     Handles SURE Benchmark datasets and standard HuggingFace/ModelScope datasets.
     """
     
-    def __init__(self, config: Config | None = None, dataset_source_key: str = "default") -> None:
+    def __init__(self, config: Config | None = None, dataset_source_key: str = "") -> None:
         self.config = config or Config.from_env()
         self.dataset_source_key = dataset_source_key
         self.data_dir = Path(self.config.data.datasets)

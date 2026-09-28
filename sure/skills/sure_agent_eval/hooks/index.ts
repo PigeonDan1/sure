@@ -92,7 +92,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	const missing = ["agent", "datasets", "metrics"].filter((key) => !args[key]);
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_agent_eval parameter(s): ${missing.join(", ")}. Usage: /sure_agent_eval agent=<path-to-agent.yaml> datasets=<source[@version],...> metrics=<metric,...> [dataset_source_key=<key>] [max_samples=<n>] [device=cpu|cuda[:index]] [output_dir=<abs_dir>]`,
+			`Missing required /sure_agent_eval parameter(s): ${missing.join(", ")}. Usage: /sure_agent_eval agent=<path-to-agent.yaml> datasets=<source[@version],...> metrics=<metric,...> [dataset_source_key=<key> (recorded only, does not select a root)] [max_samples=<n>] [device=cpu|cuda[:index]] [output_dir=<abs_dir>]`,
 			"Missing required parameters.",
 		);
 	}
