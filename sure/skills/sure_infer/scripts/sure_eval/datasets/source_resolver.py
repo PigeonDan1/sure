@@ -7,7 +7,8 @@ union of those roots: each dataset entry is matched independently and is
 accepted when it lives under any of them, so one run may draw datasets from
 several configured roots. ``dataset_source_key`` is validated and recorded but
 no longer selects the root. ``SURE_DATASET_SOURCE_ROOT`` remains an explicit
-test and local-run override and carries a host path only. The canonical dataset
+test and local-run override and carries a host path only; a value shaped like a
+key is rejected, not silently ignored. The canonical dataset
 id derived here is ``<source_dataset_name>__<version_id>`` with no task suffix.
 """
 
@@ -102,14 +103,23 @@ def get_allowed_source_root(key: str) -> str:
 def accepted_source_roots() -> dict[str, str]:
     """The roots a dataset path may live under: the configured set, or a path-only override.
 
-    ``SURE_DATASET_SOURCE_ROOT`` carries a host path, never a key. A value that merely
-    fits the key grammar is not looked up in ``allowed_source_roots`` — doing so would
-    collapse the union back onto one root — so it is ignored and the configured set applies.
+    ``SURE_DATASET_SOURCE_ROOT`` carries a host path, never a key. A value that merely fits
+    the key grammar is rejected rather than looked up in ``allowed_source_roots`` (which would
+    collapse the union back onto one root) or read as a relative path (which would silently
+    resolve somewhere else). Raising keeps the boundary loud in the widening direction: before
+    the union this value named a root, so a stale script that still sets one must be told,
+    not quietly granted every configured root.
     """
     override = os.environ.get(SOURCE_ROOT_ENV, "").strip()
-    if override and not _SOURCE_KEY_RE.fullmatch(override):
-        return {"": override}
-    return configured_source_roots()
+    if not override:
+        return configured_source_roots()
+    if _SOURCE_KEY_RE.fullmatch(override):
+        raise SourceResolutionError(
+            f"{SOURCE_ROOT_ENV}='{override}' looks like an allowed_source_roots key, but this "
+            f"variable carries a filesystem path only and a key no longer selects a root. Set it "
+            f"to the path you want, or unset it to accept every configured root."
+        )
+    return {"": override}
 
 
 def accepted_source_root() -> str:

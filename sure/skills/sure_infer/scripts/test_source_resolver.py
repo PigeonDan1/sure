@@ -309,11 +309,20 @@ class UnionSourceRootTests(unittest.TestCase):
                 )
         self.assertEqual(selected, [("mirror", ("default", "mirror"))] * 2)
 
-    def test_key_shaped_env_override_is_not_looked_up_as_a_key(self) -> None:
+    def test_key_shaped_env_override_is_rejected(self) -> None:
         with mock.patch.dict(os.environ, {source_resolver.SOURCE_ROOT_ENV: "aiplatform"}):
-            self.assertEqual(
-                sorted(source_resolver.accepted_source_roots()), ["aiplatform", "default"]
-            )
+            with self.assertRaises(source_resolver.SourceResolutionError) as ctx:
+                source_resolver.accepted_source_roots()
+        message = str(ctx.exception)
+        self.assertIn(source_resolver.SOURCE_ROOT_ENV, message)
+        # The remedy must be actionable: the old spelling named a root, so a stale script has to
+        # be told what to write instead of being quietly handed every configured root.
+        self.assertIn("path", message)
+
+    def test_path_shaped_env_override_still_narrows_to_that_path(self) -> None:
+        override = str(self.platform)
+        with mock.patch.dict(os.environ, {source_resolver.SOURCE_ROOT_ENV: override}):
+            self.assertEqual(source_resolver.accepted_source_roots(), {"": override})
 
 
 if __name__ == "__main__":
