@@ -389,6 +389,53 @@ def normalize_portable_paths(value: Any, run_dir: Path, model_dir: Path, key: st
     return value
 
 
+def finish_manifest(run_dir: Path, resolved: dict[str, Any], deployment: dict[str, Any]) -> dict[str, Any]:
+    """Write the run-level sure_finish manifest envelope deterministically.
+
+    sure_finish validates this envelope (schema_version/run_id/skill_name/
+    status/created_at/inputs/outputs/validation) against the run record, a
+    contract the onboard skill never materialized — the agent had to improvise
+    the file and could not satisfy it together with the deployment_ready
+    schema. The values come from run.json and the final artifacts; no
+    model-specific knowledge.
+    """
+    run_record = read_json(run_dir / "run.json")
+    run_id = run_record.get("runId")
+    skill_name = run_record.get("skillName")
+    if not isinstance(run_id, str) or not run_id.strip():
+        raise ValueError("run.json must declare runId before the finish manifest can be written.")
+    if not isinstance(skill_name, str) or not skill_name.strip():
+        raise ValueError("run.json must declare skillName before the finish manifest can be written.")
+    inputs = {
+        key: str(resolved[key])
+        for key in ("model_id", "task_type", "model_input_path", "device", "package_profile")
+        if resolved.get(key) is not None
+    }
+    manifest = {
+        "schema_version": "sure.onboard.finish_manifest.v1",
+        "run_id": run_id,
+        "skill_name": skill_name,
+        "status": "success",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "inputs": inputs,
+        "outputs": {
+            "deployment_ready": "artifacts/deployment_ready.json",
+            "runtime_inventory": "artifacts/runtime_inventory.json",
+            "package_gate": "artifacts/package_gate.json",
+            "verdict": "artifacts/verdict.json",
+            "artifact_manifest": "artifacts/artifact_manifest.json",
+            "bundle_identity_sha256": str(deployment.get("bundle_identity_sha256", "")),
+        },
+        "validation": {
+            "model_name": str(deployment.get("model_name", "")),
+            "package_profile": str(deployment.get("package_profile", "")),
+            "deployment_status": str(deployment.get("status", "")),
+        },
+    }
+    atomic_write(run_dir / "manifest.json", json_bytes(manifest))
+    return manifest
+
+
 def finalize(run_dir: Path, produces: Path) -> dict[str, Any]:
     model_dir, resolved = resolve_model_dir(run_dir)
     ensure_safe_bundle_targets(model_dir, resolved)
@@ -407,6 +454,7 @@ def finalize(run_dir: Path, produces: Path) -> dict[str, Any]:
     content = json_bytes(deployment)
     atomic_write(model_dir / "artifacts" / "deployment_ready.json", content)
     atomic_write(produces, content)
+    finish_manifest(run_dir, resolved, deployment)
     return deployment
 
 
