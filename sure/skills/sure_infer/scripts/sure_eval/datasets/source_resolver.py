@@ -123,7 +123,11 @@ def accepted_source_roots() -> dict[str, str]:
 
 
 def accepted_source_root() -> str:
-    """Legacy single-root view: the first accepted root. Kept for the compatibility probe."""
+    """Legacy single-root view: the first accepted root.
+
+    The compatibility probe reads the whole set through ``accepted_source_roots()``; this
+    stays as the single-root entry point for callers that predate the union.
+    """
     roots = accepted_source_roots()
     if not roots:
         raise SourceResolutionError("no dataset source roots are configured in allowed_source_roots")
