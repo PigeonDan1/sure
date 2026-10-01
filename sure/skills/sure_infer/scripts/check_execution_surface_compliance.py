@@ -34,6 +34,7 @@ from harness_runtime import HarnessRuntimeBindingError, harness_runtime_from_eva
 from container_execution import container_path, resolve_container_harness_runtime
 from deployment_binding import DEPLOYMENT_BINDING_V1, DEPLOYMENT_BINDING_V2
 from docker_runtime import resolve_docker_binary
+from host_env_profile import HOST_ENV_ALLOW
 
 
 def _sha256_file(path: Path) -> str:
@@ -262,11 +263,9 @@ def _live_runtime_probe(
             }
         imports = [str(item) for item in python.get("required_imports") or [] if isinstance(item, str)]
         script = "import importlib,json;[importlib.import_module(n) for n in json.loads(" + repr(json.dumps(imports)) + ")]"
-        env = {
-            key: value
-            for key, value in os.environ.items()
-            if key in {"PATH", "LANG", "LC_ALL", "CUDA_VISIBLE_DEVICES", "LD_LIBRARY_PATH"}
-        }
+        # The probe must see the same host env the real launch keeps, so it can
+        # never pass while the launch itself dies on a stripped import path.
+        env = {key: value for key, value in os.environ.items() if key in HOST_ENV_ALLOW}
         env.update({"PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1"})
         try:
             completed = run(
