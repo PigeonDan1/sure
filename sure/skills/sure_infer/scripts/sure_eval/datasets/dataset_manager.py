@@ -200,7 +200,7 @@ class DatasetManager:
     Handles SURE Benchmark datasets and standard HuggingFace/ModelScope datasets.
     """
     
-    def __init__(self, config: Config | None = None, dataset_source_key: str = "default") -> None:
+    def __init__(self, config: Config | None = None, dataset_source_key: str = "") -> None:
         self.config = config or Config.from_env()
         self.dataset_source_key = dataset_source_key
         self.data_dir = Path(self.config.data.datasets)
@@ -222,6 +222,29 @@ class DatasetManager:
     def source_projection_name(self, dataset_id: str, task: str | None) -> str:
         """JSONL stem for a ds_pool source-root projection, cached per task."""
         return f"{dataset_id}__{self._task_slug(task)}"
+
+    def assert_source_projection(self, path: Path, ref: DatasetSourceRef) -> None:
+        """Refuse a cached projection whose canonical name belongs to another source."""
+        if not path.exists():
+            return
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                row = next((json.loads(line) for line in handle if line.strip()), {})
+            metadata = row.get("metadata") if isinstance(row, dict) else None
+            cached_root = metadata.get("source_dataset_root") if isinstance(metadata, dict) else None
+            cached_version = metadata.get("version_id") if isinstance(metadata, dict) else None
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"cached source projection is unreadable: {path}: {exc}") from exc
+        if (
+            not isinstance(cached_root, str)
+            or Path(cached_root).resolve() != Path(ref.source_root).resolve()
+            or cached_version != ref.version_id
+        ):
+            raise ValueError(
+                f"cached projection {path} belongs to source {cached_root or '(unknown)'} "
+                f"version {cached_version or '(unknown)'}, not requested source {ref.source_root} "
+                f"version {ref.version_id}; use a distinct datasets_root or source name/version"
+            )
 
     def get_jsonl_path(self, dataset_name: str) -> Path:
         """Get the JSONL file path for a dataset.
@@ -754,6 +777,7 @@ class DatasetManager:
         projection_name = self.source_projection_name(ref.dataset_id, task)
         jsonl_path = self.jsonl_dir / f"{projection_name}.jsonl"
         if jsonl_path.exists():
+            self.assert_source_projection(jsonl_path, ref)
             logger.info(
                 "Using existing source-root projection",
                 dataset=projection_name,
@@ -780,6 +804,7 @@ class DatasetManager:
             projection_name = self.source_projection_name(ref.dataset_id, task)
             jsonl_path = self.jsonl_dir / f"{projection_name}.jsonl"
             if jsonl_path.exists():
+                self.assert_source_projection(jsonl_path, ref)
                 return jsonl_path
 
         if task not in native_tasks and task not in {"TTS", "VC"}:
@@ -1301,7 +1326,17 @@ class DatasetManager:
         """Expand collection aliases into concrete, non-mixed dataset splits."""
         expanded: list[str] = []
         seen: set[str] = set()
+        source_by_id: dict[str, Path] = {}
         for dataset_name in dataset_names:
+            if is_source_entry(dataset_name):
+                ref = resolve_site_source_entry(dataset_name, dataset_source_key=self.dataset_source_key)
+                source = Path(ref.source_root).resolve()
+                previous = source_by_id.setdefault(ref.dataset_id, source)
+                if previous != source:
+                    raise ValueError(
+                        f"ambiguous dataset id {ref.dataset_id!r}: {previous} and {source}; "
+                        "use distinct source names or versions"
+                    )
             members = self._collection_members(dataset_name)
             if not members:
                 canonical_name = self.normalize_dataset_name(dataset_name)

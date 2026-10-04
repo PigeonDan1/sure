@@ -197,6 +197,7 @@ def _resolve_dataset(entry: str, *, dataset_source_key: str | None) -> dict[str,
     return {
         "dataset": ref.dataset_id,
         "source_root": ref.source_root,
+        "source_root_key": ref.source_root_key or "",
         "source_dataset_name": ref.source_dataset_name,
         "version_id": ref.version_id,
         "task": meta["task"],
@@ -268,7 +269,7 @@ def resolve_agent(
         "runtime": {
             "product_dir": product_dir,
             "output_dir": output_dir,
-            "dataset_source_key": str(args.dataset_source_key or "default"),
+            "dataset_source_key": str(args.dataset_source_key or ""),
             "max_samples": max_samples,
             "device": str(args.device or "cpu"),
         },

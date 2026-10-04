@@ -180,7 +180,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_infer parameters: ${missing.join(", ")}. Usage: /sure_infer model=<name> datasets=<source_path[@version][,source_path[@version]...]> [dataset_source_key=<key>] [datasets_root=<writable_projection_root>] [protocol=standard_system|strict_core] [execution=auto|local] [device=auto|cpu|cuda[:index]] [max_samples=...] [metrics=<metric[,metric...]>] [run_id=<id>] [output_dir=<abs_dir>] [config=<harness_config.yaml>]`,
+			`Missing required /sure_infer parameters: ${missing.join(", ")}. Usage: /sure_infer model=<name> datasets=<source_path[@version][,source_path[@version]...]> [dataset_source_key=<key> (recorded only, does not select a root)] [datasets_root=<writable_projection_root>] [protocol=standard_system|strict_core] [execution=auto|local] [device=auto|cpu|cuda[:index]] [max_samples=...] [metrics=<metric[,metric...]>] [run_id=<id>] [output_dir=<abs_dir>] [config=<harness_config.yaml>]`,
 			"Missing required parameters.",
 		);
 	}
@@ -261,8 +261,8 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	if (typeof args.evaluation_engine_root === "string") {
 		resolveArgs.push("--evaluation-engine-root", args.evaluation_engine_root);
 	}
-	//check dataset_source_key
-	if (typeof args.dataset_source_key === "string") {
+	// recorded for readability only; a key does not select which roots are accepted
+	if (typeof args.dataset_source_key === "string" && args.dataset_source_key.length > 0) {
 		resolveArgs.push("--dataset-source-key", args.dataset_source_key);
 	}
 	if (typeof args.config === "string") {

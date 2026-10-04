@@ -270,11 +270,11 @@ def _build_surface(
     projection = runtime.get("dataset_projection") if isinstance(runtime.get("dataset_projection"), dict) else {}
     if projection.get("host_root"):
         env["SURE_EVAL_DATASETS_ROOT"] = str(projection["host_root"])
-    dataset_source_key = str(
-        os.environ.get("SURE_DATASET_SOURCE_ROOT") or user_input.get("dataset_source_key") or ""
-    ).strip()
-    if dataset_source_key:
-        env["SURE_DATASET_SOURCE_ROOT"] = dataset_source_key
+    # A dataset_source_key is not forwarded: it no longer selects a root, and each dataset's
+    # own resolved root already travels in the resolved eval input the container mounts from.
+    override_root = os.environ.get("SURE_DATASET_SOURCE_ROOT", "").strip()
+    if override_root:
+        env["SURE_DATASET_SOURCE_ROOT"] = override_root
     if from_stage:
         env["SURE_EVAL_FROM_STAGE"] = from_stage
     return {
