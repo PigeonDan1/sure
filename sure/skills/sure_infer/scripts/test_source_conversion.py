@@ -239,6 +239,18 @@ class SourceConversionTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(before, second.read_text(encoding="utf-8"))
 
+    def test_cached_projection_from_another_source_cannot_be_reused(self) -> None:
+        original = source_resolver.resolve_site_source_entry(str(self.dataset_root))
+        jsonl_path = self.manager._convert_source_root_to_jsonl(original)
+        duplicate = make_source_tree(self.source_root / "second", "demo_ds", "v1.0.2")
+        other = source_resolver.resolve_site_source_entry(str(duplicate))
+
+        with self.assertRaisesRegex(ValueError, "cached projection") as ctx:
+            self.manager._convert_source_root_to_jsonl(other)
+        self.assertIn(str(self.dataset_root), str(ctx.exception))
+        self.assertIn(str(duplicate), str(ctx.exception))
+        self.assertEqual(json.loads(jsonl_path.read_text(encoding="utf-8"))["metadata"]["source_dataset_root"], str(self.dataset_root))
+
     def test_missing_source_after_resolve_raises_friendly_error(self) -> None:
         ref = source_resolver.resolve_site_source_entry(str(self.dataset_root))
         Path(ref.sample_jsonl).unlink()

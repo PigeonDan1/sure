@@ -588,15 +588,16 @@ def _dataset_details(
             # Attribution comes from this dataset's own requested path, never from the cached
             # metadata above: a warm projection's recorded root is not what this run asked for.
             source_root_key = ref.source_root_key
-            source_root = source_root or ref.source_root
-            source_name = source_name or ref.source_dataset_name
-            version_id = version_id or ref.version_id
+            source_root = ref.source_root
+            source_name = ref.source_dataset_name
+            version_id = ref.version_id
             dataset_task = _source_projection_task(model_task, requested_metrics, ref)
-            language = (read_source_language(ref) or language or "auto").lower()
+            language = (read_source_language(ref) or "auto").lower()
             source_supported_tasks = ref.supported_tasks
             jsonl_path = manager.jsonl_dir / (
                 manager.source_projection_name(ref.dataset_id, dataset_task) + ".jsonl"
             )
+            manager.assert_source_projection(jsonl_path, ref)
         task = _effective_dataset_task(dataset_task, model_task, requested_metrics)
         if not task:
             task = "UNKNOWN"
