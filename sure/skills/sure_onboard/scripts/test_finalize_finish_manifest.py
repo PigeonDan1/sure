@@ -39,6 +39,9 @@ class FinishManifestTests(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
         self.run_dir = Path(self._tmp.name) / "run"
         self.run_dir.mkdir(parents=True)
+        self.produces = self.run_dir / "artifacts" / "deployment_ready.json"
+        self.produces.parent.mkdir()
+        self.produces.write_text("{}\n", encoding="utf-8")
 
     def write_run_record(self, record: dict) -> None:
         (self.run_dir / "run.json").write_text(json.dumps(record), encoding="utf-8")
@@ -62,7 +65,7 @@ class FinishManifestTests(unittest.TestCase):
 
     def test_writes_envelope_satisfying_sure_finish(self) -> None:
         self.write_run_record({"runId": "20260929-015331-b570d4c4", "skillName": "sure_onboard"})
-        manifest = finish_manifest(self.run_dir, self.resolved(), self.deployment())
+        manifest = finish_manifest(self.run_dir, self.resolved(), self.deployment(), self.produces)
         written = json.loads((self.run_dir / "manifest.json").read_text(encoding="utf-8"))
         self.assertEqual(written, manifest)
         for key in ENVELOPE_FIELDS:
@@ -80,25 +83,27 @@ class FinishManifestTests(unittest.TestCase):
             for value in written[section].values():
                 self.assertIsInstance(value, str)
         self.assertEqual(written["outputs"]["deployment_ready"], "artifacts/deployment_ready.json")
+        self.assertNotIn("bundle_identity_sha256", written["outputs"])
+        self.assertEqual(written["validation"]["bundle_identity_sha256"], "a" * 64)
 
     def test_missing_run_identity_fails_the_finalize(self) -> None:
         self.write_run_record({"skillName": "sure_onboard"})
         with self.assertRaises(ValueError) as ctx:
-            finish_manifest(self.run_dir, self.resolved(), self.deployment())
+            finish_manifest(self.run_dir, self.resolved(), self.deployment(), self.produces)
         self.assertIn("runId", str(ctx.exception))
         self.assertFalse((self.run_dir / "manifest.json").exists())
 
     def test_missing_skill_name_fails_the_finalize(self) -> None:
         self.write_run_record({"runId": "20260929-015331-b570d4c4"})
         with self.assertRaises(ValueError) as ctx:
-            finish_manifest(self.run_dir, self.resolved(), self.deployment())
+            finish_manifest(self.run_dir, self.resolved(), self.deployment(), self.produces)
         self.assertIn("skillName", str(ctx.exception))
 
     def test_created_at_is_iso_parseable(self) -> None:
         from datetime import datetime
 
         self.write_run_record({"runId": "r-1", "skillName": "sure_onboard"})
-        manifest = finish_manifest(self.run_dir, self.resolved(), self.deployment())
+        manifest = finish_manifest(self.run_dir, self.resolved(), self.deployment(), self.produces)
         self.assertIsNotNone(datetime.fromisoformat(manifest["created_at"]))
 
 
