@@ -1007,6 +1007,7 @@ describe("sure_onboard MODEL_INPUT materializer", () => {
 describe("sure_onboard end-to-end state-machine replay", () => {
 	it("replays MODEL_INPUT to final sure_finish through all gates", () => {
 		const { ctx, cwd, runDir } = preStartCtx("full-replay-reference-adoption", "");
+		writeJson(join(runDir, "run.json"), { runId: "test-ob-prestart", skillName: "sure_onboard" });
 		const sitePolicy = writePythonSitePolicy(cwd);
 		const modelInputPath = join(cwd, "sure", "handoffs", "rednote-hilab__dots.tts-base", "model_input.yaml");
 		writeModelInput(modelInputPath);
@@ -1472,6 +1473,13 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 			{ cwd, encoding: "utf-8", env: { ...process.env, SURE_SITE_POLICY: sitePolicy } },
 		);
 		expect(finalize.status, finalize.stderr || finalize.stdout).toBe(0);
+		const finishManifest = JSON.parse(readFileSync(join(runDir, "manifest.json"), "utf-8"));
+		expect(finishManifest).toMatchObject({
+			run_id: "test-ob-prestart",
+			skill_name: "sure_onboard",
+			status: "success",
+			outputs: { deployment_ready: "artifacts/deployment_ready.json" },
+		});
 		const terminal = advance("finalize_model_bundle");
 		expect(terminal.completedUnits).toContain("finalize_model_bundle");
 
