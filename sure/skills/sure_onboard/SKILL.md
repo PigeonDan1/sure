@@ -290,4 +290,6 @@ Earlier runs leave agent-written notes. `sure/memory/index.md` (repo root) is th
 
 The `pre_finish` hook enforces that the state machine reached `finalize_model_bundle` and that `deployment_ready.json` passes its hash, portability, package, and execution-policy checks. A local model can finish successfully with either immutable registry evidence or an explicitly permitted, sealed Python Model Runtime.
 
+`finalize_model_bundle` also writes the run-level finish manifest at `.sure/runs/<run_id>/manifest.json` (envelope: `schema_version`, `run_id`, `skill_name`, `status`, `created_at`, `inputs`, `outputs`, `validation`). Call `sure_finish` with `status: "success"` and `manifest_path: ".sure/runs/<run_id>/manifest.json"` — do not point `manifest_path` at `deployment_ready.json` or hand-edit the envelope; `sure_finish` checks `run_id`, `skill_name`, and `status` against the run record. If `incomplete` or `failed`, update the manifest's `status` to match and finish with a repair summary.
+
 A `failed` or `incomplete` finish must also carry `artifacts/extraction_declaration.json` (see `sure/runtime/memory/EXTRACTION.md`, section 10): `pre_finish` returns a repair asking for it up to twice, then lets the run finish and records `extraction: failed`.

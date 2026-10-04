@@ -259,7 +259,7 @@ class RunInferTests(unittest.TestCase):
         self.assertEqual(surface["source_provenance"]["template_file"], str(run_infer.ENTRYPOINT))
         self.assertEqual(surface["source_provenance"]["template_sha256"], run_infer._sha256_file(run_infer.ENTRYPOINT))
 
-    def test_surface_forwards_the_resolved_dataset_source_key(self) -> None:
+    def test_surface_does_not_forward_a_dataset_source_key(self) -> None:
         self.write_inputs(self.container_binding)
         input_path = self.artifacts / "eval_input_resolved.json"
         eval_input = json.loads(input_path.read_text(encoding="utf-8"))
@@ -270,7 +270,7 @@ class RunInferTests(unittest.TestCase):
             os.environ.pop("SURE_DATASET_SOURCE_ROOT", None)
             _, _, _, surface = self.run_container([sys.executable, "-c", "pass"])
 
-        self.assertEqual(surface["env"]["SURE_DATASET_SOURCE_ROOT"], "archive")
+        self.assertNotIn("SURE_DATASET_SOURCE_ROOT", surface["env"])
 
     def test_surface_preserves_the_source_override_used_during_resolution(self) -> None:
         self.write_inputs(self.container_binding)

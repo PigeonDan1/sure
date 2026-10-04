@@ -30,7 +30,8 @@
 					"task_source": { "type": "string" },
 					"source_root": { "type": "string" },
 					"source_dataset_name": { "type": "string" },
-					"version_id": { "type": "string" }
+					"version_id": { "type": "string" },
+					"source_root_key": { "type": "string" }
 				},
 				"additionalProperties": false
 			}

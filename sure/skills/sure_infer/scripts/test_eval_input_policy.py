@@ -213,6 +213,55 @@ class DatasetDetailsSourceTests(unittest.TestCase):
         self.assertEqual(detail["source_root"], str(self.dataset_root))
         self.assertEqual(detail["source_dataset_name"], "demo_ds")
         self.assertEqual(detail["version_id"], "v1.0.2")
+        # an override root carries no configured key, and that is recorded as such
+        self.assertEqual(detail["source_root_key"], "")
+
+    def test_source_entry_records_the_matched_root_key(self) -> None:
+        roots = {"default": str(self.source_root), "smoke": str(self.tmp / "smoke")}
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop(source_resolver.SOURCE_ROOT_ENV, None)
+            with mock.patch.object(source_resolver, "DEFAULT_SOURCE_ROOTS", roots):
+                details = resolve_eval_input._dataset_details(
+                    self.manager, [str(self.dataset_root)], [], None
+                )
+        self.assertEqual(details[0]["source_root_key"], "default")
+
+    def test_two_datasets_under_two_configured_roots_resolve_in_one_call(self) -> None:
+        second_root = self.tmp / "second"
+        other_root = make_source_tree(second_root, "other_ds", "v1.0.3")
+        roots = {"default": str(self.source_root), "smoke": str(second_root)}
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop(source_resolver.SOURCE_ROOT_ENV, None)
+            with mock.patch.object(source_resolver, "DEFAULT_SOURCE_ROOTS", roots):
+                details = resolve_eval_input._dataset_details(
+                    self.manager, [str(self.dataset_root), str(other_root)], [], None
+                )
+        self.assertEqual(
+            [(detail["name"], detail["source_root_key"]) for detail in details],
+            [("demo_ds__v1.0.2", "default"), ("other_ds__v1.0.3", "smoke")],
+        )
+
+    def test_same_dataset_id_under_two_roots_is_rejected_before_deduplication(self) -> None:
+        second_root = self.tmp / "second"
+        duplicate = make_source_tree(second_root, "demo_ds", "v1.0.2")
+        roots = {"default": str(self.source_root), "smoke": str(second_root)}
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop(source_resolver.SOURCE_ROOT_ENV, None)
+            with mock.patch.object(source_resolver, "DEFAULT_SOURCE_ROOTS", roots):
+                with self.assertRaisesRegex(ValueError, "ambiguous dataset id") as ctx:
+                    resolve_eval_input._dataset_details(
+                        self.manager, [str(self.dataset_root), str(duplicate)], [], None
+                    )
+        self.assertIn(str(self.dataset_root), str(ctx.exception))
+        self.assertIn(str(duplicate), str(ctx.exception))
+
+    def test_cached_projection_from_another_root_is_rejected_during_resolution(self) -> None:
+        self.manager.download_and_convert(str(self.dataset_root))
+        duplicate = make_source_tree(self.source_root / "second", "demo_ds", "v1.0.2")
+        with self.assertRaisesRegex(ValueError, "cached projection") as ctx:
+            resolve_eval_input._dataset_details(self.manager, [str(duplicate)], [], None)
+        self.assertIn(str(self.dataset_root), str(ctx.exception))
+        self.assertIn(str(duplicate), str(ctx.exception))
 
     def test_converted_source_entry_reads_jsonl_metadata(self) -> None:
         self.manager.download_and_convert(str(self.dataset_root))
@@ -292,7 +341,11 @@ class DatasetDetailsSourceTests(unittest.TestCase):
         )
         stale_lid_projection = self.manager.jsonl_dir / "kws_ds__v1.0.0__lid.jsonl"
         stale_lid_projection.write_text(
-            json.dumps({"task": "LID", "dataset": "kws_ds__v1.0.0__lid"}) + "\n",
+            json.dumps({
+                "task": "LID",
+                "dataset": "kws_ds__v1.0.0__lid",
+                "metadata": {"source_dataset_root": str(self.tmp / "stale-source")},
+            }) + "\n",
             encoding="utf-8",
         )
         details = resolve_eval_input._dataset_details(
@@ -301,6 +354,7 @@ class DatasetDetailsSourceTests(unittest.TestCase):
         detail = details[0]
         self.assertEqual(detail["name"], "kws_ds__v1.0.0")
         self.assertEqual(detail["display_name"], "kws_ds__v1.0.0")
+        self.assertEqual(detail["source_root"], str(multi_root))
         self.assertIsNone(detail["num_samples"])
         self.assertEqual(detail["task"], "KWS")
         self.assertEqual(detail["supported_tasks"], ["ASR", "LID", "KWS"])

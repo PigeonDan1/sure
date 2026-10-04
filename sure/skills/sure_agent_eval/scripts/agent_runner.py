@@ -284,10 +284,12 @@ def call_chat_completion(api: dict[str, Any], prompt: str, *, env: dict[str, str
     raise RuntimeError(f"API stage call failed after {attempts} attempt(s): {last_error}")
 
 
-def _dataset_manager(projection_root: Path, dataset_source_key: str) -> DatasetManager:
+def _dataset_manager(projection_root: Path) -> DatasetManager:
     config = Config()
     config.data.datasets = str(projection_root / "datasets")
-    return DatasetManager(config=config, dataset_source_key=dataset_source_key)
+    # No dataset_source_key: it no longer selects a root, and each dataset in the spec
+    # already carries the root key it resolved under.
+    return DatasetManager(config=config)
 
 
 def _projection_root(product_dir: Path) -> Path:
@@ -362,7 +364,7 @@ def run_agent(
     manifest: dict[str, Any] = {"schema": "sure.agent_eval.prediction_manifest.v1", "datasets": {}}
 
     try:
-        manager = _dataset_manager(_projection_root(product_dir), str(spec["runtime"]["dataset_source_key"]))
+        manager = _dataset_manager(_projection_root(product_dir))
         mcp_callers: dict[str, McpCaller] = {}
         for dataset in datasets:
             dataset_id = str(dataset["dataset"])

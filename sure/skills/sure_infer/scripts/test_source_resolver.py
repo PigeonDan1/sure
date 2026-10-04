@@ -229,32 +229,100 @@ class SourceResolverTests(unittest.TestCase):
         self.assertTrue(source_resolver.is_source_entry("/a/ds_pool/x@v1.0.2"))
 
 
-class RejectedRootMessageTests(unittest.TestCase):
-    """A rejected path has to say which configured key would have taken it."""
+class UnionSourceRootTests(unittest.TestCase):
+    """Acceptance is the union of the configured roots; a key labels, it does not select."""
 
-    def test_path_under_another_configured_key_names_that_key(self) -> None:
-        roots = {"default": "/srv/datasets/public", "aiplatform": "/srv/datasets/platform"}
-        with mock.patch.object(source_resolver, "DEFAULT_SOURCE_ROOTS", roots):
-            with mock.patch.dict(os.environ, {}, clear=False):
-                os.environ.pop(source_resolver.SOURCE_ROOT_ENV, None)
-                with self.assertRaises(source_resolver.SourceResolutionError) as ctx:
-                    source_resolver.resolve_site_source_entry(
-                        "/srv/datasets/platform/g001/store002/ds_pool/demo_ds"
-                    )
-        message = str(ctx.exception)
-        self.assertIn("aiplatform", message)
-        self.assertIn("dataset_source_key", message)
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.public = self.root / "public"
+        self.platform = self.root / "platform"
+        self.roots = {"default": str(self.public), "aiplatform": str(self.platform)}
+        self._roots = mock.patch.object(source_resolver, "DEFAULT_SOURCE_ROOTS", self.roots)
+        self._roots.start()
+        self._env = mock.patch.dict(os.environ, {}, clear=False)
+        self._env.start()
+        os.environ.pop(source_resolver.SOURCE_ROOT_ENV, None)
+
+    def tearDown(self) -> None:
+        self._env.stop()
+        self._roots.stop()
+        self._tmp.cleanup()
+
+    def test_path_under_a_later_configured_key_resolves_and_attributes(self) -> None:
+        dataset_root = make_source_tree(self.platform, "demo_ds", ["v1.0.1"])
+        ref = source_resolver.resolve_site_source_entry(str(dataset_root))
+        self.assertEqual(ref.dataset_id, "demo_ds__v1.0.1")
+        self.assertEqual(ref.source_root_key, "aiplatform")
+
+    def test_two_datasets_under_two_roots_resolve_in_one_run(self) -> None:
+        one = make_source_tree(self.public, "ds_public", ["v1.0.1"])
+        two = make_source_tree(self.platform, "ds_platform", ["v1.0.1"])
+        refs = [source_resolver.resolve_site_source_entry(str(path)) for path in (one, two)]
+        self.assertEqual([ref.source_root_key for ref in refs], ["default", "aiplatform"])
+
+    def test_a_supplied_key_does_not_narrow_the_boundary(self) -> None:
+        dataset_root = make_source_tree(self.platform, "demo_ds", ["v1.0.1"])
+        ref = source_resolver.resolve_site_source_entry(
+            str(dataset_root), dataset_source_key="default"
+        )
+        self.assertEqual(ref.source_root_key, "aiplatform")
+
+    def test_unknown_key_fails_fast(self) -> None:
+        dataset_root = make_source_tree(self.public, "demo_ds", ["v1.0.1"])
+        with self.assertRaises(source_resolver.SourceResolutionError) as ctx:
+            source_resolver.resolve_site_source_entry(
+                str(dataset_root), dataset_source_key="nope"
+            )
+        self.assertIn("nope", str(ctx.exception))
 
     def test_path_under_no_configured_key_lists_them(self) -> None:
-        roots = {"default": "/srv/datasets/public", "aiplatform": "/srv/datasets/platform"}
-        with mock.patch.object(source_resolver, "DEFAULT_SOURCE_ROOTS", roots):
-            with mock.patch.dict(os.environ, {}, clear=False):
-                os.environ.pop(source_resolver.SOURCE_ROOT_ENV, None)
-                with self.assertRaises(source_resolver.SourceResolutionError) as ctx:
-                    source_resolver.resolve_site_source_entry("/elsewhere/ds_pool/demo_ds")
+        with self.assertRaises(source_resolver.SourceResolutionError) as ctx:
+            source_resolver.resolve_site_source_entry("/elsewhere/ds_pool/demo_ds")
         message = str(ctx.exception)
         self.assertIn("default", message)
         self.assertIn("aiplatform", message)
+        self.assertNotIn("dataset_source_key", message)
+
+    def test_nested_roots_pick_the_longest_match_deterministically(self) -> None:
+        deep_root = self.platform / "sub"
+        dataset_root = make_source_tree(deep_root, "demo_ds", ["v1.0.1"])
+        for configured in (
+            {"default": str(self.platform), "deep": str(deep_root)},
+            {"deep": str(deep_root), "default": str(self.platform)},
+        ):
+            with mock.patch.object(source_resolver, "DEFAULT_SOURCE_ROOTS", configured):
+                ref = source_resolver.resolve_site_source_entry(str(dataset_root))
+            self.assertEqual(ref.source_root_key, "deep")
+            self.assertEqual(ref.source_root_keys, ("deep", "default"))
+
+    def test_equal_length_matches_break_the_same_way_regardless_of_config_order(self) -> None:
+        path = Path("/srv/data/g001/store002/ds_pool/demo_ds")
+        selected = []
+        for configured in (
+            {"default": "/srv/data", "mirror": "/srv/data"},
+            {"mirror": "/srv/data", "default": "/srv/data"},
+        ):
+            with mock.patch.object(source_resolver, "DEFAULT_SOURCE_ROOTS", configured):
+                selected.append(
+                    source_resolver._match_source_root(path, source_resolver.accepted_source_roots())
+                )
+        self.assertEqual(selected, [("mirror", ("default", "mirror"))] * 2)
+
+    def test_key_shaped_env_override_is_rejected(self) -> None:
+        with mock.patch.dict(os.environ, {source_resolver.SOURCE_ROOT_ENV: "aiplatform"}):
+            with self.assertRaises(source_resolver.SourceResolutionError) as ctx:
+                source_resolver.accepted_source_roots()
+        message = str(ctx.exception)
+        self.assertIn(source_resolver.SOURCE_ROOT_ENV, message)
+        # The remedy must be actionable: the old spelling named a root, so a stale script has to
+        # be told what to write instead of being quietly handed every configured root.
+        self.assertIn("path", message)
+
+    def test_path_shaped_env_override_still_narrows_to_that_path(self) -> None:
+        override = str(self.platform)
+        with mock.patch.dict(os.environ, {source_resolver.SOURCE_ROOT_ENV: override}):
+            self.assertEqual(source_resolver.accepted_source_roots(), {"": override})
 
 
 if __name__ == "__main__":

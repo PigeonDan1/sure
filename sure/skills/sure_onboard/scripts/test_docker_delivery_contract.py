@@ -48,6 +48,7 @@ class DockerDeliveryContractTests(unittest.TestCase):
         self.model_artifacts = self.model_dir / "artifacts"
         self.run_artifacts.mkdir(parents=True)
         self.model_artifacts.mkdir(parents=True)
+        write_json(self.run_dir / "run.json", {"runId": self.run_dir.name, "skillName": "sure_onboard"})
         for name in ("model.spec.yaml", "model.py", "server.py", "__init__.py", "validate.py"):
             (self.model_dir / name).write_text("# test\n", encoding="utf-8")
         (self.model_dir / "config.yaml").write_text(
@@ -369,6 +370,12 @@ class DockerDeliveryContractTests(unittest.TestCase):
         )
         output = self.run_artifacts / "deployment_ready.json"
         deployment = finalize(self.run_dir, output)
+        finish = read_json(self.run_dir / "manifest.json")
+        self.assertEqual((finish["run_id"], finish["skill_name"], finish["status"]), ("run", "sure_onboard", "success"))
+        self.assertEqual(finish["outputs"]["deployment_ready"], "artifacts/deployment_ready.json")
+        for path in finish["outputs"].values():
+            self.assertTrue((self.run_dir / path).is_file(), path)
+        self.assertEqual(finish["validation"]["bundle_identity_sha256"], deployment["bundle_identity_sha256"])
         self.assertEqual(deployment["status"], "ready")
         self.assertEqual(deployment["schema"], "sure.onboard.deployment_ready.v1")
         self.assertEqual(
