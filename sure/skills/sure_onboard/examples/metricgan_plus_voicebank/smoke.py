@@ -19,9 +19,16 @@ import yaml
 REPO = Path(__file__).resolve().parents[5]
 EXAMPLE = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO))
+sys.path.insert(0, str(REPO / "sure/skills/sure_infer/scripts"))
 
-from sure.skills.sure_agent_eval.scripts import agent_runner
-from generate_predictions_via_server import _build_tool_arguments, _normalize_prediction_payload
+from generate_predictions_via_server import (
+    _build_tool_arguments,
+    _extract_response_payload,
+    _normalize_prediction_payload,
+    _write_prediction_snapshots,
+)
+from sure_eval.core.config import Config
+from sure_eval.datasets import DatasetManager
 
 
 def write_json(path, payload):
@@ -119,47 +126,77 @@ def main():
     environment["SURE_SITE_POLICY"] = str(site)
     environment["SURE_DATASET_SOURCE_ROOT"] = str(output / "source")
     os.environ.update(environment)
-    dataset = "se_smoke__unversioned__se"
-    product = output / "agent-product"
-    # In-memory development plan. No forged approval/runtime inventory or resolved-spec artifact.
-    spec = {
-        "agent": {"name": "se_development_smoke", "task": "se", "input": "speech",
-                  "output": "speech", "spec_sha256": "0" * 64},
-        "stages": [{"id": "enhance", "model": model_name, "mode": "mcp_tool",
-                    "task": "SE", "tool_names": ["enhance_speech"], "model_dir": str(example),
-                    "working_dir": str(example), "server_command": [str(model_python), str(example / "server.py")],
-                    "env": {key: environment[key] for key in ("SURE_SE_MODEL_CACHE", "SURE_SE_DEVICE", "OMP_NUM_THREADS", "MKL_NUM_THREADS")}}],
-        "datasets": [{"dataset": dataset, "task": "SE", "source_root": str(source), "version_id": "unversioned"}],
-        "runtime": {"product_dir": str(product), "dataset_source_key": "default"},
-    }
-    client = agent_runner.McpToolClient(spec["stages"][0], log_path=output / "infer-mcp.log")
+    config = Config()
+    config.data.datasets = str(output / "projections")
+    projected = DatasetManager(config=config).download_and_convert(str(source), task="SE")
+    dataset = projected.stem
+    product = output / "infer-product"
+    predictions = product / "predictions"
+    predictions.mkdir(parents=True)
+    references = product / "references/sure_benchmark/jsonl"
+    references.mkdir(parents=True)
+    shutil.copy2(projected, references / projected.name)
+    projected_rows = [json.loads(line) for line in projected.read_text().splitlines() if line.strip()]
+    tool_name = example_config["tools"][0]["name"]
+    requests = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+    ]
+    tool_arguments = []
+    for index, row in enumerate(projected_rows, 3):
+        arguments = _build_tool_arguments(
+            repo_root=REPO, sample=row, task="SE", language=str(row.get("language") or "auto"),
+            argument_name="audio_path", audio_path=Path(row["path"]),
+            output_audio_dir=predictions / "audio" / dataset,
+        )
+        if any(key in arguments for key in ("reference_audio", "reference_audio_path")):
+            raise ValueError("Clean reference leaked into SE inference")
+        tool_arguments.append(arguments)
+        requests.append({
+            "jsonrpc": "2.0", "id": index, "method": "tools/call",
+            "params": {"name": tool_name, "arguments": arguments},
+        })
+    requests.append({"jsonrpc": "2.0", "id": len(requests) + 1, "method": "shutdown", "params": {}})
+    completed = subprocess.run(
+        [str(model_python), str(example / "server.py")], cwd=example, env=environment,
+        input="".join(json.dumps(request) + "\n" for request in requests),
+        text=True, capture_output=True, timeout=600,
+    )
+    (output / "infer-mcp.log").write_text(completed.stderr)
+    if completed.returncode != 0:
+        raise RuntimeError("SE MCP server failed; see infer-mcp.log")
+    responses = {response["id"]: response for line in completed.stdout.splitlines()
+                 if (response := json.loads(line)).get("id") is not None}
+    if tool_name not in [tool["name"] for tool in responses[2]["result"]["tools"]]:
+        raise ValueError(f"SE MCP server did not advertise {tool_name}")
     infer_results = []
-    try:
-        for row in rows:
-            arguments = _build_tool_arguments(repo_root=REPO, sample=row, task="SE", language="en",
-                argument_name="audio_path", audio_path=fixture / row["audio"], output_audio_dir=output / "infer-audio")
-            if any(key in arguments for key in ("reference_audio", "reference_audio_path")):
-                raise ValueError("Clean reference leaked into SE inference")
-            response = client.call(arguments)
-            path, prediction = _normalize_prediction_payload(response, task="SE")
-            agent_runner.extract_audio_path(prediction, Path(arguments["output_path"]))
-            with wave.open(path) as audio:
-                if audio.getnframes() == 0:
-                    raise ValueError("Empty inference output")
-            infer_results.append({"key": row["key"], "arguments": arguments, "prediction": prediction})
-    finally:
-        client.close()
-    write_json(output / "infer-contract.json", infer_results)
-    execution = agent_runner.run_agent(spec, output / "agent-run")
-    if execution["job_status"] != "succeeded":
-        raise RuntimeError(execution["error"])
-    prediction_rows = [json.loads(line) for line in (product / f"predictions/{dataset}.jsonl").read_text().splitlines()]
-    for row in prediction_rows:
-        with wave.open(row["prediction"]["audio_path"]) as audio:
+    prediction_map = {}
+    structured_map = {}
+    for index, (row, arguments) in enumerate(zip(projected_rows, tool_arguments, strict=True), 3):
+        response = _extract_response_payload(responses[index])
+        path, prediction = _normalize_prediction_payload(response, task="SE")
+        destination = Path(arguments["output_path"])
+        if Path(path) != destination or destination.is_symlink() or not destination.is_file():
+            raise ValueError("SE model must write the requested output_path")
+        with wave.open(path) as audio:
             if audio.getnframes() == 0 or audio.getframerate() != 16000 or audio.getnchannels() != 1:
                 raise ValueError("Expected nonempty mono 16 kHz PCM WAV")
-    config = output / "evaluation.yaml"
-    config.write_text(yaml.safe_dump({"data": {"datasets": str(product / "references")}}))
+        key = row["key"]
+        prediction_map[key] = path
+        structured_map[key] = {
+            "key": key, "dataset": dataset, "task": "SE", "language": row.get("language") or "auto",
+            "prediction": prediction, "normalized_prediction": path, "raw_response": response,
+        }
+        infer_results.append({"key": key, "arguments": arguments, "prediction": prediction})
+    write_json(output / "infer-contract.json", infer_results)
+    _write_prediction_snapshots(
+        samples=projected_rows, prediction_path=predictions / f"{dataset}.txt",
+        structured_prediction_path=predictions / f"{dataset}.jsonl",
+        prediction_map=prediction_map, structured_map=structured_map,
+        canonical_dataset=dataset, sample_task="SE", sample_language="auto",
+    )
+    evaluation_config = output / "evaluation.yaml"
+    evaluation_config.write_text(yaml.safe_dump({"data": {"datasets": str(product / "references")}}))
     metrics = args.metric or ["si_sdr"]
     metric_args = [part for metric in metrics for part in ("--metric", metric)]
     eval_script = REPO / "sure/skills/sure_infer/scripts/evaluate_predictions.py"
@@ -174,7 +211,7 @@ def main():
                 "prediction": {"audio_path": row["attribute"]["path"]}}) + "\n" for row in samples))
         staged_predictions = output / name / "predictions"
         shutil.copytree(pred_dir, staged_predictions)
-        run(name, [sys.executable, eval_script, "--dataset", dataset, "--pred-dir", staged_predictions, "--config", config,
+        run(name, [sys.executable, eval_script, "--dataset", dataset, "--pred-dir", staged_predictions, "--config", evaluation_config,
                    "--evaluation-backend", "external", "--device", "cpu", *metric_args,
                    "--run-dir", output / name, "--output", output / name / "payload.json"])
     # Exercise the real approval audit on an incomplete development model. It must refuse publication.
@@ -189,7 +226,7 @@ def main():
               for name in ("enhanced", "noisy_baseline")}
     write_json(output / "summary.json", {"scope": "development backend smoke; not a completed or approved slash-command run",
                "model": model_id, "samples": len(samples), "scores": scores,
-               "validated": ["onboard wrapper", "trans wrapper", "infer tool arguments and output projection", "agent MCP inference", "SE projection", "external evaluation", "approval rejects incomplete bundle"],
+               "validated": ["onboard wrapper", "trans wrapper", "infer MCP call and structured predictions", "SE projection", "external evaluation", "approval rejects incomplete bundle"],
                "not_validated": ["sealed model runtime", "positive approval and publication", "approved model resolution", "slash-command terminal gates"]})
     print(output / "summary.json")
 

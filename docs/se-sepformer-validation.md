@@ -17,10 +17,9 @@
 | `sure_trans` | 状态机、schema、fixture/reference 哈希、adapter 和验证模板 | 逐条运行真实验证模板；MCP initialize/list/call/shutdown |
 | `sure_infer` | SE MCP 参数、noisy/clean 数据投影 | 实际参数构造、MCP 推理和音频预测投影 |
 | `sure_eval` | 使用说明、锁定 Evaluation Runtime 的 STOI/解码依赖 | 相同干净参考下比较增强音频与 noisy baseline |
-| `sure_agent_eval` | 单阶段 SE 校验、音频输出路径和结构化预测 | 实际 MCP runner、数据投影和预测文件 |
 | `sure_approve` | **未修改审批代码** | 审计开发目录并正确拒绝不完整包；未验证正向审批发布 |
 
-直接修改的 `SKILL.md` 是 `sure_trans`、`sure_eval`、`sure_agent_eval` 三个。
+直接修改的 `SKILL.md` 是 `sure_trans`、`sure_eval` 两个。
 Feed、Onboard、Infer 的适配位于脚本、模板或引用手册。
 
 ## 换模型发现的遗漏
@@ -52,7 +51,7 @@ Feed、Onboard、Infer 的适配位于脚本、模板或引用手册。
 | MetricGAN+ | -3.280982 | 0.653770 |
 | SepFormer | 8.021871 | 0.742345 |
 
-五条数据的 Onboard、逐条 Trans、Infer MCP 和 Agent runner 均通过；评分产物对两项指标
+五条数据的 Onboard、逐条 Trans 和 Infer MCP 均通过；评分产物对两项指标
 分别保留 2/3 条样本，没有丢样本。所有输出成功解码为非空 16 kHz 单声道 PCM16 WAV。
 SepFormer 在两组数据上均有平均质量提升，不代表每一条语音或其他数据集都会改善。
 

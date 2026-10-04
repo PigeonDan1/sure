@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,6 +12,52 @@ from unittest.mock import patch
 
 
 class SeOnboardValidationTests(unittest.TestCase):
+    def test_audio_only_se_reference_passes_fixture_producer_and_gate(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            source.mkdir()
+            (source / "noisy.wav").write_bytes(b"RIFFnoisy")
+            (source / "clean.wav").write_bytes(b"RIFFclean")
+            (source / "gt.jsonl").write_text(
+                json.dumps({"key": "sample", "audio": "noisy.wav", "reference_audio": "clean.wav"}) + "\n"
+            )
+            model_dir = root / "sure" / "models" / "example"
+            model_dir.mkdir(parents=True)
+            run_dir = root / "run"
+            artifacts = run_dir / "artifacts"
+            artifacts.mkdir(parents=True)
+            (artifacts / "model_input_resolved.json").write_text(
+                json.dumps({"model_id": "example/model", "model_name": "example", "model_dir": str(model_dir), "task_type": "se"})
+            )
+            manifest = artifacts / "fixture_manifest.json"
+            scripts = Path(__file__).parent
+            prepared = subprocess.run(
+                [sys.executable, str(scripts / "prepare_fixture.py"), "--run-dir", str(run_dir),
+                 "--produces", str(manifest), "--source-dir", str(source), "--fixture-source", "model_specific"],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(prepared.returncode, 0, prepared.stderr)
+            self.assertIn("reference_audio", json.loads(manifest.read_text())["samples"][0]["annotation_fields"])
+            checked = subprocess.run(
+                [sys.executable, str(scripts / "check_fixture.py"), "--run-dir", str(run_dir),
+                 "--produces", str(manifest)],
+                capture_output=True, text=True,
+            )
+            self.assertEqual(checked.returncode, 0, checked.stderr)
+            staged = Path(json.loads(manifest.read_text())["gt_jsonl"])
+            staged.write_text(json.dumps({"key": "sample", "audio": "noisy.wav", "reference_text": "speech"}) + "\n")
+            changed_manifest = json.loads(manifest.read_text())
+            changed_manifest.pop("fixture_sha256", None)
+            manifest.write_text(json.dumps(changed_manifest))
+            rejected = subprocess.run(
+                [sys.executable, str(scripts / "check_fixture.py"), "--run-dir", str(run_dir),
+                 "--produces", str(manifest)],
+                capture_output=True, text=True,
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("distinct clean reference_audio", rejected.stderr)
+
     def test_se_fixture_and_all_generated_files_are_validated(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

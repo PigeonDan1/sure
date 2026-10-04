@@ -39,8 +39,8 @@ the MetricGAN+ example and add `--fixture-dir /absolute/extra-fixtures` with a
 new output directory. The same samples, engine, and scoring runtime allow
 comparison of the two models.
 
-The smoke exercises Onboard and Trans templates, Infer MCP handling, Agent
-inference, SE projection and scoring, and rejection of an incomplete approval
+The smoke exercises Onboard and Trans templates, Infer MCP handling and prediction
+files, SE projection and scoring, and rejection of an incomplete approval
 candidate. It does not complete sealing, positive approval, publication, or
 the complete slash-command lifecycle. Synthetic smoke scores are not a WHAM!
 benchmark result.

@@ -2,7 +2,8 @@
 
 This example adapts [SpeechBrain MetricGAN+ VoiceBank](https://huggingface.co/speechbrain/metricgan-plus-voicebank)
 to the SURE `ModelWrapper` and `enhance_speech` MCP contracts. It is a 16 kHz
-single-channel speech-enhancement model. The first load downloads weights into
+single-channel speech-enhancement model, pinned to revision
+`a196ce26b3bdace6fa1d819017584bdbcce462a8`. The first load downloads weights into
 the model-local `.runtime/weights` directory; `SURE_SE_MODEL_CACHE` may point to
 an existing local cache. Run it in an environment with PyTorch, Torchaudio,
 SpeechBrain 1.0.3, HyperPyYAML, and Ruamel YAML installed.
@@ -17,7 +18,7 @@ reference; that is only for scoring. Without `output_path`, it writes to
 `$SURE_SE_OUTPUT_DIR/sure-se` or the system temporary directory's `sure-se`
 subdirectory so inference does not need to write into the model bundle.
 `server.py` exposes the same contract over
-MCP stdio for approved Agent stages. Set `server.command[0]` to the model's
+MCP stdio for `/sure_infer`. Set `server.command[0]` to the model's
 Python runtime when packaging; the example uses `python` as a placeholder.
 
 This is an adapter example, not an approved model package. Run onboarding,
@@ -41,7 +42,7 @@ HARNESS_PYTHON_BIN=$(python3 sure/runtime/harness/bootstrap.py)
 ```
 
 The output directory must be new. The script runs the actual Onboard and Trans
-validation templates, the Agent MCP runner on both repository SE samples, and
+validation templates, the Infer MCP contract on both repository SE samples, and
 the pinned evaluator on enhanced and noisy audio. It decodes generated WAVs,
 saves commands/logs/scores, and verifies that Approve rejects the incomplete
 development bundle. `summary.json` distinguishes this backend smoke from a

@@ -165,9 +165,17 @@ def main() -> int:
             return fail(f"{gt_jsonl}:{line_no} audio path escapes staged_dir: {audio}")
         if not resolved_audio.exists():
             return fail(f"{gt_jsonl}:{line_no} referenced audio does not exist: {audio}")
+        if task == "se" and (
+            not isinstance(row.get("reference_audio"), str)
+            or not row["reference_audio"].strip()
+            or row["reference_audio"] == audio
+        ):
+            return fail(f"{gt_jsonl}:{line_no} SE requires a distinct clean reference_audio")
         annotation_fields = [
             field for field in ANNOTATION_FIELDS if field in row and annotation_is_nonempty(row[field])
         ]
+        if task == "se":
+            annotation_fields.append("reference_audio")
         if not annotation_fields:
             return fail(
                 f"{gt_jsonl}:{line_no} must contain at least one annotation field "

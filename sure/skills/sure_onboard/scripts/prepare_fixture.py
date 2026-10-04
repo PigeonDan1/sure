@@ -129,7 +129,7 @@ def default_fixture_dir(repo_root: Path, task: str) -> Path | None:
     return configured if (configured / "gt.jsonl").is_file() else None
 
 
-def load_samples(source_dir: Path) -> list[dict[str, Any]]:
+def load_samples(source_dir: Path, task: str = "") -> list[dict[str, Any]]:
     gt = source_dir / "gt.jsonl"
     samples: list[dict[str, Any]] = []
     for line_no, line in enumerate(gt.read_text(encoding="utf-8").splitlines(), 1):
@@ -149,8 +149,16 @@ def load_samples(source_dir: Path) -> list[dict[str, Any]]:
             raise ValueError(f"{gt}:{line_no} audio path must be relative and stay inside the fixture directory")
         if not (source_dir / audio_path).exists():
             raise FileNotFoundError(f"Fixture audio referenced by {gt}:{line_no} does not exist: {audio}")
+        if task == "se" and (
+            not isinstance(row.get("reference_audio"), str)
+            or not row["reference_audio"].strip()
+            or row["reference_audio"] == audio
+        ):
+            raise ValueError(f"{gt}:{line_no} SE requires a distinct clean reference_audio")
         key = row.get("key") or row.get("id") or audio_path.stem
         annotation_fields = [field for field in ANNOTATION_FIELDS if field in row]
+        if task == "se":
+            annotation_fields.append("reference_audio")
         if not annotation_fields:
             raise ValueError(
                 f"{gt}:{line_no} must contain at least one annotation field "
@@ -219,10 +227,10 @@ def stage_fixture(repo_root: Path, model_dir: Path, task: str) -> dict[str, Any]
     source_dir = default_fixture_dir(repo_root, task)
     if source_dir is None:
         raise FileNotFoundError(f"No fixture source found for task {task}")
-    source_samples = load_samples(source_dir)
+    source_samples = load_samples(source_dir, task)
     staged_dir = model_dir / "fixture" / task / source_dir.name
     replace_tree(source_dir, staged_dir)
-    staged_samples = load_samples(staged_dir)
+    staged_samples = load_samples(staged_dir, task)
     return {
         "task_type": task,
         "source_dir": str(source_dir),
@@ -326,13 +334,13 @@ def main() -> int:
         print(f"Fixture source must contain gt.jsonl: {source_dir}", file=sys.stderr)
         return 1
 
-    samples = load_samples(source_dir)
+    samples = load_samples(source_dir, task)
     staged_dir = model_dir / "fixture" / task / source_dir.name
     discard_other_fixtures(model_dir, keep=source_dir)
     replace_tree(source_dir, staged_dir)
 
     staged_samples = []
-    for sample in load_samples(staged_dir):
+    for sample in load_samples(staged_dir, task):
         staged_samples.append(sample)
 
     registry_root = (repo_root / "fixtures" / "tasks" / task).resolve()

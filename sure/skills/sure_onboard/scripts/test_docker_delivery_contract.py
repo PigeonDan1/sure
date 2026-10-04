@@ -369,6 +369,11 @@ class DockerDeliveryContractTests(unittest.TestCase):
             {"status": "passed", "timestamp": "2099-01-01T00:00:02+00:00", "forged": True},
         )
         output = self.run_artifacts / "deployment_ready.json"
+        generated = self.model_artifacts / "outputs" / "enhanced.wav"
+        generated.parent.mkdir()
+        generated.write_bytes(b"RIFFenhanced")
+        write_json(self.model_artifacts / "sample_output.json", {"audio_path": str(generated)})
+        write_json(self.run_artifacts / "sample_output.json", {"audio_path": str(generated)})
         deployment = finalize(self.run_dir, output)
         finish = read_json(self.run_dir / "manifest.json")
         self.assertEqual((finish["run_id"], finish["skill_name"], finish["status"]), ("run", "sure_onboard", "success"))
@@ -376,6 +381,8 @@ class DockerDeliveryContractTests(unittest.TestCase):
         for path in finish["outputs"].values():
             self.assertTrue((self.run_dir / path).is_file(), path)
         self.assertEqual(finish["validation"]["bundle_identity_sha256"], deployment["bundle_identity_sha256"])
+        self.assertIn("artifacts/outputs/enhanced.wav", deployment["required_artifact_sha256"])
+        self.assertEqual(read_json(self.model_artifacts / "sample_output.json")["audio_path"], "artifacts/outputs/enhanced.wav")
         self.assertEqual(deployment["status"], "ready")
         self.assertEqual(deployment["schema"], "sure.onboard.deployment_ready.v1")
         self.assertEqual(
@@ -637,8 +644,7 @@ class DockerDeliveryContractTests(unittest.TestCase):
     def test_normalize_portable_paths_rewrites_nested_abs(self) -> None:
         # finalize always rebuilds package_gate via write_package_gate; the
         # ported rewrite is normalize_portable_paths — unit-test that directly.
-        # Only keys named `path` or ending `_path` are rewritten; model_dir is
-        # forced to "." by finalize itself before normalize runs.
+        # Bundle-internal absolute paths are portable regardless of their key.
         package = {
             "model_dir": str(self.model_dir),
             "artifact_manifest_path": str(self.model_artifacts / "artifact_manifest.json"),
@@ -651,7 +657,7 @@ class DockerDeliveryContractTests(unittest.TestCase):
             "outside_path": str(self.root / "elsewhere" / "x.json"),
         }
         value = normalize_portable_paths(package, self.run_dir, self.model_dir)
-        self.assertEqual(value["model_dir"], str(self.model_dir))  # not a *_path key
+        self.assertEqual(value["model_dir"], ".")
         self.assertEqual(value["artifact_manifest_path"], "artifacts/artifact_manifest.json")
         self.assertEqual(value["local"]["sample_output_path"], "artifacts/sample_output.json")
         self.assertEqual(value["docker"]["build_result_path"], "artifacts/docker_build_result.json")

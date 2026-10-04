@@ -19,7 +19,7 @@ from pathlib import Path
 SCRIPTS_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from finalize_model_bundle import finish_manifest
+from finalize_model_bundle import finish_manifest, normalize_generated_samples
 
 ENVELOPE_FIELDS = (
     "schema_version",
@@ -105,6 +105,32 @@ class FinishManifestTests(unittest.TestCase):
         self.write_run_record({"runId": "r-1", "skillName": "sure_onboard"})
         manifest = finish_manifest(self.run_dir, self.resolved(), self.deployment(), self.produces)
         self.assertIsNotNone(datetime.fromisoformat(manifest["created_at"]))
+
+    def test_generated_audio_paths_are_portable_before_bundle_hashing(self) -> None:
+        model_dir = Path(self._tmp.name) / "model"
+        outputs = model_dir / "artifacts" / "outputs"
+        outputs.mkdir(parents=True)
+        audio = outputs / "enhanced.wav"
+        audio.write_bytes(b"RIFFenhanced")
+        sample = {"audio_path": str(audio)}
+        model_sample = model_dir / "artifacts" / "sample_output.json"
+        run_sample = self.run_dir / "artifacts" / "sample_output.json"
+        model_sample.write_text(json.dumps(sample))
+        run_sample.write_text(json.dumps(sample))
+        rows = {"input": {"audio_path": str(model_dir / "fixture" / "noisy.wav")}, "output": sample}
+        model_rows = model_dir / "artifacts" / "sample_outputs.jsonl"
+        model_rows.write_text(json.dumps(rows) + "\n")
+        weights = model_dir / "artifacts" / "weights_manifest.json"
+        weights.write_text(json.dumps({"checkpoint_root": str(model_dir / ".runtime" / "weights")}))
+
+        normalize_generated_samples(self.run_dir, model_dir)
+
+        self.assertEqual(json.loads(model_sample.read_text())["audio_path"], "artifacts/outputs/enhanced.wav")
+        self.assertEqual(json.loads(run_sample.read_text())["audio_path"], "artifacts/outputs/enhanced.wav")
+        structured = [json.loads(line) for line in model_rows.read_text().splitlines()]
+        self.assertEqual(len(structured), 1)
+        self.assertEqual(structured[0]["output"]["audio_path"], "artifacts/outputs/enhanced.wav")
+        self.assertEqual(json.loads(weights.read_text())["checkpoint_root"], ".runtime/weights")
 
 
 if __name__ == "__main__":

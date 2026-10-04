@@ -23,6 +23,7 @@ class ModelWrapper:
         cache_dir.mkdir(parents=True, exist_ok=True)
         self.model = SpectralMaskEnhancement.from_hparams(
             source="speechbrain/metricgan-plus-voicebank",
+            revision="a196ce26b3bdace6fa1d819017584bdbcce462a8",
             savedir=str(cache_dir),
             run_opts={"device": os.environ.get("SURE_SE_DEVICE", "cpu")},
         )
