@@ -414,10 +414,9 @@ function validateManifestEnvelope(
 		"outputs",
 		"validation",
 	];
-	for (const key of required) {
-		if (!(key in value)) {
-			return `Final manifest is missing required field "${key}".`;
-		}
+	const missing = required.filter((key) => !(key in value));
+	if (missing.length > 0) {
+		return `Final manifest is missing required field(s) ${missing.map((key) => `"${key}"`).join(", ")}.`;
 	}
 	if (value.run_id !== run.runId) {
 		return `Final manifest run_id must be "${run.runId}".`;

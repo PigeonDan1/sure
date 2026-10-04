@@ -39,6 +39,7 @@ class PythonDeliveryContractTests(unittest.TestCase):
         self.model_artifacts = self.model_dir / "artifacts"
         self.run_artifacts.mkdir(parents=True)
         self.model_dir.mkdir(parents=True)
+        write_json(self.run_dir / "run.json", {"runId": self.run_dir.name, "skillName": "sure_onboard"})
         for name in stage_model_artifacts.CORE_FILES:
             (self.model_dir / name).write_text("# test\n", encoding="utf-8")
         (self.model_dir / "model.py").write_text("VALUE = 1\n", encoding="utf-8")
@@ -186,6 +187,11 @@ class PythonDeliveryContractTests(unittest.TestCase):
 
         with patch.dict(os.environ, {"SURE_SITE_POLICY": str(self.site_policy)}):
             deployment = finalize(self.run_dir, self.run_artifacts / "deployment_ready.json")
+        finish = json.loads((self.run_dir / "manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual((finish["run_id"], finish["skill_name"], finish["status"]), ("python-ready", "sure_onboard", "success"))
+        self.assertEqual(finish["outputs"]["deployment_ready"], "artifacts/deployment_ready.json")
+        for path in finish["outputs"].values():
+            self.assertTrue((self.run_dir / path).is_file(), path)
         self.assertEqual(deployment["status"], "ready")
         self.assertEqual(deployment["schema"], "sure.onboard.deployment_ready.v2")
         self.assertEqual(deployment["execution_policy"]["eval_runtime"], "python")
