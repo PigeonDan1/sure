@@ -18,21 +18,11 @@ from execution_provenance import (
     execution_provenance_env,
     write_execution_provenance,
 )
+from host_env_profile import HOST_ENV_ALLOW
 from runtime_roles import same_runtime_executable
 
 
 ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-HOST_ENV_ALLOW = {
-    "CUDA_VISIBLE_DEVICES",
-    "LANG",
-    "LC_ALL",
-    "LD_LIBRARY_PATH",
-    "NVIDIA_DRIVER_CAPABILITIES",
-    "NVIDIA_VISIBLE_DEVICES",
-    "PATH",
-    "TERM",
-    "TZ",
-}
 SENSITIVE_PARTS = (
     "ACCESS_KEY",
     "API_KEY",
