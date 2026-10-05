@@ -56,7 +56,7 @@ export const TRANS_UNITS: Unit[] = [
 		allowedValues: {
 			source_kind: ["docker", "python"],
 			framework: FRAMEWORKS,
-			task_type: ["asr", "s2tt", "tts", "vc", "sv"],
+			task_type: ["asr", "s2tt", "se", "tts", "vc", "sv"],
 			device: ["auto", "cuda", "cpu"],
 			package_profile: ["docker-registry", "none"],
 			preferred_backend: [...BACKENDS, null],

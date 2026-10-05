@@ -1,0 +1,10 @@
+name: speechbrain_sepformer_wham16k_enhancement
+task: SE
+model:
+  id: speechbrain/sepformer-wham16k-enhancement
+  task: SE
+server:
+  command: [python, server.py]
+tools:
+  - name: enhance_speech
+    description: Enhance noisy speech and return a WAV path

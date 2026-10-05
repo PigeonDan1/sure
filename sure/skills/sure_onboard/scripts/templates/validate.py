@@ -155,6 +155,11 @@ def fixture_payloads() -> list[dict[str, Any]]:
                 payload["prompt_audio_path"] = payload["audio_path"]
                 payload["reference_audio_path"] = payload["audio_path"]
                 payload["ref_audio"] = payload["audio_path"]
+            if TASK_TYPE.lower() == "se":
+                noisy = item.get("audio") or item.get("noisy_audio") or item.get("wav")
+                if not isinstance(noisy, str) or not noisy.strip():
+                    raise ValueError("SE fixture requires noisy audio; reference_audio is scoring-only")
+                payload = {"audio_path": str((gt_path.parent / noisy).resolve())}
             text = item.get("target_text") or item.get("text") or item.get("prompt_text") or item.get("ground_truth")
             if isinstance(text, str):
                 payload["text"] = text
@@ -286,6 +291,14 @@ def validate_contract(sample: dict[str, Any], contract: dict[str, Any]) -> list[
         key in sample for key in ("audio_path", "wavs", "wavs_summary", "sample_rate")
     ):
         violations.append("audio output requires audio_path, wavs, wavs_summary, or sample_rate evidence")
+    if TASK_TYPE.lower() == "se":
+        audio = sample.get("audio_path")
+        if not isinstance(audio, str) or not audio.strip():
+            violations.append("SE audio_path must be a non-empty file path")
+        else:
+            path = Path(audio)
+            if path.is_symlink() or not path.is_file() or path.stat().st_size == 0:
+                violations.append("SE audio_path must name an existing non-empty file")
     if contract.get("json_serializable") is True:
         try:
             json.dumps(sample)
@@ -329,9 +342,25 @@ def stage_infer() -> bool:
         rows: list[dict[str, Any]] = []
         for index, fixture in enumerate(payloads, start=1):
             payload = fixture["input"]
+            if TASK_TYPE.lower() == "se":
+                output_dir = ARTIFACTS_DIR / "outputs"
+                output_dir.mkdir(parents=True, exist_ok=True)
+                output_path = output_dir.resolve() / f"enhanced_{index}.wav"
+                if output_path.resolve() == Path(payload["audio_path"]).resolve():
+                    raise ValueError("SE output_path must not overwrite the noisy input")
+                if output_path.exists() or output_path.is_symlink():
+                    output_path.unlink()
+                payload["output_path"] = str(output_path)
             sample = run_predict(wrapper, payload)
             if not sample:
                 raise AssertionError(f"prediction output is empty for fixture {index}")
+            if TASK_TYPE.lower() == "se":
+                audio = sample.get("audio_path")
+                if not isinstance(audio, str) or Path(audio).resolve() != Path(payload["output_path"]):
+                    raise ValueError("SE wrapper must return the requested output_path as audio_path")
+                violations = validate_contract(sample, load_io_contract())
+                if violations:
+                    raise ValueError("; ".join(violations))
             outputs.append(sample)
             rows.append(
                 {
@@ -371,6 +400,10 @@ def stage_contract() -> bool:
             raise ValueError("sample_output.json must be an object")
         contract = load_io_contract()
         violations = validate_contract(sample, contract)
+        if TASK_TYPE.lower() == "se" and SAMPLE_OUTPUTS.exists():
+            for line in SAMPLE_OUTPUTS.read_text(encoding="utf-8").splitlines():
+                if line.strip():
+                    violations.extend(validate_contract(json.loads(line)["output"], contract))
         if violations:
             raise AssertionError("; ".join(violations))
     except Exception as exc:  # noqa: BLE001

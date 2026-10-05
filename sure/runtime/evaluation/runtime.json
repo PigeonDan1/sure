@@ -15,8 +15,12 @@
     "rich",
     "structlog",
     "typer",
+    "pystoi",
+    "scipy",
+    "soundfile",
     "sure_eval.evaluation.tasks.asr.pipeline",
-    "sure_eval.evaluation.tasks.lid.pipeline"
+    "sure_eval.evaluation.tasks.lid.pipeline",
+    "sure_eval.evaluation.tasks.se.pipeline"
   ],
   "max_prepare_attempts": 2
 }

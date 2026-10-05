@@ -51,6 +51,20 @@ TTS example (2-seg expands to the bundle's unique `…__tts` projection):
 /sure_eval model=xs__M40-IndexTTS datasets=aispeech_phy_ar_common_fleurs_v251217__v1.0.2 metrics=utmos source=/abs/path/to/infer_bundle
 ```
 
+SE example (the source must include a clean `reference_audio` per sample):
+
+```text
+/sure_eval model=<approved-se-model> datasets=<se-dataset>__<version>__se source=<sure_infer_run> metrics=si_sdr
+```
+
+SE predictions need both `predictions/<dataset>.txt` and structured
+`predictions/<dataset>.jsonl`, with an existing `prediction.audio_path` in each
+JSONL row. The locked Evaluation Runtime includes `pystoi`, SciPy, and
+SoundFile for `metrics=si_sdr,stoi` and WAV decoding, including float WAV.
+PESQ and model-based quality metrics still require their own engine dependencies.
+Compare enhanced scores against the noisy input on the same clean references;
+successful execution alone does not establish an improvement in speech quality.
+
 KWS wake-word example:
 
 ```text

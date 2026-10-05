@@ -170,9 +170,13 @@ def update_manifest(model_dir: Path, resolved: dict[str, Any]) -> dict[str, Any]
         *(f"artifacts/{name}" for name in DELIVERY_ARTIFACTS),
         "artifacts/artifact_manifest.json",
         "artifacts/deployment_ready.json",
+        "artifacts/sample_outputs.jsonl",
     }
     for key, entry in list(required.items()):
-        if isinstance(entry, dict) and entry.get("path") in generated_paths:
+        if isinstance(entry, dict) and (
+            entry.get("path") in generated_paths
+            or str(entry.get("path") or "").startswith("artifacts/outputs/")
+        ):
             required.pop(key)
     delivery_required = (
         DELIVERY_ARTIFACTS
@@ -208,6 +212,23 @@ def update_manifest(model_dir: Path, resolved: dict[str, Any]) -> dict[str, Any]
             "path": "artifacts/sample_output.json",
             "description": "Bounded inference sample output.",
         }
+    structured_samples = model_dir / "artifacts" / "sample_outputs.jsonl"
+    if structured_samples.is_file():
+        required["sample_outputs_jsonl"] = {
+            "path": "artifacts/sample_outputs.jsonl",
+            "description": "Bounded inference sample records.",
+        }
+    outputs_dir = model_dir / "artifacts" / "outputs"
+    if outputs_dir.is_dir():
+        for output in sorted(outputs_dir.rglob("*")):
+            if output.is_symlink():
+                raise ValueError(f"generated output must not be a symlink: {output}")
+            if output.is_file():
+                relative = output.relative_to(model_dir).as_posix()
+                required[f"file:{relative}"] = {
+                    "path": relative,
+                    "description": f"Generated validation output: {relative}.",
+                }
     fixture_root = model_dir / "fixture"
     fixture_files = sorted(path for path in fixture_root.rglob("*") if path.is_file()) if fixture_root.is_dir() else []
     if ready_profile and not any(path.name == "gt.jsonl" for path in fixture_files):
@@ -376,17 +397,36 @@ def portable_path(raw: str, run_dir: Path, model_dir: Path) -> str:
     return raw
 
 
-def normalize_portable_paths(value: Any, run_dir: Path, model_dir: Path, key: str = "") -> Any:
+def normalize_portable_paths(value: Any, run_dir: Path, model_dir: Path) -> Any:
     if isinstance(value, dict):
         return {
-            name: normalize_portable_paths(child, run_dir, model_dir, name)
+            name: normalize_portable_paths(child, run_dir, model_dir)
             for name, child in value.items()
         }
     if isinstance(value, list):
-        return [normalize_portable_paths(child, run_dir, model_dir, key) for child in value]
-    if isinstance(value, str) and (key == "path" or key.endswith("_path")) and Path(value).is_absolute():
+        return [normalize_portable_paths(child, run_dir, model_dir) for child in value]
+    if isinstance(value, str) and Path(value).is_absolute():
         return portable_path(value, run_dir, model_dir)
     return value
+
+
+def normalize_generated_samples(run_dir: Path, model_dir: Path) -> None:
+    for name in ("sample_output.json", "sample_outputs.jsonl", "weights_manifest.json"):
+        source = model_dir / "artifacts" / name
+        if not source.is_file():
+            continue
+        if name.endswith(".jsonl"):
+            rows = [json.loads(line) for line in source.read_text(encoding="utf-8").splitlines() if line.strip()]
+            content = "".join(
+                json.dumps(normalize_portable_paths(row, run_dir, model_dir), ensure_ascii=False, sort_keys=True) + "\n"
+                for row in rows
+            ).encode("utf-8")
+        else:
+            content = json_bytes(normalize_portable_paths(read_json(source), run_dir, model_dir))
+        atomic_write(source, content)
+        run_copy = run_dir / "artifacts" / name
+        if run_copy.is_file():
+            atomic_write(run_copy, content)
 
 
 def finish_manifest(
@@ -447,6 +487,7 @@ def finalize(run_dir: Path, produces: Path) -> dict[str, Any]:
     model_dir, resolved = resolve_model_dir(run_dir)
     ensure_safe_bundle_targets(model_dir, resolved)
     copy_selected_delivery_artifacts(run_dir, model_dir, resolved)
+    normalize_generated_samples(run_dir, model_dir)
     update_manifest(model_dir, resolved)
     package = write_package_gate(run_dir, run_dir / "artifacts" / "package_gate.json", model_dir)
     package["model_dir"] = "."

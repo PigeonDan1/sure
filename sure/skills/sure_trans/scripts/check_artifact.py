@@ -221,11 +221,19 @@ def validate_fixture_manifest(value: dict) -> None:
     audio_field = "reference_audio" if task in {"tts", "vc"} else "audio"
     require(row.get(audio_field) == staged.name, f"fixture gt_jsonl {audio_field} must mirror staged_path")
     declared_annotations = sample.get("annotation_fields")
+    annotation_fields_for_task = (*ANNOTATION_FIELDS, "reference_audio") if task == "se" else ANNOTATION_FIELDS
     actual_annotations = [
-        field for field in ANNOTATION_FIELDS if field in row and has_annotation_value(row[field])
+        field for field in annotation_fields_for_task if field in row and has_annotation_value(row[field])
     ]
     require(actual_annotations, "fixture gt_jsonl must contain a non-empty reference annotation")
     require(declared_annotations == actual_annotations, "fixture sample annotation_fields must mirror gt_jsonl")
+    if task == "se":
+        require(actual_annotations == ["reference_audio"], "SE fixture must identify one clean reference audio")
+        reference_name = Path(str(row.get("reference_audio") or ""))
+        require(reference_name.name == str(reference_name), "SE reference_audio must name a sibling file")
+        reference = staged_dir / reference_name
+        require(reference.is_file() and reference != staged, "SE clean reference audio is missing")
+        require(value.get("reference_sha256") == sha256_file(reference), "SE clean reference checksum changed")
     if task == "tts":
         require(
             isinstance(row.get("prompt_text"), str) and bool(row["prompt_text"].strip()),
@@ -234,15 +242,21 @@ def validate_fixture_manifest(value: dict) -> None:
 
     annotation_source = value.get("annotation_source")
     require(isinstance(annotation_source, dict), "fixture annotation_source must be an object")
+    source_type = annotation_source.get("type")
     require(
-        annotation_source.get("type") == "fixture_expected_sidecar"
+        source_type in ({"fixture_expected_sidecar", "task_registry_fixture"} if task == "se" else {"fixture_expected_sidecar"})
         and annotation_source.get("fallback") is False,
-        "fixture ground truth must come from a reference .expected.json sidecar",
+        "fixture ground truth must come from a reference sidecar or explicit SE gt.jsonl",
     )
     expected_path = Path(str(annotation_source.get("staged_path") or "")).resolve()
     require(expected_path.is_file() and expected_path.parent == staged_dir, "staged fixture annotation sidecar is missing")
     require(value.get("expected_sha256") == sha256_file(expected_path), "fixture annotation sidecar checksum changed")
-    expected = read_object(expected_path)
+    if source_type == "task_registry_fixture":
+        from prepare_fixture import select_se_reference_row
+
+        expected = select_se_reference_row(expected_path, staged.name)
+    else:
+        expected = read_object(expected_path)
     for field in actual_annotations:
         require(row.get(field) == expected.get(field), f"fixture gt_jsonl {field} disagrees with reference sidecar")
     if task == "tts":

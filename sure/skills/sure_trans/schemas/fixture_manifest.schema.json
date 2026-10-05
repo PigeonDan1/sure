@@ -27,7 +27,8 @@
 		"model_id": { "type": "string" },
 		"model_name": { "type": "string" },
 		"model_dir": { "type": "string" },
-		"task_type": { "enum": ["asr", "s2tt", "sv", "tts", "vc"] },
+		"task_type": { "enum": ["asr", "s2tt", "se", "sv", "tts", "vc"] },
+		"reference_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
 		"fixture_source": { "const": "model_specific" },
 		"official": { "const": false },
 		"source_dir": { "type": "string" },
@@ -84,6 +85,10 @@
 	},
 	"allOf": [
 		{
+			"if": { "properties": { "task_type": { "const": "se" } }, "required": ["task_type"] },
+			"then": { "required": ["reference_sha256"] }
+		},
+		{
 			"if": { "properties": { "task_type": { "const": "sv" } }, "required": ["task_type"] },
 			"then": {
 				"required": [
@@ -106,10 +111,7 @@
 				"required": ["expected_sha256"],
 				"properties": {
 					"samples": { "maxItems": 1 },
-					"sample_count": { "const": 1 },
-					"annotation_source": {
-						"properties": { "type": { "const": "fixture_expected_sidecar" } }
-					}
+					"sample_count": { "const": 1 }
 				}
 			}
 		}

@@ -35,6 +35,24 @@ def read_object(path: Path) -> dict:
     return value
 
 
+def select_se_reference_row(path: Path, noisy_name: str) -> dict:
+    matches = []
+    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"{path}:{line_no} is invalid JSON: {error}") from error
+        if not isinstance(row, dict):
+            raise ValueError(f"{path}:{line_no} must be an object")
+        if row.get("audio") == noisy_name or row.get("noisy_audio") == noisy_name:
+            matches.append(row)
+    if len(matches) != 1:
+        raise ValueError(f"SE fixture gt.jsonl must identify exactly one row for {noisy_name}: {path}")
+    return matches[0]
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -238,15 +256,19 @@ def main() -> int:
     destination = staged_dir / source.name
     shutil.copy2(source, destination)
     expected_source = source.with_suffix(".expected.json")
+    from_gt_jsonl = task == "se" and not expected_source.is_file()
+    if from_gt_jsonl:
+        expected_source = source.parent / "gt.jsonl"
     if not expected_source.is_file():
         raise ValueError(
             f"fixture reference annotation is missing: {expected_source}; "
-            "provide a same-stem .expected.json instead of deriving ground truth from model output"
+            "provide a same-stem .expected.json or an SE gt.jsonl instead of deriving ground truth from model output"
         )
-    expected = read_object(expected_source)
+    expected = select_se_reference_row(expected_source, source.name) if from_gt_jsonl else read_object(expected_source)
+    annotation_fields_for_task = (*ANNOTATION_FIELDS, "reference_audio") if task == "se" else ANNOTATION_FIELDS
     annotations = {
         field: expected[field]
-        for field in ANNOTATION_FIELDS
+        for field in annotation_fields_for_task
         if field in expected and has_annotation_value(expected[field])
     }
     if not annotations:
@@ -263,7 +285,18 @@ def main() -> int:
         if not isinstance(prompt_text, str) or not prompt_text.strip():
             raise ValueError(f"TTS fixture annotation requires non-empty prompt_text: {expected_source}")
         gt_extras["prompt_text"] = prompt_text.strip()
-    expected_destination = staged_dir / expected_source.name
+    reference_hash = None
+    if task == "se":
+        reference_name = Path(str(expected.get("reference_audio") or ""))
+        if reference_name.name != str(reference_name) or reference_name.suffix.lower() not in AUDIO_SUFFIXES:
+            raise ValueError("SE fixture reference_audio must name a sibling audio file")
+        reference_source = source.parent / reference_name
+        if not reference_source.is_file() or reference_source.resolve() == source:
+            raise ValueError(f"SE fixture clean reference is missing or equals noisy input: {reference_source}")
+        reference_destination = staged_dir / reference_name
+        shutil.copy2(reference_source, reference_destination)
+        reference_hash = sha256(reference_destination)
+    expected_destination = staged_dir / ("source_gt.jsonl" if from_gt_jsonl else expected_source.name)
     shutil.copy2(expected_source, expected_destination)
     gt_jsonl = staged_dir / "gt.jsonl"
     audio_field = "reference_audio" if task in {"tts", "vc"} else "audio"
@@ -294,11 +327,12 @@ def main() -> int:
         "sha256": sha256(destination),
         "gt_sha256": sha256(gt_jsonl),
         "expected_sha256": sha256(expected_destination),
+        **({"reference_sha256": reference_hash} if reference_hash else {}),
         "size_bytes": destination.stat().st_size,
         "sample_count": 1,
         "link_policy": "copy",
         "annotation_source": {
-            "type": "fixture_expected_sidecar",
+            "type": "task_registry_fixture" if from_gt_jsonl else "fixture_expected_sidecar",
             "source_path": str(expected_source),
             "staged_path": str(expected_destination),
             "fallback": False,
