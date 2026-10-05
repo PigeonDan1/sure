@@ -65,6 +65,74 @@ def load_json(path: Path) -> dict:
     return data
 
 
+def run_command_options(run_dir: Path) -> tuple[str, dict[str, str]]:
+    """Read options using the token rules of sure_onboard's hook parseArgs."""
+    run_path = run_dir / "run.json"
+    if not run_path.is_file():
+        return "", {}
+    run = load_json(run_path)
+    raw_args = run.get("args", "")
+    if not isinstance(raw_args, str):
+        raise ValueError("run.json args must be a string")
+    parsed: dict[str, str] = {}
+    tokens = raw_args.split()
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        index += 1
+        key, separator, value = token.partition("=")
+        if separator:
+            parsed[key] = value
+            continue
+        if (
+            not token.startswith("-")
+            and (token.endswith((".yaml", ".yml")) or "model_input.yaml" in token or "model_input.yml" in token)
+            and not parsed.get("model_input_path")
+        ):
+            parsed["model_input_path"] = token
+            continue
+        key = token[2:] if token.startswith("--") else token[1:] if token.startswith("-") else token
+        if index < len(tokens) and not tokens[index].startswith("-"):
+            parsed[key] = tokens[index]
+            index += 1
+        else:
+            parsed[key] = "true"
+    options = {
+        key: value
+        for key, value in parsed.items()
+        if key in {"package_profile", "device", "force_repair", "skip_download"}
+    }
+    if not options.get("package_profile") and "package" in parsed:
+        options["package_profile"] = parsed["package"]
+    for key in ("force_repair", "skip_download"):
+        if key in options:
+            value = options[key].lower()
+            if value not in {"1", "true", "yes", "y", "on", "0", "false", "no", "n", "off"}:
+                raise ValueError(f"invalid explicit {key}={options[key]!r} in /sure_onboard arguments")
+            options[key] = "true" if value in {"1", "true", "yes", "y", "on"} else "false"
+    return raw_args, options
+
+
+def option_mismatch(options: dict[str, str], resolved: dict) -> str | None:
+    for key, value in options.items():
+        expected: str | bool
+        if key in {"force_repair", "skip_download"}:
+            expected = value == "true"
+            matches = resolved.get(key) is expected
+        else:
+            expected = value
+            matches = resolved.get(key) == expected
+        if not matches:
+            return f"{key}={resolved.get(key)!r} disagrees with explicit /sure_onboard {key}={expected!r}"
+    return None
+
+
+def explicit_option_mismatch(run_dir: Path, resolved: dict) -> str | None:
+    """Reject an artifact that dropped explicit /sure_onboard options."""
+    _, options = run_command_options(run_dir)
+    return option_mismatch(options, resolved)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
@@ -79,6 +147,15 @@ def main() -> int:
         data = load_json(path)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
+        return 1
+
+    try:
+        mismatch = explicit_option_mismatch(Path(args.run_dir), data)
+    except (OSError, ValueError) as exc:
+        print(f"LOAD_MODEL_INPUT gate: cannot verify run options: {exc}", file=sys.stderr)
+        return 1
+    if mismatch:
+        print(f"LOAD_MODEL_INPUT gate: {mismatch}. Rerun materialize_onboard_inputs.py with the explicit options.", file=sys.stderr)
         return 1
 
     missing = [

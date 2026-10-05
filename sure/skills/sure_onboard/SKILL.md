@@ -67,11 +67,12 @@ Recommended first command after start, when a `MODEL_INPUT` path is available:
   --model-input-path sure/handoffs/<model>/model_input.yaml \
   --run-dir <run_dir> \
   --repo-root <repo_root> \
-  --package-profile docker-registry \
   [--image-version <version>]
 ```
 
 This helper emits only `model_input_resolved.json` and `context_selection.json`. For `docker-registry`, it resolves `container_delivery.target_image` from the active site policy before any model download or build; omit `--image-version` to select the next unused patch tag. It deliberately does **not** emit `backend_choice.json` or `build_plan.json`; those must remain agent-research-first outputs based on repository evidence and documented import/load/inference paths.
+
+The helper reads explicit `package`/`package_profile`, `device`, `force_repair`, and `skip_download` options from `<run_dir>/run.json`. Omit the corresponding helper flags to inherit them. If you supply a helper flag, it must agree with the run's explicit option. Without an explicit option, the existing helper defaults apply.
 
 `MODEL_INPUT` should be strict YAML. The helper includes a scalar-only fallback for legacy handoffs with unquoted multiline code snippets, but fallback output is partial and must be treated as a repair signal for `/sure_feed`, not as the preferred format.
 

@@ -29,6 +29,7 @@ from sure.site.container_delivery import resolve_container_image, resolve_contai
 from sure.site.container_registry import resolve_image_version
 from sure.site.loader import load_site_policy
 from sure.runtime.evaluation.task_registry import accepted_tasks, normalize_task
+from check_model_input import option_mismatch, run_command_options
 
 try:
     import yaml
@@ -450,9 +451,9 @@ def main() -> int:
     parser.add_argument("--repo-root", default=".")
     parser.add_argument("--package-profile", choices=sorted(PACKAGE_PROFILES))
     parser.add_argument("--weights-link-policy", default="auto", choices=sorted(WEIGHTS_LINK_POLICIES))
-    parser.add_argument("--device", default="auto", choices=sorted(DEVICES))
-    parser.add_argument("--force-repair", action="store_true")
-    parser.add_argument("--skip-download", action="store_true")
+    parser.add_argument("--device", choices=sorted(DEVICES))
+    parser.add_argument("--force-repair", action="store_true", default=None)
+    parser.add_argument("--skip-download", action="store_true", default=None)
     parser.add_argument("--max-retries", type=int, default=3)
     parser.add_argument("--cpu-fallback-after-cuda-failures", type=int, default=3)
     parser.add_argument("--cuda-repair-attempts-before-cpu", type=int, default=3)
@@ -467,22 +468,38 @@ def main() -> int:
     artifacts_dir = run_dir / "artifacts"
 
     try:
+        run_raw_args, run_options = run_command_options(run_dir)
         model_input = read_model_input(model_input_path)
         deployment_type = normalize_required_string(model_input.get("deployment_type"), "deployment_type")
-        package_profile = args.package_profile or ("none" if deployment_type == "api" else "docker-registry")
+        package_profile = (
+            args.package_profile
+            or run_options.get("package_profile")
+            or ("none" if deployment_type == "api" else "docker-registry")
+        )
+        device = args.device or run_options.get("device") or "auto"
+        force_repair = args.force_repair if args.force_repair is not None else as_bool(run_options.get("force_repair"))
+        skip_download = args.skip_download if args.skip_download is not None else as_bool(run_options.get("skip_download"))
+        mismatch = option_mismatch(run_options, {
+            "package_profile": package_profile,
+            "device": device,
+            "force_repair": force_repair,
+            "skip_download": skip_download,
+        })
+        if mismatch:
+            raise ValueError(mismatch)
         resolved = make_model_input_resolved(
             model_input,
             model_input_path=model_input_path,
             repo_root=repo_root,
             package_profile=package_profile,
             weights_link_policy=args.weights_link_policy,
-            device=args.device,
-            force_repair=bool(args.force_repair),
-            skip_download=bool(args.skip_download),
+            device=device,
+            force_repair=force_repair,
+            skip_download=skip_download,
             max_retries=args.max_retries,
             cpu_fallback_after_cuda_failures=args.cpu_fallback_after_cuda_failures,
             cuda_repair_attempts_before_cpu=args.cuda_repair_attempts_before_cpu,
-            raw_args=args.raw_args,
+            raw_args=args.raw_args or run_raw_args,
             existing_model_dir=args.existing_model_dir,
             image_version=args.image_version,
         )
