@@ -124,6 +124,35 @@ describe("provider retry classification", () => {
 		).toBe(true);
 		expect(isRetryableAssistantError(fauxAssistantMessage("not an error"))).toBe(false);
 	});
+
+	it("classifies the 52x gateway status family with word boundaries", () => {
+		// Cloudflare-style gateway statuses are transient: 520-523 join 524.
+		for (const status of ["520", "521", "522", "523", "524"]) {
+			expect(
+				isRetryableAssistantError(
+					fauxAssistantMessage("", { stopReason: "error", errorMessage: `${status} status code (no body)` }),
+				),
+			).toBe(true);
+		}
+		// The status rule is word-bounded: numeric substrings must not match
+		// through it, and neighboring codes stay out of the family.
+		for (const notAStatus of [
+			"request 1524 failed upstream",
+			"job 5240 queued",
+			"525 status code (no body)",
+			"526 status code (no body)",
+		]) {
+			expect(
+				isRetryableAssistantError(fauxAssistantMessage("", { stopReason: "error", errorMessage: notAStatus })),
+			).toBe(false);
+		}
+		// Quota/billing terminal errors keep priority over the status family.
+		expect(
+			isRetryableAssistantError(
+				fauxAssistantMessage("", { stopReason: "error", errorMessage: "520 quota exceeded" }),
+			),
+		).toBe(false);
+	});
 });
 
 describe("retryAssistantCall", () => {
