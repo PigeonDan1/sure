@@ -129,6 +129,7 @@ Our pi is pi 0.85.1 plus the patches below. This list is the record; keep it cur
 - Responses `cancelled` and `failed` carry `errorMessage: "Response <status>"`.
 - The Anthropic and OpenAI Codex OAuth callback servers time out after five minutes (`LOGIN_TIMEOUT_MS`), matching openrouter.
 - A `PROVIDER_MIDSTREAM_ERROR` diagnostic on `openai-responses` and `azure-openai-responses` streams that drop after a 200, retryable in `retry.ts`, plus `isTerminalRateLimitError` de-duplication and a retry on "produced invalid content".
+- The retryable provider pattern covers the 52x gateway family with word boundaries (`\b52[0-4]\b`) instead of the bare `524` substring.
 
 What the 0.85.1 move changed for users and maintainers is written up in `docs/pi-0.85.1-upgrade.md`.
 

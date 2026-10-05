@@ -43,7 +43,9 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 	"502",
 	"503",
 	"504",
-	"524",
+	// 52x gateway statuses with word boundaries, so numeric substrings
+	// ("1524", "5240") and neighboring codes (525/526) do not match.
+	"\\b52[0-4]\\b",
 	"service.?unavailable",
 	"server.?error",
 	"internal.?error",
