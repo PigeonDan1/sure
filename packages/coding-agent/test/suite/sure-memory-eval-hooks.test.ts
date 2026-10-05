@@ -142,6 +142,7 @@ const COPIED_SCRIPTS = [
 	"publish_memory.py",
 	"check_execution_result.py",
 	"check_execution_surface_compliance.py",
+	"host_env_profile.py",
 	"execution_result_checks.py",
 	"harness_runtime.py",
 	"container_execution.py",

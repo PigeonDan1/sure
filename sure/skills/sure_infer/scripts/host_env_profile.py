@@ -1,23 +1,15 @@
 #!/usr/bin/env python3
 """Host environment variables a sanitized child interpreter may keep.
 
-Single source of truth for the two consumers that must never drift apart:
-`python_execution._safe_environment` (the local_python launch env for
-infer_entrypoint.py and, by inheritance through model_child_env, the Model
-Python) and the model-runtime import probe in
-check_execution_surface_compliance.
-
-The POSIX names are the historical launch allowlist. The Windows names are
-system identity values, never credentials: Windows Python needs them during
-import, and stripping them fails the child before any model code runs
-(observed on Win11 26200 with the harness venv: without SystemRoot,
-`import asyncio` dies with WinError 10106 because WSAStartup cannot resolve
-the Winsock service providers; without USERNAME, `getpass.getuser()` falls
-back to the POSIX `pwd` module and raises ModuleNotFoundError; TEMP/USERPROFILE
-back tempfile and the cache homes that HF/torch resolve during import).
+Used by the local Python launcher and the model-runtime import probe.
+The POSIX names preserve the historical launch allowlist. On Windows,
+also retain host identity and directory variables used by Winsock,
+getpass, tempfile and user-directory discovery.
 """
 
 from __future__ import annotations
+
+import sys
 
 POSIX_HOST_ENV = frozenset(
     {
@@ -41,8 +33,7 @@ WINDOWS_HOST_ENV = frozenset(
         "COMSPEC",
         "HOMEDRIVE",
         "HOMEPATH",
-        # Not Windows-native, but Git-Bash parents carry it and path.home()
-        # prefers it over USERPROFILE.
+        # Git Bash parents can export HOME.
         "HOME",
         "LOCALAPPDATA",
         "OS",
@@ -58,4 +49,4 @@ WINDOWS_HOST_ENV = frozenset(
     }
 )
 
-HOST_ENV_ALLOW = POSIX_HOST_ENV | WINDOWS_HOST_ENV
+HOST_ENV_ALLOW = POSIX_HOST_ENV | WINDOWS_HOST_ENV if sys.platform == "win32" else POSIX_HOST_ENV

@@ -6,14 +6,23 @@ Run directly:
 """
 from __future__ import annotations
 
+import os
+import runpy
+import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import host_env_profile
 import python_execution
+
+
+def allowlist_for(platform: str) -> frozenset[str]:
+    with patch.object(sys, "platform", platform):
+        return runpy.run_path(host_env_profile.__file__)["HOST_ENV_ALLOW"]
 
 
 class SharedAllowlistTests(unittest.TestCase):
@@ -33,10 +42,7 @@ class SharedAllowlistTests(unittest.TestCase):
             },
         )
 
-    def test_windows_identity_names_cover_the_import_probe_floor(self) -> None:
-        # The historical probe list: without these, Windows children died on
-        # import (WinError 10106 without SystemRoot, `No module named 'pwd'`
-        # from getpass.getuser() without USERNAME).
+    def test_windows_profile_includes_runtime_identity_and_directories(self) -> None:
         self.assertTrue(
             {
                 "HOME",
@@ -50,7 +56,7 @@ class SharedAllowlistTests(unittest.TestCase):
                 "SYSTEMDRIVE",
                 "OS",
             }
-            <= host_env_profile.HOST_ENV_ALLOW
+            <= allowlist_for("win32")
         )
 
     def test_windows_and_posix_sets_do_not_overlap(self) -> None:
@@ -68,13 +74,42 @@ class SafeEnvironmentTests(unittest.TestCase):
             "SURE_TOKEN": "must-not-leak",
             "SOME_RANDOM_VAR": "dropped",
         }
-        env = python_execution._safe_environment(source, {})
+        with patch.object(python_execution, "HOST_ENV_ALLOW", allowlist_for("win32")):
+            env = python_execution._safe_environment(source, {})
         for key in ("PATH", "SYSTEMROOT", "USERNAME", "TEMP", "USERPROFILE"):
             self.assertEqual(env[key], source[key])
         self.assertNotIn("SURE_TOKEN", env)
         self.assertNotIn("SOME_RANDOM_VAR", env)
         self.assertEqual(env["PYTHONDONTWRITEBYTECODE"], "1")
         self.assertEqual(env["PYTHONNOUSERSITE"], "1")
+
+    def test_posix_filter_does_not_inherit_windows_profile_variables(self) -> None:
+        source = {
+            "PATH": "/usr/bin",
+            "HOME": "/home/runner",
+            "TEMP": "/tmp/custom",
+            "USERNAME": "runner",
+            "SYSTEMROOT": "/unrelated",
+        }
+        with patch.object(python_execution, "HOST_ENV_ALLOW", allowlist_for("linux")):
+            env = python_execution._safe_environment(source, {})
+        self.assertEqual(env, {
+            "PATH": "/usr/bin",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONNOUSERSITE": "1",
+        })
+
+    @unittest.skipUnless(sys.platform == "win32", "requires a Windows child interpreter")
+    def test_windows_child_can_import_asyncio_and_resolve_user(self) -> None:
+        env = python_execution._safe_environment(os.environ, {})
+        result = subprocess.run(
+            [sys.executable, "-c", "import asyncio, getpass; assert getpass.getuser()"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_declared_env_merges_under_the_same_sensitive_filter(self) -> None:
         declared = {

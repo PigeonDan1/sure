@@ -263,8 +263,7 @@ def _live_runtime_probe(
             }
         imports = [str(item) for item in python.get("required_imports") or [] if isinstance(item, str)]
         script = "import importlib,json;[importlib.import_module(n) for n in json.loads(" + repr(json.dumps(imports)) + ")]"
-        # The probe must see the same host env the real launch keeps, so it can
-        # never pass while the launch itself dies on a stripped import path.
+        # Keep host variable selection aligned with local Python launches.
         env = {key: value for key, value in os.environ.items() if key in HOST_ENV_ALLOW}
         env.update({"PYTHONDONTWRITEBYTECODE": "1", "PYTHONNOUSERSITE": "1"})
         try:
