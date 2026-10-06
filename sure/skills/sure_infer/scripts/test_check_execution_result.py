@@ -161,5 +161,114 @@ class CheckExecutionResultTests(unittest.TestCase):
             sys.argv = old_argv
 
 
+class TaskSuffixedProjectionTests(unittest.TestCase):
+    """A source-root dataset is written under its task-suffixed projection stem.
+
+    The gate looked up the product tree by the canonical 2-segment id while every
+    artifact (predictions, prediction_generation_status, validation_payload,
+    references) carries the 3-segment stem recorded in
+    eval_input_resolved.json -> datasets[].jsonl_path.
+    """
+
+    DATASET_ID = "demo_ds__v1.0.2"
+    STEM = "demo_ds__v1.0.2__sd"
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name).resolve()
+        self.run_dir = self.root / "run"
+        self.artifacts = self.run_dir / "artifacts"
+        self.artifacts.mkdir(parents=True)
+        self.product_dir = self.root / "product"
+        self.write_json(
+            self.artifacts / "eval_input_resolved.json",
+            {
+                "model": {"deployment_binding": self._approved()},
+                "datasets": [
+                    {
+                        "name": self.DATASET_ID,
+                        "jsonl_path": str(self.root / "projections" / "sure_benchmark" / "jsonl" / f"{self.STEM}.jsonl"),
+                    }
+                ],
+            },
+        )
+        self.write_surface()
+        self.write_product(rows=2)
+        self.write_result()
+
+    def _approved(self) -> dict:
+        return {
+            "schema": "sure.eval.deployment_binding.v2",
+            "runtime_kind": "container",
+            "target_image_ref": IMAGE_REF,
+            "container": {"tool_names": ["transcribe_audio"]},
+            "policy": {"execution_mode": "container_only", "model_integrity": "image_digest", "host_python_fallback": False},
+            "evidence": {"bundle_identity_sha256": "b" * 64},
+        }
+
+    @staticmethod
+    def write_json(path: Path, payload: dict) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+    def write_surface(self, **overrides: object) -> None:
+        surface = {
+            "execution": {"requested": "local", "path_planned": "local_docker"},
+            "deployment_binding": compliance.expected_binding_summary(self._approved()),
+        }
+        surface.update(overrides)
+        self.write_json(self.artifacts / "execution_surface.json", surface)
+
+    def write_product(self, rows: int, *, stem: str | None = None) -> None:
+        stem = stem or self.STEM
+        predictions = self.product_dir / "predictions"
+        predictions.mkdir(parents=True, exist_ok=True)
+        (predictions / f"{stem}.txt").write_text("".join(f"k{i}\tp{i}\n" for i in range(rows)), encoding="utf-8")
+        self.write_json(
+            self.product_dir / "prediction_generation_status.json",
+            {"datasets": [{"dataset": stem, "status": "completed", "num_expected_samples": rows, "num_generated_samples": rows}]},
+        )
+        self.write_json(
+            self.product_dir / "validation_payload.json",
+            {"is_valid": True, "results": [{"dataset": stem, "is_valid": True, "expected_samples": rows, "provided_predictions": rows}]},
+        )
+        (self.product_dir / "protocol.yaml").write_text("schema: sure.eval.inference_protocol.v1\n", encoding="utf-8")
+        references = self.product_dir / "references" / "sure_benchmark" / "jsonl"
+        references.mkdir(parents=True, exist_ok=True)
+        (references / f"{stem}.jsonl").write_text('{"key": "k0"}\n', encoding="utf-8")
+
+    def write_result(self, **overrides: object) -> None:
+        result = {
+            "job_status": "succeeded",
+            "exit_code": 0,
+            "execution_path": "local_docker",
+            "runtime_kind": "container",
+            "product_dir": str(self.product_dir),
+            "failed_stage": "",
+            "input_digest": "d" * 64,
+            "datasets": [{"dataset": self.DATASET_ID, "expected": 2, "generated": 2, "valid": 2}],
+        }
+        result.update(overrides)
+        self.write_json(self.artifacts / "execution_result.json", result)
+
+    def test_a_suffixed_product_backs_a_canonical_id(self) -> None:
+        errors = gate.gate_errors(self.run_dir, self.artifacts / "execution_result.json")
+        self.assertEqual(errors, [])
+
+    def test_without_the_mapping_the_gate_falls_back_to_the_id(self) -> None:
+        # A legacy eval_input without datasets entries keeps the historical
+        # behavior: files are looked up under the canonical id itself.
+        self.write_json(
+            self.artifacts / "eval_input_resolved.json",
+            {"model": {"deployment_binding": self._approved()}},
+        )
+        self.product_dir = self.root / "product-legacy"
+        self.write_product(rows=2, stem=self.DATASET_ID)
+        self.write_result()
+        errors = gate.gate_errors(self.run_dir, self.artifacts / "execution_result.json")
+        self.assertEqual(errors, [])
+
+
 if __name__ == "__main__":
     unittest.main()
