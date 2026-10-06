@@ -27,6 +27,7 @@ sys.path.insert(0, str(REPO_ROOT / "sure" / "runtime" / "harness"))
 
 from deployment_binding import DeploymentBindingError, load_deployment_binding
 from model_child_env import model_child_env
+from sure.runtime import bundle_content
 from sure.site.loader import SitePolicyError, load_site_policy
 
 
@@ -37,8 +38,9 @@ APPROVAL_GENERATED = {
     "artifacts/publication_result.json",
     "artifacts/approval_ready.json",
 }
-EXCLUDED_DIR_NAMES = {".cache", ".venv", "__pycache__", ".pytest_cache", ".mypy_cache"}
-EXCLUDED_TOP_LEVEL = {"eval_runs", "evaluation_runs", "results"}
+# Keep the existing names as aliases of the shared publication policy.
+EXCLUDED_DIR_NAMES = bundle_content.EXCLUDED_DIR_NAMES
+EXCLUDED_TOP_LEVEL = bundle_content.EXCLUDED_TOP_LEVEL
 SUCCESS = {"pass", "passed", "success", "ready"}
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 IMAGE_DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -348,6 +350,8 @@ def _walk_entries(root: Path, *, publication: bool) -> tuple[list[dict[str, Any]
         if stat.S_ISDIR(mode):
             continue
         if stat.S_ISREG(mode):
+            if excluded_from_publication:
+                continue
             entries.append({"path": relative, "type": "file", "mode": stat.S_IMODE(mode), "size": path.stat().st_size, "sha256": sha256_file(path)})
             continue
         if stat.S_ISLNK(mode):
@@ -400,7 +404,13 @@ def _require_hashes(source: Path, marker: dict[str, Any], findings: list[dict[st
             findings.append(finding("error", "ARTIFACT_HASH_INVALID", f"Invalid declared hash entry: {relative!r}.", f"Rerun /{producer} finalization."))
             continue
         path = (source / relative).resolve()
-        if not is_inside(path, source) or not path.is_file():
+        if not is_inside(path, source):
+            findings.append(finding("error", "ARTIFACT_PATH_INVALID", f"Required artifact is missing or escapes the bundle: {relative}.", f"Rerun /{producer} finalization."))
+            continue
+        if bundle_content.is_excluded(Path(relative)):
+            findings.append(finding("error", "ARTIFACT_PATH_EXCLUDED", f"Required artifact {relative} is excluded from bundle content.", f"Rerun /{producer} finalization so the bundle-content contract decides what is required."))
+            continue
+        if not path.is_file():
             findings.append(finding("error", "ARTIFACT_PATH_INVALID", f"Required artifact is missing or escapes the bundle: {relative}.", f"Rerun /{producer} finalization."))
             continue
         actual = sha256_file(path)
@@ -525,8 +535,7 @@ def plan_repairs(run_dir: Path) -> dict[str, Any]:
 
 
 def _excluded(relative: Path) -> bool:
-    parts = relative.parts
-    return bool(parts) and (parts[0] in EXCLUDED_TOP_LEVEL or any(part in EXCLUDED_DIR_NAMES for part in parts) or relative.as_posix() in APPROVAL_GENERATED)
+    return bundle_content.is_excluded(relative) or relative.as_posix() in APPROVAL_GENERATED
 
 
 def _required_repairs(source: Path) -> list[str]:
