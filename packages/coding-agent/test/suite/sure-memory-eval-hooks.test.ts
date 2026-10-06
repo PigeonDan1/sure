@@ -37,6 +37,7 @@ import type { SureHookContext } from "../../src/core/sure/types.ts";
 // touches the real sure/memory/ of this checkout:
 //   <tmp>/repo/sure/runtime/memory                link to the real shared library
 //   <tmp>/repo/sure/runtime/model                 link to the real model runtime (deployment_binding.py imports it)
+//   <tmp>/repo/sure/runtime/bundle_content.py     copy of the shared bundle policy (same import chain)
 //   <tmp>/repo/sure/runtime/uvenv.py              link for evaluation_runtime import chain
 //   <tmp>/repo/sure/site                          link to the real site loader (same import chain)
 //   <tmp>/repo/sure/runtime/harness/bootstrap.py  fake: reports the local python as the harness python
@@ -232,6 +233,10 @@ function fixture(name: string, options: { publishStub?: boolean } = {}): Fixture
 		symlinkSync(target, link, "junction");
 	}
 	writeFileSync(join(repoRoot, "sure", "runtime", "harness", "bootstrap.py"), FAKE_BOOTSTRAP, "utf-8");
+	copyFileSync(
+		join(REPO_ROOT, "sure", "runtime", "bundle_content.py"),
+		join(repoRoot, "sure", "runtime", "bundle_content.py"),
+	);
 	for (const script of COPIED_SCRIPTS) {
 		copyFileSync(join(REAL_PACKAGE_DIR, "scripts", script), join(scriptsDir, script));
 	}
