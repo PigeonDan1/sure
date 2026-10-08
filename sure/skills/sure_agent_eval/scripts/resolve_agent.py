@@ -46,6 +46,10 @@ from sure_eval.datasets.source_resolver import (  # noqa: E402
 )
 
 RESOLVED_SCHEMA = "sure.agent_eval.spec_resolved.v1"
+# MCP-tool stages whose model declares one of these tasks output enhanced audio
+# instead of text: they may sit at position 0 and at middle positions of the
+# chain (speech-enhancement pre-chain), feeding the next stage's audio_path.
+AUDIO_OUTPUT_TASKS = {"SE", "SPEECH_ENHANCEMENT"}
 
 
 def _utc_now() -> str:
@@ -124,11 +128,6 @@ def _resolve_stage(
             "not an API model; scripts/agent_runner.py drives position 0 through the stage model's "
             "MCP server over the dataset's audio"
         )
-    if position > 0 and mode != "api":
-        raise ValueError(
-            f"{label}: only the first stage may be an MCP-tool model; later stages chain text "
-            "through the API-model pattern (config.yaml with api.base_url)"
-        )
 
     server = config.get("server") if isinstance(config.get("server"), dict) else {}
     server_command = [str(item) for item in server.get("command") or [] if str(item).strip()]
@@ -165,11 +164,15 @@ def _resolve_stage(
         raise ValueError(f"{label}: MCP-tool stage model {model!r} declares no tools[].name in config.yaml")
 
     model_config = config.get("model") if isinstance(config.get("model"), dict) else {}
+    task = str(model_config.get("task") or config.get("task") or config.get("task_type") or "").strip().upper()
+    task_key = task.replace("-", "_").replace(" ", "_")
+    output_modality = "audio" if mode == "mcp_tool" and task_key in AUDIO_OUTPUT_TASKS else "text"
     return {
         "id": stage_id,
         "model": model,
         "mode": mode,
-        "task": str(model_config.get("task") or config.get("task") or "").strip().upper(),
+        "task": task,
+        "output_modality": output_modality,
         "model_dir": str(model_dir),
         "config_path": str(config_path),
         "verdict_path": str(identity["verdict_path"]),
@@ -214,6 +217,37 @@ def _split_csv(value: str) -> list[str]:
     return [item.strip() for item in str(value).split(",") if item.strip()]
 
 
+def _validate_stage_chain(stages: list[dict[str, Any]]) -> None:
+    """Thread each stage's input modality and enforce the chain contract.
+
+    Stage 0 consumes the dataset's audio; every later stage consumes the previous
+    stage's output. An API stage takes text, an MCP-tool stage past position 0
+    takes audio (speech-enhancement pre-chain), and the final stage must output
+    text because predictions/<dataset>.txt and the scoring contract are text.
+    """
+    previous_id: str | None = None
+    previous_output = "audio"
+    for position, stage in enumerate(stages):
+        label = f"stage {stage['id']!r}"
+        stage["input_modality"] = previous_output
+        if stage["mode"] == "api" and previous_output != "text":
+            raise ValueError(
+                f"{label}: an API-model stage takes text input, but stage {previous_id!r} outputs audio; "
+                "chain an mcp_tool ASR stage between them"
+            )
+        if stage["mode"] == "mcp_tool" and position > 0 and previous_output != "audio":
+            raise ValueError(
+                f"{label}: an MCP-tool stage past position 0 consumes audio (audio_path), but stage "
+                f"{previous_id!r} outputs text; later MCP-tool stages are speech-enhancement (audio-to-audio) stages"
+            )
+        previous_id, previous_output = stage["id"], stage["output_modality"]
+    if previous_output != "text":
+        raise ValueError(
+            f"stage {stages[-1]['id']!r}: the final stage must output text (predictions/<dataset>.txt and the "
+            "scoring contract); a pure audio-output chain belongs to /sure_infer + /sure_eval"
+        )
+
+
 def resolve_agent(
     args: argparse.Namespace,
     *,
@@ -239,6 +273,7 @@ def resolve_agent(
         _resolve_stage(stage, position=index, approved_root=approved_root)
         for index, stage in enumerate(spec["stages"])
     ]
+    _validate_stage_chain(stages)
     dataset_source_key = args.dataset_source_key or None
     resolved_datasets = [_resolve_dataset(entry, dataset_source_key=dataset_source_key) for entry in datasets]
     names = [item["dataset"] for item in resolved_datasets]

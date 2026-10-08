@@ -109,6 +109,13 @@ describe("sure_agent_eval command registration", () => {
 		expect(example).toContain("output: text");
 	});
 
+	it("ships an SE pre-chain example", () => {
+		const example = readFileSync(join(PACKAGE_DIR, "examples/agent_se_asr_example.yaml"), "utf-8");
+		expect(example).toContain("input: speech");
+		expect(example).toContain("output: text");
+		expect(example).toContain("model: gtcrn");
+	});
+
 	it("repository discovery finds the package with no diagnostics", () => {
 		const discovered = discoverSureSkillPackages(REPO_ROOT);
 		expect(discovered.diagnostics).toEqual([]);

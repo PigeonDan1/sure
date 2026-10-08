@@ -229,6 +229,57 @@ def extract_text(result: Any) -> str:
     return ""
 
 
+AUDIO_OUTPUT_TASKS = {"SE", "SPEECH_ENHANCEMENT"}
+AUDIO_RESULT_FIELDS = ("audio_path", "path", "generated_audio", "enhanced_audio", "converted_audio", "output_path")
+
+
+def _stage_output_modality(stage: dict[str, Any]) -> str:
+    """Output modality from the resolved plan, with a mode+task fallback for older plans."""
+    recorded = str(stage.get("output_modality") or "").strip().lower()
+    if recorded in ("audio", "text"):
+        return recorded
+    task = str(stage.get("task") or "").strip().upper().replace("-", "_").replace(" ", "_")
+    return "audio" if stage.get("mode") == "mcp_tool" and task in AUDIO_OUTPUT_TASKS else "text"
+
+
+def _audio_result_candidates(result: Any) -> list[str]:
+    if isinstance(result, str):
+        return [result.strip()] if result.strip() else []
+    if isinstance(result, dict):
+        return [
+            str(result[field]).strip()
+            for field in AUDIO_RESULT_FIELDS
+            if isinstance(result.get(field), str) and str(result[field]).strip()
+        ]
+    return []
+
+
+def extract_audio_path(result: Any, *, search_dirs: list[Path], input_path: str = "") -> str:
+    """Resolve an audio-output stage's enhanced file to an absolute existing path.
+
+    Relative paths are resolved against each search dir (working_dir first, then
+    model_dir). A candidate that resolves back to the stage's own input is
+    skipped: a wrapper echoing its arguments dict would otherwise silently chain
+    the unenhanced input.
+    """
+    tried: list[str] = []
+    for candidate in _audio_result_candidates(result):
+        bases = [Path(candidate)] if Path(candidate).is_absolute() else [Path(search_dir) / candidate for search_dir in search_dirs]
+        for base in bases:
+            resolved = str(base.resolve())
+            tried.append(resolved)
+            if input_path and resolved == str(Path(input_path).resolve()):
+                continue
+            if base.is_file():
+                return resolved
+    raise RuntimeError(f"no enhanced audio file found in tool result; tried {tried!r}")
+
+
+def _safe_key(key: str) -> str:
+    """Flatten a dataset key into a single path segment for enhanced-audio filenames."""
+    return "".join(char if char.isalnum() or char in "._-" else "_" for char in key) or "sample"
+
+
 def call_chat_completion(api: dict[str, Any], prompt: str, *, env: dict[str, str] | None = None) -> str:
     """One OpenAI-compatible chat completion against an API-model stage."""
     environ = env if env is not None else os.environ
@@ -373,38 +424,78 @@ def run_agent(
                 raise
 
             prediction_path = product_dir / "predictions" / f"{dataset_id}.txt"
+            # Per-SE-stage evidence of the enhanced audio actually consumed by the next stage.
+            audio_stages = [stage for stage in stages if _stage_output_modality(stage) == "audio"]
+            evidence_handles: dict[str, Any] = {}
+            for stage in audio_stages:
+                evidence_path = product_dir / "enhanced" / str(stage["id"]) / f"{dataset_id}.tsv"
+                evidence_path.parent.mkdir(parents=True, exist_ok=True)
+                evidence_handles[str(stage["id"])] = evidence_path.open("w", encoding="utf-8")
             generated = 0
-            with prediction_path.open("w", encoding="utf-8") as predictions:
-                for row in rows:
-                    key = str(row.get("key") or "")
-                    position = 0
-                    try:
-                        value: Any = str(row.get("path") or "")
-                        for position, stage in enumerate(stages):
-                            if position == 0:
-                                if stage["id"] not in mcp_callers:
-                                    mcp_callers[stage["id"]] = caller_factory(stage)
-                                answer = extract_text(mcp_callers[stage["id"]]({"audio_path": value}))
-                            else:
-                                prompt = render_prompt(
-                                    str(stage.get("prompt_template") or ""),
-                                    text=str(value),
-                                    target_language=str(dataset.get("translation_language") or ""),
-                                    source_language=str(dataset.get("language") or ""),
-                                    dataset=dataset_id,
-                                    key=key,
-                                )
-                                answer = effective_api_caller(dict(stage["api"]), prompt)
-                            if not str(answer).strip():
-                                raise RuntimeError(f"stage {stage['id']!r} returned an empty answer")
-                            value = str(answer).strip()
-                    except Exception as exc:  # noqa: BLE001 - recorded as the terminal failure
-                        result["failed_stage"] = str(stages[min(position, len(stages) - 1)]["id"])
-                        result["failed_dataset"] = dataset_id
-                        result["error"] = f"sample {key}: {exc}"
-                        raise
-                    predictions.write(f"{key}\t{_tsv_safe(value)}\n")
-                    generated += 1
+            try:
+                with prediction_path.open("w", encoding="utf-8") as predictions:
+                    for row in rows:
+                        key = str(row.get("key") or "")
+                        position = 0
+                        try:
+                            value = str(row.get("path") or "")
+                            kind = "audio"
+                            for position, stage in enumerate(stages):
+                                if stage["mode"] == "mcp_tool":
+                                    if stage["id"] not in mcp_callers:
+                                        mcp_callers[stage["id"]] = caller_factory(stage)
+                                    arguments = {"audio_path": value}
+                                    if _stage_output_modality(stage) == "audio":
+                                        # mkdirs only for audio-output stages: a text stage must not
+                                        # grow the product tree when a later stage fails.
+                                        output_path = product_dir / "enhanced" / str(stage["id"]) / dataset_id / f"{_safe_key(key)}.wav"
+                                        output_path.parent.mkdir(parents=True, exist_ok=True)
+                                        arguments["output_path"] = str(output_path)
+                                    answer = mcp_callers[stage["id"]](arguments)
+                                    if _stage_output_modality(stage) == "audio":
+                                        value = extract_audio_path(
+                                            answer,
+                                            search_dirs=[
+                                                Path(str(stage.get("working_dir") or "")),
+                                                Path(stage["model_dir"]),
+                                            ],
+                                            input_path=value,
+                                        )
+                                        kind = "audio"
+                                        evidence_handles[str(stage["id"])].write(f"{key}\t{value}\n")
+                                    else:
+                                        value = extract_text(answer)
+                                        if not value:
+                                            raise RuntimeError(f"stage {stage['id']!r} returned an empty answer")
+                                        kind = "text"
+                                else:
+                                    if kind != "text":
+                                        raise RuntimeError(
+                                            f"stage {stage['id']!r}: an API-model stage takes text input, "
+                                            "but the chain carries audio"
+                                        )
+                                    prompt = render_prompt(
+                                        str(stage.get("prompt_template") or ""),
+                                        text=value,
+                                        target_language=str(dataset.get("translation_language") or ""),
+                                        source_language=str(dataset.get("language") or ""),
+                                        dataset=dataset_id,
+                                        key=key,
+                                    )
+                                    value = str(effective_api_caller(dict(stage["api"]), prompt) or "").strip()
+                                    if not value:
+                                        raise RuntimeError(f"stage {stage['id']!r} returned an empty answer")
+                                    kind = "text"
+                        except Exception as exc:  # noqa: BLE001 - recorded as the terminal failure
+                            result["failed_stage"] = str(stages[min(position, len(stages) - 1)]["id"])
+                            result["failed_dataset"] = dataset_id
+                            result["error"] = f"sample {key}: {exc}"
+                            raise
+                        predictions.write(f"{key}\t{_tsv_safe(value)}\n")
+                        generated += 1
+            finally:
+                for handle in evidence_handles.values():
+                    handle.close()
             manifest["datasets"][dataset_id] = {
                 "prediction_file": f"predictions/{dataset_id}.txt",
                 "sha256": _sha256(prediction_path),
@@ -427,7 +518,13 @@ def run_agent(
             "schema": PROTOCOL_SCHEMA,
             "agent": {field: agent[field] for field in ("name", "task", "input", "output", "spec_sha256")},
             "stages": [
-                {"id": stage["id"], "model": stage["model"], "mode": stage["mode"], "task": stage["task"]}
+                {
+                    "id": stage["id"],
+                    "model": stage["model"],
+                    "mode": stage["mode"],
+                    "task": stage["task"],
+                    "output_modality": _stage_output_modality(stage),
+                }
                 for stage in stages
             ],
             "datasets": [str(dataset["dataset"]) for dataset in datasets],
