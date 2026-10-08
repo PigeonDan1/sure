@@ -798,7 +798,7 @@ def verify_decision(review_path: Path, decision: str, rationale: str | None) -> 
     source = Path(str(source_value.get("canonical") or "")).resolve()
     source_digest, _, source_findings = tree_digest(source)
     if source_findings or source_digest != packet.get("source_digest"):
-        raise ApprovalError("producer source changed after audit")
+        raise ApprovalError("producer source changed after audit (or the approval digest rules changed); rerun audit")
     policy = load_active_policy()
     if policy["sha256"] != packet.get("site_policy_sha256"):
         raise ApprovalError("active site policy changed after audit; rerun audit")
@@ -868,7 +868,7 @@ def publish(run_dir: Path, replace: bool) -> dict[str, Any]:
     source = Path(str(source_value.get("canonical") or "")).resolve()
     source_digest, _, source_findings = tree_digest(source)
     if source_findings or source_digest != packet.get("source_digest"):
-        raise ApprovalError("producer source changed before publication")
+        raise ApprovalError("producer source changed before publication (or the approval digest rules changed); rerun audit")
     candidate = Path(str(packet["candidate_dir"])).resolve()
     candidate_digest, _, findings = tree_digest(candidate, publication=True)
     if findings or candidate_digest != decision.get("candidate_digest"):
