@@ -154,7 +154,9 @@ def main() -> int:
             return fail(f"{gt_jsonl}:{line_no} is not valid JSON: {exc}")
         if not isinstance(row, dict):
             return fail(f"{gt_jsonl}:{line_no} must be a JSON object")
-        audio = next((row.get(field) for field in AUDIO_FIELDS if row.get(field)), None)
+        # Match validate.py: the clean reference is never an SE input.
+        input_fields = ("audio", "noisy_audio", "wav") if task == "se" else AUDIO_FIELDS
+        audio = next((row.get(field) for field in input_fields if row.get(field)), None)
         if not isinstance(audio, str) or not audio:
             return fail(f"{gt_jsonl}:{line_no} must contain a non-empty audio/wav field")
         audio_path = Path(audio)
