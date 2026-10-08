@@ -250,6 +250,33 @@ class InferEntrypointTests(unittest.TestCase):
         languages = {call[call.index("--dataset") + 1]: call[call.index("--language") + 1] for call in self.generate_calls()}
         self.assertEqual(languages, {"ds_a__v1": "zh", "ds_b__v1": "en"})
 
+    def test_source_dataset_language_follows_its_projection_stem(self) -> None:
+        # Source datasets are prepared under a task-suffixed stem, not the canonical id.
+        (self.repo_root / "scripts" / "prepare_sure_dataset.py").write_text(
+            FAKE_PREPARE.lstrip().replace('f"{name}__v1"', 'f"{name}__v1__asr"'), encoding="utf-8"
+        )
+        jsonl_dir = self.datasets_root / "sure_benchmark" / "jsonl"
+        for name in ("ds_a__v1__asr", "ds_b__v1__asr"):
+            (jsonl_dir / f"{name}.jsonl").write_text(json.dumps({"key": "k1", "path": "/audio/k1.wav"}) + "\n", encoding="utf-8")
+        self.input_resolved.write_text(
+            json.dumps(
+                {
+                    "datasets": [
+                        {"name": "ds_a__v1", "language": "zh", "jsonl_path": str(jsonl_dir / "ds_a__v1__asr.jsonl")},
+                        {"name": "ds_b__v1", "language": "en", "jsonl_path": str(jsonl_dir / "ds_b__v1__asr.jsonl")},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        completed = self.run_entrypoint()
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        languages = {
+            call[call.index("--dataset") + 1]: call[call.index("--language") + 1] if "--language" in call else None
+            for call in self.generate_calls()
+        }
+        self.assertEqual(languages, {"ds_a__v1__asr": "zh", "ds_b__v1__asr": "en"})
+
     def test_a_failing_smoke_stops_before_the_full_pass(self) -> None:
         completed = self.run_entrypoint(FAKE_EMPTY_PREDICTIONS="1")
         self.assertNotEqual(completed.returncode, 0)
