@@ -188,6 +188,43 @@ def _rejected_root_hint() -> str:
     return f"Configured allowed_source_roots: {listed}. " if listed else ""
 
 
+def relative_source_candidates(name: str) -> list[tuple[str, str]]:
+    """Accepted roots under which a relative dataset name exists: [(key, absolute_path)].
+
+    Source entries are absolute paths only, so a relative input can never resolve.
+    Callers use this to turn that rejection into the exact absolute path the caller
+    should have passed. A spelling that could escape a root (an absolute path, or a
+    ``..`` segment) is never a candidate, and a candidate must stay inside its root
+    even after symlink resolution.
+    """
+    value, _ = split_source_entry(name)
+    value = str(value or "").strip()
+    if not value:
+        return []
+    relative = Path(value)
+    if relative.is_absolute() or ".." in relative.parts:
+        return []
+    try:
+        source_roots = accepted_source_roots()
+    except Exception:  # a hint must not fail on top of the failure
+        return []
+    found: list[tuple[str, str]] = []
+    for key, root in sorted(source_roots.items()):
+        root_path = Path(root)
+        candidate = root_path / relative
+        try:
+            if not candidate.is_dir():
+                continue
+            resolved = candidate.resolve()
+            if not _is_under(resolved, root_path.resolve()):
+                continue
+        except (OSError, RuntimeError):
+            # Unreadable directories and symlink loops must not hide the input error.
+            continue
+        found.append((key, str(resolved)))
+    return found
+
+
 def resolve_site_source_entry(entry: str, explicit_version: str | None = None, dataset_source_key: str | None = None) -> DatasetSourceRef:
     raw_root, embedded_version = split_source_entry(entry)
     if embedded_version and explicit_version and embedded_version != explicit_version:

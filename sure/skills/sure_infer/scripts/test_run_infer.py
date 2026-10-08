@@ -13,8 +13,13 @@ from pathlib import Path
 from unittest.mock import patch
 
 import check_execution_surface_compliance as compliance
+import check_execution_result as execution_gate
+import prepare_sure_dataset
+import resolve_eval_input
 import run_infer
+from sure_eval.datasets import source_resolver
 from test_deployment_binding import container_side
+from test_source_conversion import make_manager, make_source_tree, make_vad_source_tree
 
 IMAGE_REF = "registry.example.com/sure/demo@sha256:" + "a" * 64
 SOURCE_ENTRY = "/srv/sure/datasets/group/store/ds_pool/demo_ds@v1.0.2"
@@ -248,6 +253,67 @@ class RunInferTests(unittest.TestCase):
         self.assertEqual(result["execution_path"], "local_docker")
         self.assertEqual(surface["execution"]["path_planned"], "local_docker")
 
+    def test_resolved_and_prepared_sources_keep_versions_and_tasks_through_the_gate(self) -> None:
+        pool = self.root / "pool"
+        speech = make_source_tree(pool, "speech", "v1")
+        make_source_tree(pool, "speech", "v2")
+        vad = make_vad_source_tree(pool, "segments", "v1")
+        entries = [f"{speech}@v1", f"{speech}@v2", str(vad)]
+        manager = make_manager(self.root)
+        with (
+            patch.dict(os.environ, {source_resolver.SOURCE_ROOT_ENV: ""}),
+            patch.object(source_resolver, "DEFAULT_SOURCE_ROOTS", {"default": str(pool)}),
+        ):
+            details = resolve_eval_input._dataset_details(manager, entries, [], None)
+            prepared = [
+                prepare_sure_dataset.prepare_dataset(
+                    manager, detail["name"], requested_name=detail["requested_name"], task=detail["task"]
+                )
+                for detail in details
+            ]
+        self.write_inputs(self.container_binding)
+        input_path = self.artifacts / "eval_input_resolved.json"
+        eval_input = json.loads(input_path.read_text(encoding="utf-8"))
+        eval_input["datasets"] = details
+        eval_input["user_input"]["datasets"] = entries
+        input_path.write_text(json.dumps(eval_input), encoding="utf-8")
+        names = [detail["name"] for detail in details]
+        (self.artifacts / "dataset_decision.json").write_text(
+            json.dumps({"selected_datasets": names, "skipped_datasets": [], "selection_basis": ["requested"]}),
+            encoding="utf-8",
+        )
+        predictions = self.product_dir / "predictions"
+        references = self.product_dir / "references" / "sure_benchmark" / "jsonl"
+        predictions.mkdir()
+        references.mkdir(parents=True)
+        statuses, validations = [], []
+        for item in prepared:
+            stem = item["dataset"]
+            projection = Path(item["jsonl_path"])
+            self.assertEqual(stem, projection.stem)
+            (predictions / f"{stem}.txt").write_text("utt1\tprediction\n", encoding="utf-8")
+            (references / f"{stem}.jsonl").write_bytes(projection.read_bytes())
+            statuses.append({"dataset": stem, "status": "completed", "num_expected_samples": 1})
+            validations.append({"dataset": stem, "is_valid": True, "provided_predictions": 1})
+        (self.product_dir / "prediction_generation_status.json").write_text(
+            json.dumps({"datasets": statuses}), encoding="utf-8"
+        )
+        (self.product_dir / "validation_payload.json").write_text(
+            json.dumps({"is_valid": True, "results": validations}), encoding="utf-8"
+        )
+        (self.product_dir / "protocol.yaml").write_text("schema: sure.eval.inference_protocol.v1\n", encoding="utf-8")
+        code, result, _, _ = self.run_container([sys.executable, "-c", "pass"])
+        self.assertEqual(code, 0)
+        self.assertEqual(names, ["speech__v1", "speech__v2", "segments__v1"])
+        self.assertEqual([item["dataset"] for item in prepared], ["speech__v1__asr", "speech__v2__asr", "segments__v1__vad"])
+        self.assertEqual(result["datasets"], [
+            {"dataset": name, "expected": 1, "generated": 1, "valid": 1} for name in names
+        ])
+        result_path = self.artifacts / "execution_result.json"
+        self.assertEqual(execution_gate.gate_errors(self.run_dir, result_path), [])
+        (predictions / "speech__v2__asr.txt").unlink()
+        self.assertTrue(any("speech__v2__asr.txt" in error for error in execution_gate.gate_errors(self.run_dir, result_path)))
+
     def test_surface_tool_name_comes_from_the_approved_binding(self) -> None:
         self.write_inputs(self.container_binding)
         _, _, _, surface = self.run_container([sys.executable, "-c", "pass"])
@@ -371,6 +437,42 @@ class RunInferTests(unittest.TestCase):
         surface = json.loads((self.artifacts / "execution_surface.json").read_text(encoding="utf-8"))
         self.assertEqual(surface["deployment_binding"]["runtime_kind"], "python")
         self.assertNotIn("target_image_ref", surface["deployment_binding"])
+
+
+class DatasetRowsStemTests(unittest.TestCase):
+    """execution_result rows report canonical ids but read the projection stems."""
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.product_dir = Path(self.temp.name) / "product"
+        predictions = self.product_dir / "predictions"
+        predictions.mkdir(parents=True)
+        (predictions / "demo_ds__v1.0.2__sd.txt").write_text("k0\tp0\nk1\tp1\n", encoding="utf-8")
+        (self.product_dir / "prediction_generation_status.json").write_text(
+            json.dumps({"datasets": [{"dataset": "demo_ds__v1.0.2__sd", "status": "completed", "num_expected_samples": 2}]}),
+            encoding="utf-8",
+        )
+        (self.product_dir / "validation_payload.json").write_text(
+            json.dumps({"results": [{"dataset": "demo_ds__v1.0.2__sd", "is_valid": True, "provided_predictions": 2}]}),
+            encoding="utf-8",
+        )
+
+    def test_rows_count_the_projection_stem_but_report_the_canonical_id(self) -> None:
+        rows = run_infer._dataset_rows(
+            self.product_dir,
+            ["demo_ds__v1.0.2"],
+            {"demo_ds__v1.0.2": "demo_ds__v1.0.2__sd"},
+        )
+        self.assertEqual(
+            rows,
+            [{"dataset": "demo_ds__v1.0.2", "expected": 2, "generated": 2, "valid": 2}],
+        )
+
+    def test_rows_fall_back_to_the_name_without_a_mapping(self) -> None:
+        rows = run_infer._dataset_rows(self.product_dir, ["demo_ds__v1.0.2"], {})
+        self.assertEqual(rows[0]["dataset"], "demo_ds__v1.0.2")
+        self.assertEqual(rows[0]["generated"], 0)
 
 
 if __name__ == "__main__":
