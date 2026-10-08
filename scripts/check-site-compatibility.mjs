@@ -191,20 +191,28 @@ try {
 		"-c",
 		"import json, sys; sys.path.insert(0, 'sure/skills/sure_infer/scripts'); from sure_eval.datasets.source_resolver import accepted_source_roots; print(json.dumps(sorted(accepted_source_roots().values())))",
 	]);
-	// The resolver accepts every configured root, not one selected entry.
+	// Every legacy root must still resolve. The resolver accepts the whole
+	// configured set, so a root the legacy policy never named is an addition,
+	// not a compatibility loss -- the same rule this check already applies to
+	// the policy itself. Comparing whole sets would call any new root a break.
 	const sourceRoots = expectedPolicy.datasets.allowed_source_roots;
-	const expectedDatasetRoots = (Array.isArray(sourceRoots) ? sourceRoots : Object.values(sourceRoots)).slice().sort();
+	const legacyDatasetRoots = (Array.isArray(sourceRoots) ? sourceRoots : Object.values(sourceRoots)).slice().sort();
 	let datasetMatches = false;
 	let datasetDetail = datasetProbe.stderr.trim() || datasetProbe.stdout.trim();
 	if (datasetProbe.status === 0) {
+		let resolvedRoots = null;
 		try {
-			datasetMatches = JSON.stringify(JSON.parse(datasetProbe.stdout)) === JSON.stringify(expectedDatasetRoots);
+			resolvedRoots = JSON.parse(datasetProbe.stdout);
 		} catch {
-			datasetMatches = false;
+			resolvedRoots = null;
 		}
-		if (datasetMatches) {
-			datasetDetail = expectedDatasetRoots.join(", ");
-		}
+		const differences = Array.isArray(resolvedRoots)
+			? legacyValueDifferences(legacyDatasetRoots, resolvedRoots)
+			: ["the dataset root probe did not report a root list"];
+		datasetMatches = differences.length === 0;
+		datasetDetail = datasetMatches
+			? `legacy roots retained, resolver accepts ${resolvedRoots.length}`
+			: `${differences.join("; ")}; resolver reported ${datasetProbe.stdout.trim()}`;
 	}
 	record("dataset-root", "path", datasetMatches, datasetDetail);
 
