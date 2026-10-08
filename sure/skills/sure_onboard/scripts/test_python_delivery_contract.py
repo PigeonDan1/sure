@@ -21,6 +21,8 @@ from write_verdict import write_verdict
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR.parents[1] / "sure_infer" / "scripts"))
 from deployment_binding import load_deployment_binding  # noqa: E402
+sys.path.insert(0, str(SCRIPT_DIR.parents[1] / "sure_approve" / "scripts"))
+import approval_core  # noqa: E402
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -120,6 +122,13 @@ class PythonDeliveryContractTests(unittest.TestCase):
 
         fixture_dir = self.model_dir / "fixture" / "asr" / "smoke"
         fixture_dir.mkdir(parents=True)
+        cache = fixture_dir / ".cache"
+        cache.mkdir()
+        (cache / "bookkeeping.json").write_text("{}", encoding="utf-8")
+        checkpoints = self.model_dir / "checkpoints"
+        (checkpoints / ".cache").mkdir(parents=True)
+        (checkpoints / "weights.bin").write_bytes(b"test weights")
+        (checkpoints / ".cache" / "download.lock").write_bytes(b"cache noise")
         (fixture_dir / "sample.wav").write_bytes(b"RIFF-test")
         (fixture_dir / "gt.jsonl").write_text(
             json.dumps({"audio": "sample.wav", "text": "ground truth"}) + "\n",
@@ -140,7 +149,11 @@ class PythonDeliveryContractTests(unittest.TestCase):
                 "samples": [{"audio": "sample.wav"}],
                 "sample_count": 1,
             },
-            "weights_manifest.json": {"weights_ready": True},
+            "weights_manifest.json": {
+                "weights_ready": True, "required": True, "local_dir_name": "checkpoints",
+                "checkpoint_root": str(checkpoints),
+                "resolved_local_model_path": str(checkpoints / "weights.bin"),
+            },
             "env_compat_result.json": {"compat_ok": True},
             "import_result.json": {"import_passed": True},
             "load_result.json": {"load_passed": True},
@@ -203,6 +216,20 @@ class PythonDeliveryContractTests(unittest.TestCase):
         self.assertEqual(binding["schema"], "sure.eval.deployment_binding.v2")
         self.assertEqual(binding["evidence"]["integrity_profile"], "manifest-complete-v1")
         self.assertFalse(any(self.model_artifacts.glob("docker_*.json")))
+        self.assertFalse(any(".cache" in path.split("/") for path in deployment["required_artifact_sha256"]))
+        weights = json.loads((self.model_artifacts / "weights_manifest.json").read_text(encoding="utf-8"))
+        self.assertEqual(weights["checkpoint_root"], "checkpoints")
+        self.assertEqual(weights["resolved_local_model_path"], "checkpoints/weights.bin")
+        candidate = self.root / "candidate" / "demo"
+        candidate.mkdir(parents=True)
+        approval_core._copy_candidate(self.model_dir, candidate)
+        with patch.dict(os.environ, {"SURE_SITE_POLICY": str(self.site_policy)}):
+            relocated_binding = load_deployment_binding(candidate, "demo")
+        self.assertEqual(relocated_binding["evidence"]["bundle_identity_sha256"], deployment["bundle_identity_sha256"])
+        (candidate / "checkpoints" / "weights.bin").write_bytes(b"tampered")
+        with patch.dict(os.environ, {"SURE_SITE_POLICY": str(self.site_policy)}):
+            with self.assertRaisesRegex(ValueError, "hash mismatch"):
+                load_deployment_binding(candidate, "demo")
 
 
 if __name__ == "__main__":

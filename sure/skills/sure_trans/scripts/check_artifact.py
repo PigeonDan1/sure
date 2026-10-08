@@ -11,6 +11,7 @@ from pathlib import Path, PurePosixPath
 import yaml
 
 from vc_exec import default_partition
+from sure.runtime.bundle_content import is_excluded
 
 
 ANNOTATION_FIELDS = (
@@ -613,7 +614,7 @@ def main() -> int:
         actual_payload: set[str] = set()
         for target in declared_destination.rglob("*"):
             relative = target.relative_to(declared_destination)
-            if relative.parts[0] in TRANS_RESERVED_ROOTS:
+            if relative.parts[0] in TRANS_RESERVED_ROOTS or is_excluded(relative):
                 continue
             require(not target.is_symlink(), f"model payload must not contain symlinks: {relative}")
             if target.is_file():

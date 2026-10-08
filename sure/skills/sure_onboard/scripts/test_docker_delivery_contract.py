@@ -12,7 +12,7 @@ import sys
 import tempfile
 import unittest
 import unittest.mock
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import check_container_package
 import write_package_gate as write_package_gate_module
@@ -30,6 +30,7 @@ from write_verdict import write_verdict
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
+STUB_DOCKER_BINARIES = ("docker", "/usr/bin/docker", r"C:\Program Files\Docker\Docker\resources\bin\docker.EXE")
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -222,15 +223,15 @@ class DockerDeliveryContractTests(unittest.TestCase):
 
     def stubbed_docker(self, command: list[str], *args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         """Answer the gate's two docker probes from inside the test process."""
-        # Production resolves an absolute CLI (/usr/bin/docker on Linux CI); match
-        # by basename so the stub stays tied to the argv shape, not the host path.
-        if command and Path(command[0]).name == "docker" and len(command) >= 2 and command[1] == "image":
+        # Recognize POSIX and Windows CLI paths on either test host.
+        binary = PureWindowsPath(command[0]).name.casefold() if command else ""
+        if binary in {"docker", "docker.exe"} and len(command) >= 2 and command[1] == "image":
             return subprocess.CompletedProcess(command, 0, json.dumps([self.image_ref]) + "\n", "")
-        if command and Path(command[0]).name == "docker" and len(command) >= 2 and command[1] == "run":
+        if binary in {"docker", "docker.exe"} and len(command) >= 2 and command[1] == "run":
             return subprocess.CompletedProcess(command, 0, "/runtime/python\n", "")
         return subprocess.CompletedProcess(command, 1, "", f"unexpected docker command: {command}")
 
-    def run_container_gate_with_stubbed_docker(self) -> tuple[int, str]:
+    def run_container_gate_with_stubbed_docker(self, docker_binary: str) -> tuple[int, str]:
         """Run the container gate in this process with subprocess.run stubbed.
 
         fake_docker_env() hands the gate a `#!/bin/sh` shim on PATH, which
@@ -247,7 +248,8 @@ class DockerDeliveryContractTests(unittest.TestCase):
         ]
         harness = {"SURE_HARNESS_RUNTIME_ID": "sure-harness-test", "SURE_HARNESS_LOCK_SHA256": "c" * 64}
         output = io.StringIO()
-        with unittest.mock.patch.object(check_container_package.subprocess, "run", self.stubbed_docker), \
+        with unittest.mock.patch.object(check_container_package, "resolve_docker_binary", return_value=docker_binary), \
+                unittest.mock.patch.object(check_container_package.subprocess, "run", self.stubbed_docker), \
                 unittest.mock.patch.object(sys, "argv", argv), \
                 unittest.mock.patch.dict(os.environ, harness), \
                 contextlib.redirect_stdout(output), \
@@ -273,8 +275,10 @@ class DockerDeliveryContractTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
     def test_container_gate_accepts_a_live_digest_with_docker_stubbed(self) -> None:
-        code, output = self.run_container_gate_with_stubbed_docker()
-        self.assertEqual(code, 0, output)
+        for docker_binary in STUB_DOCKER_BINARIES:
+            with self.subTest(docker_binary=docker_binary):
+                code, output = self.run_container_gate_with_stubbed_docker(docker_binary)
+                self.assertEqual(code, 0, output)
 
     def test_fixture_gate_rejects_an_empty_annotation_value(self) -> None:
         fixture_dir = self.model_dir / "fixture" / "asr" / "smoke"
@@ -312,8 +316,10 @@ class DockerDeliveryContractTests(unittest.TestCase):
     def test_container_gate_derives_legacy_runtime_root_with_docker_stubbed(self) -> None:
         self.validation["harness_runtime"].pop("runtime_root")
         write_json(self.run_artifacts / "docker_validation.json", self.validation)
-        code, output = self.run_container_gate_with_stubbed_docker()
-        self.assertEqual(code, 0, output)
+        for docker_binary in STUB_DOCKER_BINARIES:
+            with self.subTest(docker_binary=docker_binary):
+                code, output = self.run_container_gate_with_stubbed_docker(docker_binary)
+                self.assertEqual(code, 0, output)
 
     def test_container_gate_rejects_runtime_root_outside_manifest_parent(self) -> None:
         self.validation["harness_runtime"]["runtime_root"] = "/opt/sure-harness/other"
