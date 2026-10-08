@@ -397,7 +397,7 @@ def _mandatory_integrity_paths(
         actual_payload: set[str] = set()
         for path in model_dir.rglob("*"):
             relative = path.relative_to(model_dir)
-            if relative.parts[0] in TRANS_RESERVED_ROOTS:
+            if relative.parts[0] in TRANS_RESERVED_ROOTS or is_excluded(relative):
                 continue
             _require(not path.is_symlink(), f"model payload must not contain symlinks: {relative}")
             if path.is_file():

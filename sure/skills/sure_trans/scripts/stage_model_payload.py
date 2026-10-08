@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import shutil
+import sys
 from pathlib import Path
 
 
@@ -23,6 +24,9 @@ RESERVED = {
 }
 REPO_ROOT = Path(__file__).resolve().parents[4]
 MODELS_ROOT = REPO_ROOT / "sure" / "models"
+sys.path.insert(0, str(REPO_ROOT))
+
+from sure.runtime.bundle_content import is_excluded
 
 
 def ensure_safe_parent(root: Path, destination: Path) -> None:
@@ -101,7 +105,7 @@ def main() -> int:
     if source.is_file():
         files = [source]
     else:
-        entries = sorted(source.rglob("*"))
+        entries = sorted(path for path in source.rglob("*") if not is_excluded(path.relative_to(source)))
         symlinks = [path for path in entries if path.is_symlink()]
         if symlinks:
             raise ValueError(f"model payload source must not contain symlinks: {symlinks[0]}")

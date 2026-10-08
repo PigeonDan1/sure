@@ -424,6 +424,62 @@ class TransScriptsTest(unittest.TestCase):
             self.assertNotEqual(rejected.returncode, 0)
             self.assertIn("exactly cover staged payload files", rejected.stdout + rejected.stderr)
 
+    def test_model_payload_skips_excluded_cache_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_dir = self._payload_run_dir(root)
+            cache = root / "delivery" / "model" / "demo" / ".cache" / "huggingface" / "download" / "x.metadata"
+            cache.parent.mkdir(parents=True)
+            cache.write_text("etag\n", encoding="utf-8")
+            subprocess.run(
+                [sys.executable, str(SCRIPTS_DIR / "stage_model_payload.py"), "--run-dir", str(run_dir)],
+                check=True, capture_output=True, text=True,
+            )
+            payload = json.loads(
+                (run_dir / "artifacts" / "model_payload_manifest.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(set(payload["files"]), {"weights.bin", "nested/extra.bin"})
+            self.assertFalse((root / "sure" / "models" / "demo" / ".cache").exists())
+            passed = self._check_model_payload(run_dir)
+            self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
+
+    def test_model_payload_check_ignores_excluded_cache_in_bundle(self) -> None:
+        # A bundle staged before the exclusion, or a runtime writing its cache
+        # into the mounted model dir, must not break exact payload coverage.
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_dir = self._payload_run_dir(root)
+            cache = root / "sure" / "models" / "demo" / ".cache" / "huggingface" / "download" / "x.metadata"
+            cache.parent.mkdir(parents=True)
+            cache.write_text("etag\n", encoding="utf-8")
+            passed = self._check_model_payload(run_dir)
+            self.assertEqual(passed.returncode, 0, passed.stdout + passed.stderr)
+
+    def test_finalized_manifest_requires_no_excluded_paths(self) -> None:
+        from sure.runtime.bundle_content import is_excluded
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_dir = self._payload_run_dir(root)
+            model_dir = root / "sure" / "models" / "demo"
+            (model_dir / "artifacts").mkdir()
+            shutil.copy2(run_dir / "artifacts" / "model_payload_manifest.json", model_dir / "artifacts" / "model_payload_manifest.json")
+            for parent in ("fixture/asr", "artifacts/outputs", "artifacts/local-distributions"):
+                (model_dir / parent).mkdir(parents=True, exist_ok=True)
+                (model_dir / parent / "kept.bin").write_bytes(b"kept")
+                cache = model_dir / parent / ".cache" / "huggingface" / "download" / "x.metadata"
+                cache.parent.mkdir(parents=True)
+                cache.write_text("etag\n", encoding="utf-8")
+            manifest = finalize_trans_bundle.write_artifact_manifest(
+                run_dir, model_dir, {"model_name": "demo", "package_profile": "docker-registry"}
+            )
+            paths = [entry["path"] for entry in manifest["artifacts"]["required"].values()]
+            self.assertIn("fixture/asr/kept.bin", paths)
+            self.assertIn("artifacts/outputs/kept.bin", paths)
+            self.assertIn("artifacts/local-distributions/kept.bin", paths)
+            # approve flags any required path is_excluded as ARTIFACT_PATH_EXCLUDED.
+            self.assertEqual([path for path in paths if is_excluded(Path(path))], [])
+
     def test_output_cleanup_refuses_a_mount_outside_the_run_directory(self) -> None:
         """The gate must not delete a host path the agent chose for it.
 

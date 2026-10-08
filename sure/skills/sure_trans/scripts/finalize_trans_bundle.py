@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
 from check_artifact import validate_fixture_manifest
+from sure.runtime.bundle_content import iter_bundle_files
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -547,7 +548,7 @@ def write_artifact_manifest(run_dir: Path, model_dir: Path, resolved: dict) -> d
     })
     fixture_root = model_dir / "fixture"
     if fixture_root.is_dir():
-        for path in sorted(item for item in fixture_root.rglob("*") if item.is_file()):
+        for path in iter_bundle_files(fixture_root, bundle_root=model_dir):
             relative = path.relative_to(model_dir).as_posix()
             key = f"file:{relative}"
             if key in required:
@@ -577,7 +578,7 @@ def write_artifact_manifest(run_dir: Path, model_dir: Path, resolved: dict) -> d
         }
     outputs_root = model_dir / "artifacts" / "outputs"
     if outputs_root.is_dir():
-        for path in sorted(item for item in outputs_root.rglob("*") if item.is_file()):
+        for path in iter_bundle_files(outputs_root, bundle_root=model_dir):
             relative = path.relative_to(model_dir).as_posix()
             key = f"file:{relative}"
             if key in required:
@@ -588,7 +589,7 @@ def write_artifact_manifest(run_dir: Path, model_dir: Path, resolved: dict) -> d
             }
     distributions_root = model_dir / "artifacts" / "local-distributions"
     if distributions_root.is_dir():
-        for path in sorted(item for item in distributions_root.rglob("*") if item.is_file()):
+        for path in iter_bundle_files(distributions_root, bundle_root=model_dir):
             relative = path.relative_to(model_dir).as_posix()
             key = f"file:{relative}"
             if key in required:

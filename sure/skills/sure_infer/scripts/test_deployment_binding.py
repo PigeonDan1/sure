@@ -720,6 +720,26 @@ class MandatoryIntegrityPathTests(unittest.TestCase):
         with self.assertRaisesRegex(DeploymentBindingError, "weights root is missing"):
             _mandatory_integrity_paths(self.model, {}, {}, "none", None)
 
+    def test_payload_coverage_ignores_excluded_cache_files(self) -> None:
+        (self.model / "weights.bin").write_bytes(b"weights")
+        cache = self.model / ".cache" / "huggingface" / "download" / "x.metadata"
+        cache.parent.mkdir(parents=True)
+        cache.write_text("etag\n", encoding="utf-8")
+        digest = hashlib.sha256(b"weights").hexdigest()
+        write_json(self.model / "artifacts" / "model_payload_manifest.json", {
+            "files": {"weights.bin": {"sha256": digest, "size_bytes": len(b"weights")}},
+            "file_count": 1,
+            "total_bytes": len(b"weights"),
+            "payload_identity_sha256": hashlib.sha256(
+                json.dumps({"weights.bin": digest}, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest(),
+        })
+
+        required = _mandatory_integrity_paths(self.model, {}, {"weights.bin": digest}, "none", "external")
+
+        self.assertIn("weights.bin", required)
+        self.assertNotIn(".cache/huggingface/download/x.metadata", required)
+
     def test_unknown_weights_integrity_is_rejected(self) -> None:
         with self.assertRaisesRegex(DeploymentBindingError, "weights_integrity"):
             _mandatory_integrity_paths(self.model, {}, {}, "none", "extern")
