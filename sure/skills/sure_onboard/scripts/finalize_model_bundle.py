@@ -13,6 +13,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+
+from sure.runtime.bundle_content import is_excluded, iter_bundle_files
+
 from deployment_contract import (
     normalize_harness_runtime,
     read_json,
@@ -176,6 +180,14 @@ def update_manifest(model_dir: Path, resolved: dict[str, Any]) -> dict[str, Any]
         if isinstance(entry, dict) and (
             entry.get("path") in generated_paths
             or str(entry.get("path") or "").startswith("artifacts/outputs/")
+            or (
+                key == f"file:{entry.get('path')}"
+                and entry.get("description") in {
+                    f"Model weight file: {entry.get('path')}.",
+                    f"Bounded smoke fixture file: {entry.get('path')}.",
+                }
+                and is_excluded(Path(str(entry.get("path") or "")))
+            )
         ):
             required.pop(key)
     delivery_required = (
@@ -223,14 +235,14 @@ def update_manifest(model_dir: Path, resolved: dict[str, Any]) -> dict[str, Any]
         for output in sorted(outputs_dir.rglob("*")):
             if output.is_symlink():
                 raise ValueError(f"generated output must not be a symlink: {output}")
-            if output.is_file():
+            if output.is_file() and not is_excluded(output.relative_to(model_dir)):
                 relative = output.relative_to(model_dir).as_posix()
                 required[f"file:{relative}"] = {
                     "path": relative,
                     "description": f"Generated validation output: {relative}.",
                 }
     fixture_root = model_dir / "fixture"
-    fixture_files = sorted(path for path in fixture_root.rglob("*") if path.is_file()) if fixture_root.is_dir() else []
+    fixture_files = iter_bundle_files(fixture_root, bundle_root=model_dir) if fixture_root.is_dir() else []
     if ready_profile and not any(path.name == "gt.jsonl" for path in fixture_files):
         raise ValueError("ready local bundle is missing fixture ground truth")
     if fixture_root.is_dir():
@@ -246,11 +258,7 @@ def update_manifest(model_dir: Path, resolved: dict[str, Any]) -> dict[str, Any]
         weights_manifest = read_json(weights_manifest_path)
         weights_root = resolve_weights_root(model_dir, weights_manifest)
         if weights_root is not None:
-            weight_files = (
-                [weights_root]
-                if weights_root.is_file()
-                else sorted(weight_path for weight_path in weights_root.rglob("*") if weight_path.is_file())
-            )
+            weight_files = iter_bundle_files(weights_root, bundle_root=model_dir)
             if weights_manifest.get("required") is True and not weight_files:
                 raise ValueError(f"required weights root contains no files: {weights_root}")
             for weight_path in weight_files:
@@ -302,6 +310,8 @@ def build_deployment_ready(run_dir: Path, model_dir: Path, resolved: dict[str, A
         relative = Path(raw_path)
         if not raw_path or relative.is_absolute() or ".." in relative.parts:
             raise ValueError(f"finalized artifact path is not portable: {raw_path}")
+        if is_excluded(relative):
+            raise ValueError(f"finalized required artifact is excluded from bundle content: {raw_path}")
         if relative.as_posix() == "artifacts/deployment_ready.json":
             continue
         path = (model_dir / relative).resolve()

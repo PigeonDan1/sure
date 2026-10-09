@@ -37,6 +37,7 @@ import type { SureHookContext } from "../../src/core/sure/types.ts";
 // touches the real sure/memory/ of this checkout:
 //   <tmp>/repo/sure/runtime/memory                link to the real shared library
 //   <tmp>/repo/sure/runtime/model                 link to the real model runtime (deployment_binding.py imports it)
+//   <tmp>/repo/sure/runtime/bundle_content.py     copy of the shared bundle policy (same import chain)
 //   <tmp>/repo/sure/runtime/uvenv.py              link for evaluation_runtime import chain
 //   <tmp>/repo/sure/site                          link to the real site loader (same import chain)
 //   <tmp>/repo/sure/runtime/harness/bootstrap.py  fake: reports the local python as the harness python
@@ -141,6 +142,7 @@ const COPIED_SCRIPTS = [
 	"check_memory_extraction.py",
 	"publish_memory.py",
 	"check_execution_result.py",
+	"dataset_identity.py",
 	"check_execution_surface_compliance.py",
 	"host_env_profile.py",
 	"execution_result_checks.py",
@@ -232,6 +234,10 @@ function fixture(name: string, options: { publishStub?: boolean } = {}): Fixture
 		symlinkSync(target, link, "junction");
 	}
 	writeFileSync(join(repoRoot, "sure", "runtime", "harness", "bootstrap.py"), FAKE_BOOTSTRAP, "utf-8");
+	copyFileSync(
+		join(REPO_ROOT, "sure", "runtime", "bundle_content.py"),
+		join(repoRoot, "sure", "runtime", "bundle_content.py"),
+	);
 	for (const script of COPIED_SCRIPTS) {
 		copyFileSync(join(REAL_PACKAGE_DIR, "scripts", script), join(scriptsDir, script));
 	}
@@ -384,25 +390,25 @@ function scopeWithoutBasis(extra: Record<string, unknown> = {}): Record<string, 
 // The product tree check_execution_result.py cross-checks for a succeeded run:
 // one non-empty prediction row per dataset, completed status and validation rows,
 // protocol.yaml and the reference projection.
-function seedInferenceProduct(fx: Fixture): string {
+function seedInferenceProduct(fx: Fixture, stem = DATASET): string {
 	const root = join(fx.runDir, "product");
 	mkdirSync(join(root, "predictions"), { recursive: true });
 	mkdirSync(join(root, "references", "sure_benchmark", "jsonl"), { recursive: true });
-	writeFileSync(join(root, "predictions", `${DATASET}.txt`), "utt\t文本\n", "utf-8");
+	writeFileSync(join(root, "predictions", `${stem}.txt`), "utt\t文本\n", "utf-8");
 	writeFileSync(
 		join(root, "prediction_generation_status.json"),
 		JSON.stringify({
-			datasets: [{ dataset: DATASET, status: "completed", num_expected_samples: 1, num_generated_samples: 1 }],
+			datasets: [{ dataset: stem, status: "completed", num_expected_samples: 1, num_generated_samples: 1 }],
 		}),
 		"utf-8",
 	);
 	writeFileSync(
 		join(root, "validation_payload.json"),
-		JSON.stringify({ is_valid: true, results: [{ dataset: DATASET, is_valid: true }] }),
+		JSON.stringify({ is_valid: true, results: [{ dataset: stem, is_valid: true }] }),
 		"utf-8",
 	);
 	writeFileSync(join(root, "protocol.yaml"), "schema: sure.eval.inference_protocol.v1\n", "utf-8");
-	writeFileSync(join(root, "references", "sure_benchmark", "jsonl", `${DATASET}.jsonl`), '{"key": "utt"}\n', "utf-8");
+	writeFileSync(join(root, "references", "sure_benchmark", "jsonl", `${stem}.jsonl`), '{"key": "utt"}\n', "utf-8");
 	return root;
 }
 
@@ -536,6 +542,27 @@ describe("sure_infer preToolCall with extract_lessons", () => {
 });
 
 describe.skipIf(!PYTHON_BIN)("sure_infer postToolResult memory wiring", () => {
+	it("passes a task-suffixed product through the real gate with canonical reporting", () => {
+		const fx = fixture("projection-stem");
+		const stem = `${DATASET}__asr`;
+		appendEvents(fx, BASE_EVENTS);
+		seedCheckpoint(fx, { currentUnit: "execute_inference", completedUnits: UNITS_BEFORE_EXECUTE, retries: {} });
+		writeExecutionRecord(fx, {
+			job_status: "succeeded",
+			exit_code: 0,
+			execution_path: "local_docker",
+			product_dir: seedInferenceProduct(fx, stem),
+			datasets: [{ dataset: DATASET, expected: 1, generated: 1, valid: 1 }],
+		});
+		writeArtifact(fx, "eval_input_resolved.json", {
+			model: { deployment_binding: APPROVED_BINDING },
+			datasets: [{ name: DATASET, jsonl_path: join(fx.repoRoot, "projections", `${stem}.jsonl`) }],
+		});
+		const result = postToolResult(fx.ctx);
+		expect(result.ok, result.repair).toBe(true);
+		expect(persist(fx, result).currentUnit).toBe("extract_lessons");
+	});
+
 	it("passing execute_inference enters extract_lessons and builds the run digest into the checkpoint", () => {
 		const fx = fixture("enter-extract");
 		const data = passExecuteInference(fx);

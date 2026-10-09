@@ -31,8 +31,10 @@ from sure_eval.datasets.source_resolver import (
     read_source_language,
     read_source_metadata,
     read_source_task,
+    relative_source_candidates,
     resolve_site_source_entry,
     source_default_task,
+    split_source_entry,
 )
 
 from evaluation_capabilities import default_metrics_for_task_language, supported_metrics_for_task_language
@@ -552,6 +554,35 @@ def _default_metrics(task: str, language: str, engine_root: Path | None) -> list
     return _fallback_default_metrics(task, language)
 
 
+def _unresolved_dataset_error(requested_name: str, jsonl_path: Path) -> EvalInputError:
+    """Why a dataset input resolves to nothing, and what to pass instead.
+
+    Source entries are absolute paths under a configured allowed_source_roots
+    entry; anything else must already exist as a projection under the projection
+    root. A name that is neither must fail here, loudly, with the absolute path
+    the caller meant -- not degrade to an UNKNOWN-task row and fail much later
+    with an unrelated error.
+    """
+    bare, embedded_version = split_source_entry(requested_name)
+    hint = ""
+    candidates = relative_source_candidates(requested_name)
+    if candidates:
+        shown = "; ".join(f"{key} -> {path}" for key, path in candidates)
+        first_key, first_path = candidates[0]
+        suggestion = first_path + (f"@{embedded_version}" if embedded_version else "")
+        root_label = f"allowed_source_roots key '{first_key}'" if first_key else "SURE_DATASET_SOURCE_ROOT"
+        hint = (
+            f" A directory named '{Path(str(bare)).name}' exists under {root_label}: {shown}. "
+            f"Pass the absolute source directory instead: datasets={suggestion}."
+        )
+    return EvalInputError(
+        f"dataset '{requested_name}' resolves to nothing: it is not an absolute source path "
+        f"and no projection jsonl exists at '{jsonl_path}'. "
+        "Source datasets are absolute directories under one of the configured allowed_source_roots "
+        "entries, optionally suffixed @<version>." + hint
+    )
+
+
 def _dataset_details(
     manager: DatasetManager,
     names: list[str],
@@ -601,6 +632,8 @@ def _dataset_details(
         task = _effective_dataset_task(dataset_task, model_task, requested_metrics)
         if not task:
             task = "UNKNOWN"
+        if not source_entry and not info and not jsonl_path.exists():
+            raise _unresolved_dataset_error(requested_name, jsonl_path)
         metrics = requested_metrics or _default_metrics(task, language, engine_root)
         detail = {
             "name": dataset_name,
@@ -644,6 +677,8 @@ def _dataset_details(
             dataset_task = _normalize_task(info.get("task") or first_sample.get("task") or "")
             task = _effective_dataset_task(dataset_task, model_task, requested_metrics)
             language = str(info.get("language") or first_sample.get("language") or "").lower()
+            if not info and not jsonl_path.exists():
+                raise _unresolved_dataset_error(dataset_name, jsonl_path)
             detail = {
                 "name": dataset_name,
                 "requested_name": dataset_name,

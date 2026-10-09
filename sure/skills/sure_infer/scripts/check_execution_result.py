@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import check_execution_surface_compliance as compliance
+from dataset_identity import projection_stems
 from execution_result_checks import validation_errors
 
 
@@ -92,6 +93,10 @@ def gate_errors(run_dir: Path, result_path: Path) -> list[str]:
         for row in validation.get("results", [])
         if isinstance(row, dict) and row.get("dataset")
     } if isinstance(validation, dict) else {}
+    # The product tree names files by the projection stem; the execution_result
+    # rows report the canonical id. eval_input_resolved.json carries the
+    # authoritative per-run mapping between the two.
+    stems = projection_stems(eval_input.get("datasets"))
     if not (product_dir / "protocol.yaml").is_file():
         errors.append(f"protocol.yaml is missing under {product_dir}")
     for row in rows:
@@ -99,23 +104,24 @@ def gate_errors(run_dir: Path, result_path: Path) -> list[str]:
             errors.append("datasets[] entries must name their dataset")
             continue
         name = str(row["dataset"])
-        actual = _nonempty_prediction_rows(product_dir / "predictions" / f"{name}.txt")
+        stem = stems.get(name, name)
+        actual = _nonempty_prediction_rows(product_dir / "predictions" / f"{stem}.txt")
         if actual != row.get("generated"):
             errors.append(
-                f"predictions/{name}.txt has {actual} non-empty rows but execution_result.json claims {row.get('generated')!r}"
+                f"predictions/{stem}.txt has {actual} non-empty rows but execution_result.json claims {row.get('generated')!r}"
             )
-        dataset_status = status_rows.get(name)
+        dataset_status = status_rows.get(stem)
         if dataset_status is None:
-            errors.append(f"prediction_generation_status.json has no entry for {name}")
+            errors.append(f"prediction_generation_status.json has no entry for {stem}")
         elif dataset_status.get("status") != "completed":
-            errors.append(f"prediction_generation_status.json marks {name} as {dataset_status.get('status')!r}, not completed")
-        validation_row = validation_rows.get(name)
+            errors.append(f"prediction_generation_status.json marks {stem} as {dataset_status.get('status')!r}, not completed")
+        validation_row = validation_rows.get(stem)
         if validation_row is None:
-            errors.append(f"validation_payload.json has no result for {name}")
+            errors.append(f"validation_payload.json has no result for {stem}")
         elif validation_row.get("is_valid") is not True:
-            errors.append(f"validation_payload.json marks {name} as invalid")
-        if not (product_dir / "references" / "sure_benchmark" / "jsonl" / f"{name}.jsonl").is_file():
-            errors.append(f"references/sure_benchmark/jsonl/{name}.jsonl is missing under {product_dir}")
+            errors.append(f"validation_payload.json marks {stem} as invalid")
+        if not (product_dir / "references" / "sure_benchmark" / "jsonl" / f"{stem}.jsonl").is_file():
+            errors.append(f"references/sure_benchmark/jsonl/{stem}.jsonl is missing under {product_dir}")
     return errors
 
 

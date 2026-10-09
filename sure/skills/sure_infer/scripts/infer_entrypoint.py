@@ -37,6 +37,7 @@ for _parent in Path(__file__).resolve().parents:
         break
 
 from sure.runtime.evaluation.task_registry import normalize_task, task_profile
+from dataset_identity import projection_stems
 from runtime_roles import same_runtime_executable
 
 STAGES: tuple[str, ...] = (
@@ -368,9 +369,13 @@ def stage_prepare(ctx: Ctx) -> None:
     print(f"Concrete datasets: {' '.join(prepared)}", flush=True)
 
     if resolved_input:
-        for row in _read_json(Path(resolved_input)).get("datasets", []):
+        entries = _read_json(Path(resolved_input)).get("datasets", [])
+        # Generation is keyed by the prepared projection stem, not the canonical id.
+        stems = projection_stems(entries)
+        for row in entries:
             if isinstance(row, dict) and row.get("name") and row.get("language"):
-                ctx.languages[str(row["name"])] = str(row["language"])
+                name = str(row["name"])
+                ctx.languages[stems.get(name, name)] = str(row["language"])
     fallback_language = _env("LANGUAGE")
     if fallback_language:
         for dataset in prepared:

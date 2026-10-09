@@ -31,6 +31,7 @@ from typing import Any
 
 import check_execution_surface_compliance as compliance
 from container_execution import build_local_container_command, container_path, effective_container_exit_code
+from dataset_identity import projection_stems
 from deployment_binding import DEPLOYMENT_BINDING_V1, DEPLOYMENT_BINDING_V2
 from python_execution import build_local_python_command, verify_model_integrity
 
@@ -354,7 +355,7 @@ def _nonempty_prediction_rows(path: Path) -> int:
     return count
 
 
-def _dataset_rows(product_dir: Path, names: list[str]) -> list[dict[str, Any]]:
+def _dataset_rows(product_dir: Path, names: list[str], stems: dict[str, str]) -> list[dict[str, Any]]:
     status_rows = {
         str(row.get("dataset")): row
         for row in _read_json(product_dir / "prediction_generation_status.json").get("datasets", [])
@@ -367,12 +368,15 @@ def _dataset_rows(product_dir: Path, names: list[str]) -> list[dict[str, Any]]:
     }
     rows: list[dict[str, Any]] = []
     for name in names:
-        status = status_rows.get(name, {})
-        validation = validation_rows.get(name, {})
+        # The product tree names files by the projection stem, which for a
+        # task-suffixed source differs from the canonical id we report.
+        stem = stems.get(name, name)
+        status = status_rows.get(stem, {})
+        validation = validation_rows.get(stem, {})
         expected = status.get("num_expected_samples")
         if not isinstance(expected, int):
             expected = validation.get("expected_samples") if isinstance(validation.get("expected_samples"), int) else 0
-        generated = _nonempty_prediction_rows(product_dir / "predictions" / f"{name}.txt")
+        generated = _nonempty_prediction_rows(product_dir / "predictions" / f"{stem}.txt")
         provided = validation.get("provided_predictions") if isinstance(validation.get("provided_predictions"), int) else generated
         invalid = len(validation.get("empty_prediction_keys") or []) + len(validation.get("contract_violation_keys") or [])
         rows.append(
@@ -417,6 +421,7 @@ def main() -> int:
     binding = _approved_binding(eval_input)
     execution = _execution_plan(eval_input)
     entries, names = _selected_datasets(eval_input, dataset_decision)
+    stems = projection_stems(eval_input.get("datasets"))
     model = eval_input.get("model") if isinstance(eval_input.get("model"), dict) else {}
     model_dir = Path(str(model.get("model_dir") or binding.get("model_dir") or "")).expanduser()
     tool_name = _tool_name(binding, model_dir)
@@ -520,7 +525,7 @@ def main() -> int:
         "product_dir": str(product_dir),
         "failed_stage": _failed_stage(stdout_text) if returncode != 0 else "",
         "input_digest": _input_digest(eval_input_path, decision_path),
-        "datasets": _dataset_rows(product_dir, names),
+        "datasets": _dataset_rows(product_dir, names, stems),
     }
     _write_json(execution_output, execution_payload)
     print(json.dumps({"execution_result": str(execution_output), **execution_payload}, indent=2, ensure_ascii=False))

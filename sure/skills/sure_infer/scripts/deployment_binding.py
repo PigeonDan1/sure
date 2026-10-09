@@ -13,6 +13,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 
+from sure.runtime.bundle_content import is_excluded
 from sure.runtime.model.bootstrap import ModelRuntimeError, manifest_sha256, verify_runtime
 from sure.site.loader import SitePolicyError, load_site_policy
 
@@ -306,7 +307,7 @@ def _bundle_files(root: Path, model_dir: Path, label: str) -> set[str]:
     files: set[str] = set()
     for path in root.rglob("*"):
         _require(not path.is_symlink(), f"{label} must not contain symlinks: {path}")
-        if path.is_file():
+        if path.is_file() and not is_excluded(path.relative_to(model_dir)):
             files.add(path.relative_to(model_dir).as_posix())
     return files
 
@@ -396,7 +397,7 @@ def _mandatory_integrity_paths(
         actual_payload: set[str] = set()
         for path in model_dir.rglob("*"):
             relative = path.relative_to(model_dir)
-            if relative.parts[0] in TRANS_RESERVED_ROOTS:
+            if relative.parts[0] in TRANS_RESERVED_ROOTS or is_excluded(relative):
                 continue
             _require(not path.is_symlink(), f"model payload must not contain symlinks: {relative}")
             if path.is_file():
@@ -443,7 +444,8 @@ def _mandatory_integrity_paths(
                 weights_root = (model_dir / _portable_relative(local_dir_name, "weights local_dir_name")).resolve()
                 if weights_root.is_file():
                     _require(not (model_dir / local_dir_name).is_symlink(), "weights file must not be a symlink")
-                    weight_files = {weights_root.relative_to(model_dir.resolve()).as_posix()}
+                    relative = weights_root.relative_to(model_dir.resolve())
+                    weight_files = set() if is_excluded(relative) else {relative.as_posix()}
                 else:
                     weight_files = _bundle_files(weights_root, model_dir, "weights")
                 _require(weight_files or weights.get("required") is not True, "required weights root is empty")
