@@ -53,6 +53,7 @@ ALL_TASK_PLAYBOOKS = [
     "references/task_playbooks/TTS.md",
     "references/task_playbooks/VC.md",
     "references/task_playbooks/KWS.md",
+    "references/task_playbooks/SE.md",
 ]
 ALL_ENV_PLAYBOOKS = [
     "references/playbooks/env_uv.md",
@@ -246,8 +247,10 @@ def task_playbooks_for(task_type: str) -> list[str]:
             "references/task_playbooks/SPEECH_UNDERSTANDING.md",
             "references/task_playbooks/ASR.md",
         ]
-    if task in {"classification", "s2tt", "sd", "se", "ser", "slu", "sv", "tse", "vad"}:
+    if task in {"classification", "s2tt", "sd", "ser", "slu", "sv", "tse", "vad"}:
         return ["references/task_playbooks/SPEECH_UNDERSTANDING.md"]
+    if task == "se":
+        return ["references/task_playbooks/SE.md"]
     if task == "tts":
         return ["references/task_playbooks/TTS.md"]
     if task == "vc":
