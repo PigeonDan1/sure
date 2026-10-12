@@ -21,6 +21,9 @@ class TaskRegistryFixtureTests(unittest.TestCase):
     def test_lid_uses_its_task_specific_playbook(self) -> None:
         self.assertEqual(task_playbooks_for("lid"), ["references/task_playbooks/LID.md"])
 
+    def test_se_uses_its_task_specific_playbook(self) -> None:
+        self.assertEqual(task_playbooks_for("se"), ["references/task_playbooks/SE.md"])
+
     def test_speech_understanding_loads_every_available_atomic_playbook(self) -> None:
         self.assertEqual(
             task_playbooks_for("speech_understanding"),
