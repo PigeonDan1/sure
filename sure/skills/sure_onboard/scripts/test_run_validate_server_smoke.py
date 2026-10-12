@@ -21,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run_validate
+from sure.runtime.uvenv import runtime_python_relative
 
 HERE = Path(__file__).resolve().parent
 
@@ -131,6 +132,32 @@ class DeclarationTests(unittest.TestCase):
         declaration = run_validate.server_declaration(self._model_dir(declared="  mode: stdio_jsonrpc\n"), self.run_dir)
         assert declaration is not None
         self.assertEqual(declaration["protocol"], "mcp")
+
+    def test_the_shorthand_interpreter_is_swapped_for_the_model_venv(self) -> None:
+        # sure_feed scaffolds `command: [".venv/bin/python", "server.py"]`, and by
+        # validation time the model's venv is built. Starting the shorthand
+        # verbatim judges a process inference would never run: on Windows a
+        # `.venv/bin/python` this platform's venv never made, on Linux a PATH
+        # interpreter without the model's dependencies.
+        model_dir = self._model_dir(command="[.venv/bin/python, server.py]")
+        local_python = model_dir / ".venv" / runtime_python_relative()
+        local_python.parent.mkdir(parents=True)
+        local_python.write_text("", encoding="utf-8")
+
+        declaration = run_validate.server_declaration(model_dir, self.run_dir)
+
+        assert declaration is not None
+        self.assertEqual(declaration["command"], [str(local_python), "server.py"])
+
+    def test_a_shorthand_interpreter_with_no_venv_behind_it_is_left_alone(self) -> None:
+        # Pins the case above: the swap substitutes the venv's interpreter when
+        # there is one, it does not rewrite what the config spells.
+        model_dir = self._model_dir(command="[.venv/bin/python, server.py]")
+
+        declaration = run_validate.server_declaration(model_dir, self.run_dir)
+
+        assert declaration is not None
+        self.assertEqual(declaration["command"], [".venv/bin/python", "server.py"])
 
     def test_a_declared_server_must_say_which_framing_it_speaks(self) -> None:
         with self.assertRaisesRegex(ValueError, "no server.protocol"):

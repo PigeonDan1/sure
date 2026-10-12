@@ -304,6 +304,9 @@ def main() -> int:
                              "when given, the schema the server advertises must agree with it")
     parser.add_argument("--list-only", action="store_true",
                         help="check the advertised tool contract and stop, without calling the tool")
+    parser.add_argument("--env-json",
+                        help="JSON object of the environment config.yaml declares for the server; "
+                             "layered over the sanitized child environment the client starts it with")
     parser.add_argument("--cwd")
     parser.add_argument("--timeout", type=float, default=600.0)
     parser.add_argument("--produces", required=True)
@@ -322,6 +325,7 @@ def main() -> int:
     server_command: list[str] = []
     arguments: dict = {}
     input_schema: dict | None = None
+    declared_env: dict[str, str] = {}
 
     try:
         server_command = json.loads(args.server_command)
@@ -334,12 +338,22 @@ def main() -> int:
             input_schema = json.loads(args.input_schema_json)
             if not isinstance(input_schema, dict):
                 raise ValueError("--input-schema-json must be a JSON object")
+        if args.env_json:
+            raw_env = json.loads(args.env_json)
+            if not isinstance(raw_env, dict):
+                raise ValueError("--env-json must be a JSON object")
+            declared_env = {
+                str(key): str(value)
+                for key, value in raw_env.items()
+                if isinstance(value, (str, int, float, bool))
+            }
         if args.list_only and args.protocol != MCP_PROTOCOL:
             raise ValueError("--list-only compares an MCP tools/list; a jsonl server has no tool list")
     except ValueError as exc:
         fatal = f"cannot read the smoke invocation: {exc}"
 
     stderr_handle = None
+    stderr_thread: threading.Thread | None = None
     proc: subprocess.Popen | None = None
     if fatal is None:
         if args.server_stderr_log:
@@ -355,9 +369,22 @@ def main() -> int:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 bufsize=0,
-                env={**model_child_env(), "PYTHONUNBUFFERED": "1"},
+                # The sanitized child environment first, then the model's own
+                # declared values over it -- the order the infer client starts
+                # this server in. Layering them the other way would let a
+                # declared PYTHONPATH or PYTHONHOME be stripped as if it were
+                # harness interpreter state.
+                env={
+                    **model_child_env(),
+                    **declared_env,
+                    "PYTHONUNBUFFERED": "1",
+                    "PYTHONIOENCODING": "utf-8",
+                },
             )
-            threading.Thread(target=_drain_stderr, args=(proc, server_stderr, stderr_handle), daemon=True).start()
+            stderr_thread = threading.Thread(
+                target=_drain_stderr, args=(proc, server_stderr, stderr_handle), daemon=True
+            )
+            stderr_thread.start()
             lines: queue.Queue = queue.Queue()
             threading.Thread(target=_drain, args=(proc.stdout, lines), daemon=True).start()
 
@@ -388,6 +415,12 @@ def main() -> int:
                     proc.wait(timeout=15)
                 except subprocess.TimeoutExpired:
                     proc.kill()
+            # A server that died at startup has already written its reason to a
+            # pipe the reader thread may not have drained yet; the evidence below
+            # carries that stderr, and a tail that races with the writer would
+            # report the failure without the line that explains it.
+            if stderr_thread is not None:
+                stderr_thread.join(timeout=5)
     else:
         error = fatal
 
@@ -408,6 +441,7 @@ def main() -> int:
         "stdout_junk_count": len(junk),
         "stdout_junk_tail": list(junk)[-STDERR_TAIL_LINES:],
         "duration_ms": round((time.monotonic() - started) * 1000, 3),
+        "timeout_seconds": args.timeout,
         "error": error,
     }
     try:

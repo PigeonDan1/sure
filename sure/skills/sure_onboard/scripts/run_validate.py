@@ -519,6 +519,13 @@ def server_declaration(model_dir: Path, run_dir: Path) -> dict | None:
     contract = tool_contracts(config, source=f"{model_dir}/config.yaml")[0]
     server = config.get("server") if isinstance(config.get("server"), dict) else {}
     command = [str(item) for item in server.get("command", [])]
+    # `command[0]` is the shorthand the model was built with (`.venv/bin/python`),
+    # not a path that resolves here: the infer client and the runtime inventory
+    # both swap it for the model's own interpreter before launching. A smoke that
+    # starts it verbatim judges a process inference would never run -- on Windows
+    # a `.venv/bin/python` that this platform's venv never made, on Linux a PATH
+    # interpreter without the model's dependencies.
+    command = [str(item) for item in maybe_use_model_local_python(command, shell=False, cwd=model_dir)]
     startup = server.get("startup_timeout_sec")
     startup = float(startup) if isinstance(startup, (int, float)) and startup > 0 else 0.0
     return {
@@ -554,16 +561,20 @@ def drive_declared_server(data: dict, run_dir: Path, model_dir: Path, validation
         return "skipped", "config.yaml omits server.command: the harness fallback wrapper serves MCP"
     produces = run_dir / "artifacts" / "server_smoke.json"
     timeout = float(declaration["timeout"])
+    # The model's declared env, then whatever the artifact declared over it: the
+    # gate's own statement outranks the model's, the way a CLI override outranks
+    # config. The same dict goes to the smoke as `--env-json`, because the runner
+    # builds the server's environment from the sanitized child env and would
+    # otherwise strip a declared `PYTHONPATH`/`PYTHONHOME` back out -- which the
+    # infer client, starting from the same sanitized env, does not do.
+    child_env = {
+        **declaration["env"],
+        **(data.get("env") if isinstance(data.get("env"), dict) else {}),
+    }
     invocation = {
         **data,
         "cwd": str(declaration["cwd"]),
-        # The model's declared env, then whatever the artifact declared over it:
-        # the gate's own statement outranks the model's, the way a CLI override
-        # outranks config.
-        "env": {
-            **declaration["env"],
-            **(data.get("env") if isinstance(data.get("env"), dict) else {}),
-        },
+        "env": child_env,
         "log_path": str(run_dir / "artifacts" / "server_smoke.log"),
         "timeout_seconds": timeout + 60.0,
         "run_command": [
@@ -574,6 +585,7 @@ def drive_declared_server(data: dict, run_dir: Path, model_dir: Path, validation
             "--tool", declaration["tool"],
             "--input-schema-json", json.dumps(declaration["input_schema"]),
             "--arguments-json", json.dumps(declaration["arguments"]),
+            "--env-json", json.dumps(child_env),
             "--cwd", str(declaration["cwd"]),
             "--timeout", f"{timeout:.0f}",
             "--produces", str(produces),

@@ -12,6 +12,7 @@ Run directly:
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -66,6 +67,18 @@ import sys, time
 time.sleep(60)
 """
 
+# Answers one jsonl request with the environment it was started in, so a test
+# can see which variables reached it.
+ENV_FAKE = """
+import json, os, sys
+json.loads(sys.stdin.readline())
+print(json.dumps({
+    "PYTHONPATH": os.environ.get("PYTHONPATH", ""),
+    "PYTHONIOENCODING": os.environ.get("PYTHONIOENCODING", ""),
+    "PYTHONUNBUFFERED": os.environ.get("PYTHONUNBUFFERED", ""),
+}))
+"""
+
 
 class ServerSmokeTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -81,7 +94,8 @@ class ServerSmokeTests(unittest.TestCase):
 
     def _run(self, *, protocol: str, command: list[str], tool: str = "enhance_speech",
              arguments: dict | None = None, timeout: float = 30.0,
-             input_schema: dict | None = None, list_only: bool = False) -> dict:
+             input_schema: dict | None = None, list_only: bool = False,
+             env_json: dict | None = None, runner_env: dict | None = None) -> dict:
         invocation = [
             sys.executable, str(SMOKE),
             "--server-command", json.dumps(command),
@@ -93,9 +107,12 @@ class ServerSmokeTests(unittest.TestCase):
         ]
         if input_schema is not None:
             invocation.extend(["--input-schema-json", json.dumps(input_schema)])
+        if env_json is not None:
+            invocation.extend(["--env-json", json.dumps(env_json)])
         if list_only:
             invocation.append("--list-only")
-        result = subprocess.run(invocation, capture_output=True, text=True)
+        result = subprocess.run(invocation, capture_output=True, text=True,
+                                env={**os.environ, **(runner_env or {})})
         self.assertTrue(self.produces.is_file(), "the smoke must always write evidence")
         evidence = json.loads(self.produces.read_text(encoding="utf-8"))
         evidence["_returncode"] = result.returncode
@@ -144,6 +161,43 @@ class ServerSmokeTests(unittest.TestCase):
         self.assertEqual(evidence["status"], "passed")
         self.assertTrue(evidence["steps"]["single_request"]["ok"])
         self.assertNotIn("initialize", evidence["steps"])
+
+    def test_a_declared_env_reaches_the_server_over_the_sanitized_child_env(self) -> None:
+        # The infer client starts the model server from the sanitized child env
+        # and layers `server.env` over it, so a declared `PYTHONPATH` pointing
+        # into the harness runtime still reaches the server. The runner has to
+        # layer it the same way round: sanitizing last would strip the model's
+        # own declaration as if it were harness interpreter state.
+        root = self.tmp / "harness-runtime"
+        (root / "declared-lib").mkdir(parents=True)
+        declared = str(root / "declared-lib")
+        evidence = self._run(
+            protocol="jsonl",
+            command=self._fake(ENV_FAKE),
+            env_json={"PYTHONPATH": declared},
+            runner_env={"SURE_HARNESS_RUNTIME_ROOT": str(root), "PYTHONPATH": declared},
+        )
+        self.assertEqual(evidence["_returncode"], 0)
+        seen = json.loads(evidence["steps"]["single_request"]["primary_output"])
+        self.assertEqual(seen["PYTHONPATH"], declared)
+        # And the encoding the client adds itself, for a server that would
+        # otherwise write its output under the console code page.
+        self.assertEqual(seen["PYTHONIOENCODING"], "utf-8")
+
+    def test_the_runner_sanitizes_the_harness_pythonpath_it_inherits(self) -> None:
+        # Pins the case above from the other side: with nothing declared, a
+        # `PYTHONPATH` the harness runtime exported for itself must not reach
+        # the model's server.
+        root = self.tmp / "harness-runtime"
+        (root / "runtime-lib").mkdir(parents=True)
+        evidence = self._run(
+            protocol="jsonl",
+            command=self._fake(ENV_FAKE),
+            runner_env={"SURE_HARNESS_RUNTIME_ROOT": str(root), "PYTHONPATH": str(root / "runtime-lib")},
+        )
+        self.assertEqual(evidence["_returncode"], 0)
+        seen = json.loads(evidence["steps"]["single_request"]["primary_output"])
+        self.assertEqual(seen["PYTHONPATH"], "")
 
     def test_a_silent_server_fails_within_the_deadline(self) -> None:
         evidence = self._run(
