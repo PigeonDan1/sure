@@ -33,7 +33,7 @@ class RuntimeInventoryTests(unittest.TestCase):
         (self.model_dir / "Dockerfile").write_text("FROM python:3.12\nWORKDIR /workspace/model\n", encoding="utf-8")
         (self.model_dir / "config.yaml").write_text(
             "task: asr\nmodel:\n  id: demo/asr\n  backend: uv\n"
-            "server:\n  command: [.venv/bin/python, server.py]\n"
+            "server:\n  command: [.venv/bin/python, server.py]\n  protocol: mcp\n"
             "tools:\n  - name: asr_transcribe\nresources:\n  gpu: true\n",
             encoding="utf-8",
         )

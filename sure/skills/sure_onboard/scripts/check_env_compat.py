@@ -267,7 +267,7 @@ def main() -> int:
 
     false_fields = [
         field
-        for field in ("python_version_match", "adapter_protocol_supported", "weights_loadable")
+        for field in ("python_version_match", "weights_loadable")
         if data.get(field) is False
     ]
     if false_fields:

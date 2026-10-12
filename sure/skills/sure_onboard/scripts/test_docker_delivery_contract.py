@@ -55,7 +55,7 @@ class DockerDeliveryContractTests(unittest.TestCase):
         (self.model_dir / "config.yaml").write_text(
             "model:\n  id: demo/asr\n"
             "task: ASR\n"
-            "server:\n  command: [python, server.py]\n"
+            "server:\n  command: [python, server.py]\n  protocol: mcp\n"
             "tools:\n  - name: transcribe_audio\n"
             "resources:\n  gpu: false\n",
             encoding="utf-8",

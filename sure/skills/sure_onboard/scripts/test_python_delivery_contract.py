@@ -47,8 +47,11 @@ class PythonDeliveryContractTests(unittest.TestCase):
         (self.model_dir / "model.py").write_text("VALUE = 1\n", encoding="utf-8")
         (self.model_dir / "server.py").write_text("print('server')\n", encoding="utf-8")
         (self.model_dir / "config.yaml").write_text(
+            # The framing is declared because the gate now refuses a command that
+            # leaves it to the client's default -- the same config this fixture
+            # models, one onboard run older.
             "task: asr\n"
-            "server:\n  command: [.venv/bin/python, server.py]\n  working_dir: .\n"
+            "server:\n  command: [.venv/bin/python, server.py]\n  protocol: mcp\n  working_dir: .\n"
             "tools:\n  - name: predict\n"
             "resources:\n  gpu: false\n",
             encoding="utf-8",

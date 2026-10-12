@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -127,6 +128,50 @@ def resolve_model_dir(run_dir: Path) -> tuple[Path, dict[str, Any]]:
     if not model_dir.is_absolute():
         model_dir = Path.cwd() / model_dir
     return model_dir.resolve(), resolved
+
+
+def declared_server_protocol(config: dict[str, Any], model_dir: Path) -> str | None:
+    """The canonical framing the declared server speaks, refusing a silent default.
+
+    A `server:` block that omits `command` is served by the harness fallback
+    wrapper, which speaks MCP by construction, so there is nothing to declare
+    and this returns None. A block that declares `command` owns the framing on
+    that channel and must name it: `protocol: mcp` (JSON-RPC over stdio, the
+    default the infer client applies when the key is absent) or
+    `protocol: jsonl` (one flat JSON object per line). Letting the default
+    stand for an undeclared server turns "nobody said" into "MCP", so a
+    line-oriented server fails at inference with a protocol error instead of
+    here, where the model directory can still be fixed.
+
+    The returned value is the canonical spelling, normalized by the one alias
+    table in `sure/skills/sure_infer/scripts/server_protocol.py`, so callers
+    never re-derive what a declared alias means.
+    """
+    server = config.get("server") if isinstance(config.get("server"), dict) else {}
+    if not server.get("command"):
+        return None
+    if not (server.get("protocol") or server.get("mode")):
+        raise ValueError(
+            f"{model_dir}/config.yaml declares server.command but no server.protocol. "
+            "Declare the framing that command speaks: 'mcp' for a JSON-RPC stdio server "
+            "(the default the infer client applies when the key is absent) or 'jsonl' for "
+            "a server that reads one flat JSON object per line. Leaving it out makes a "
+            "line-oriented server answer MCP at inference time and fail there."
+        )
+    return _server_framing(server)
+
+
+def _server_framing(server: dict[str, Any]) -> str:
+    """Normalize a declared framing through the one shared alias table."""
+    scripts = Path(__file__).resolve().parents[2] / "sure_infer" / "scripts"
+    if str(scripts) not in sys.path:
+        sys.path.insert(0, str(scripts))
+    from server_protocol import resolve_server_protocol
+
+    try:
+        return resolve_server_protocol(server)
+    except ValueError as exc:
+        raise ValueError(f"config.yaml declares an unsupported server.protocol: {exc}") from exc
 
 
 def resolve_evidence_path(raw: object, run_dir: Path, model_dir: Path) -> Path | None:

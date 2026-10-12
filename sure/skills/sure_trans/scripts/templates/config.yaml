@@ -3,6 +3,9 @@ task: __TASK_TYPE__
 description: Transformed container inference adapter
 server:
   command: __SERVER_COMMAND__
+  # templates/server.py answers MCP JSON-RPC; the framing is declared, never
+  # inferred from the channel.
+  protocol: mcp
   timeout: 600
 tools:
   - name: __TOOL_NAME__

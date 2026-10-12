@@ -5,6 +5,21 @@ model:
   task: SE
 server:
   command: [python, server.py]
+  # server.py speaks MCP JSON-RPC over stdio. A line-oriented server declares
+  # `protocol: jsonl` instead; the framing is never inferred from the channel.
+  protocol: mcp
 tools:
   - name: enhance_speech
     description: Enhance noisy speech and return a WAV path
+    # What server.py advertises on tools/list. A tool a client cannot call --
+    # no declared inputs -- is refused at onboarding rather than at inference.
+    input_schema:
+      type: object
+      properties:
+        audio_path:
+          type: string
+        noisy_audio_path:
+          type: string
+        output_path:
+          type: string
+      required: [audio_path]

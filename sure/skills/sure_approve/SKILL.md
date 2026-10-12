@@ -75,3 +75,5 @@ Audit mode runs units 1-8; approve mode resumes from the prior packet and runs u
 | 11 | `verify_publication` | `approval_ready.json` |
 
 Run only the current unit's script with Harness Python from this package. Each script accepts `--run-dir` and `--produces`; `resolve_approve_input.py` additionally receives invocation parameters. Do not call producer scripts to manufacture missing evidence.
+
+`verify_runtime` re-reads the sealed candidate's own `config.yaml` against the same rules the onboard gate applies: a declared `server.command` must name the framing it speaks (`protocol: mcp` or `jsonl`, never inferred from the channel) and must declare a `tools[]` entry a client can call, because the infer client filters the arguments it sends against `tools[].input_schema.properties`. A Python candidate's declared server is then started -- with the interpreter the deployment binding names, since the published bundle carries no `.venv` -- and the contract it advertises on `tools/list` must agree with the config. Refusing here costs a re-onboard; both defects otherwise surface first at inference, on an already-published bundle.

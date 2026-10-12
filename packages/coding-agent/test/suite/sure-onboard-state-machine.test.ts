@@ -99,6 +99,40 @@ function writePythonShim(modelDir: string): string {
 	return pythonPath;
 }
 
+// The replay's declared server, in the framing its `config.yaml` declares. The
+// VALIDATE_INFER gate drives whatever a config declares, so a bundle that
+// declares a command has to answer: this is the smallest MCP stdio server that
+// does, the same shape as the fake in
+// sure/skills/sure_onboard/scripts/test_run_validate_server_smoke.py. Its
+// advertised `inputSchema` must match the one `config.yaml` declares, which is
+// what the gate compares.
+const REPLAY_SERVER_PY = `
+import json, sys
+SCHEMA = {
+    "type": "object",
+    "properties": {"audio_path": {"type": "string"}},
+    "required": ["audio_path"],
+}
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    request = json.loads(line)
+    rid, method = request.get("id"), request.get("method")
+    if method == "initialize":
+        result = {"protocolVersion": "2024-11-05"}
+    elif method == "tools/list":
+        result = {"tools": [{"name": "synthesize", "inputSchema": SCHEMA}]}
+    elif method == "tools/call":
+        arguments = (request.get("params") or {}).get("arguments") or {}
+        result = {"content": [{"type": "text", "text": json.dumps({
+            "audio_path": arguments.get("audio_path", ""),
+        })}]}
+    elif method == "shutdown":
+        print(json.dumps({"jsonrpc": "2.0", "id": rid, "result": {}}), flush=True)
+        break
+    print(json.dumps({"jsonrpc": "2.0", "id": rid, "result": result}), flush=True)
+`;
+
 function withEnv<T>(name: string, value: string | undefined, fn: () => T): T {
 	const previous = process.env[name];
 	if (value === undefined) {
@@ -1055,8 +1089,17 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 				name === "model.py"
 					? "class Model:\n\tpass\n"
 					: name === "config.yaml"
-						? "server:\n  command: [.venv/bin/python, server.py]\n  working_dir: .\ntools:\n  - name: synthesize\nresources:\n  gpu: false\n"
-						: `${name}\n`;
+						? // A declared command must also declare its framing and a tool a
+							// client can call, and the gate drives it for real: the replay
+							// ships REPLAY_SERVER_PY as `server.py`, so this config is one the
+							// gate can start, list and call. `python3` is the head the runtime
+							// inventory resolves (a bare `python`/`python3` is replaced with
+							// the model's own interpreter), and it resolves on both platforms
+							// the replay runs on.
+							"server:\n  command: [python3, server.py]\n  protocol: mcp\n  working_dir: .\ntools:\n  - name: synthesize\n    input_schema:\n      type: object\n      required: [audio_path]\n      properties:\n        audio_path:\n          type: string\nresources:\n  gpu: false\n"
+						: name === "server.py"
+							? REPLAY_SERVER_PY
+							: `${name}\n`;
 			writeFileSync(join(modelDir, name), content, "utf-8");
 		}
 		const checkpointDir = join(modelDir, "checkpoints", "tiny");
@@ -1245,7 +1288,6 @@ describe("sure_onboard end-to-end state-machine replay", () => {
 			compat_ok: true,
 			device: "cuda",
 			python_version_match: true,
-			adapter_protocol_supported: true,
 			weights_loadable: true,
 			incompatibilities: [],
 		});
@@ -2084,13 +2126,12 @@ describe("sure_onboard new alignment gates", () => {
 		writeArtifact(runDir, "env_compat_result.json", {
 			compat_ok: true,
 			device: "cuda",
-			python_version_match: true,
-			adapter_protocol_supported: false,
+			python_version_match: false,
 			weights_loadable: true,
 		});
 		const result = postToolResult(ctx);
 		expect(result.ok).toBe(false);
-		expect(result.repair).toContain("adapter_protocol_supported");
+		expect(result.repair).toContain("python_version_match");
 	});
 
 	it("blocks direct CPU env compatibility on a CUDA host when device=auto", () => {
@@ -2116,7 +2157,6 @@ describe("sure_onboard new alignment gates", () => {
 			compat_ok: true,
 			device: "cpu",
 			python_version_match: true,
-			adapter_protocol_supported: true,
 			weights_loadable: true,
 			incompatibilities: [],
 		});
@@ -2182,7 +2222,6 @@ describe("sure_onboard new alignment gates", () => {
 				fallback_reason: "CUDA runtime cannot initialize with the host driver; CPU uses the same repo-native path.",
 			},
 			python_version_match: true,
-			adapter_protocol_supported: true,
 			weights_loadable: true,
 			incompatibilities: [],
 		});
@@ -2229,7 +2268,6 @@ describe("sure_onboard new alignment gates", () => {
 				fallback_reason: "CUDA runtime cannot initialize with the current .venv.",
 			},
 			python_version_match: true,
-			adapter_protocol_supported: true,
 			weights_loadable: true,
 			incompatibilities: [],
 		});
@@ -2267,7 +2305,6 @@ describe("sure_onboard new alignment gates", () => {
 			compat_ok: true,
 			device: "cuda",
 			python_version_match: true,
-			adapter_protocol_supported: true,
 			weights_loadable: true,
 		});
 		writeArtifact(runDir, "load_result.json", {
@@ -2314,7 +2351,6 @@ describe("sure_onboard new alignment gates", () => {
 			compat_ok: true,
 			device: "cuda",
 			python_version_match: true,
-			adapter_protocol_supported: true,
 			weights_loadable: true,
 		});
 		writeArtifact(runDir, "load_result.json", {

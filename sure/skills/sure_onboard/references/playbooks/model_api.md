@@ -60,6 +60,7 @@ task: OMNI
 deployment_type: api
 server:
   command: [".venv/bin/python", "server.py"]
+  protocol: mcp                              # 或 jsonl；声明 command 就必须声明 framing
   env:
     DASHSCOPE_API_KEY: "${DASHSCOPE_API_KEY}"  # 从环境读取
 
@@ -68,6 +69,7 @@ task: ASR
 deployment_type: local
 server:
   command: [".venv/bin/python", "server.py"]
+  protocol: mcp                              # 或 jsonl；声明 command 就必须声明 framing
   env:
     MODEL_PATH: "nvidia/parakeet-tdt-0.6b-v2"
     DEVICE: "auto"

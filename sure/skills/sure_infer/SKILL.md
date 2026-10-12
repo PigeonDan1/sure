@@ -103,7 +103,7 @@ Generated prediction runs write `prediction_generation_status.json` with schema
 `sure.eval.prediction_generation_status.v2`. The source of truth is what the
 harness actually sent and where it executed:
 
-- `runtime`: MCP server command, container working directory/Python, exact image ref, and `runtime_inventory.json` v2 summary. Local onboard Python remains evidence only.
+- `runtime`: the model's server command and the framing its `config.yaml` declares (`server.protocol`: `mcp` for JSON-RPC over stdio, `jsonl` for one flat JSON object per line -- the channel never implies the framing, and a declared command must name one), container working directory/Python, exact image ref, and `runtime_inventory.json` v2 summary. Local onboard Python remains evidence only.
 - `environment`: allowlisted safe env values, all env keys, redacted secret-key names, execution path, and device binding.
 - `generation`: protocol resolver output, explicit `--tool-arg` values, argument key policy, and raw-response observation.
 - `datasets`: per-dataset prediction file, structured prediction file, generation count, logs, and status.

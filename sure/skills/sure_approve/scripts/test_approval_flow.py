@@ -578,5 +578,253 @@ class SmokeMirrorTests(unittest.TestCase):
         self.assertNotEqual(mirrored.stat().st_ino, (self.candidate / "checkpoints" / "weights.bin").stat().st_ino)
 
 
+# An MCP server that answers the handshake and advertises the tool contract its
+# config.yaml declares, so the approve-time smoke can be driven end to end
+# without a model.
+MCP_FAKE = """
+import json, sys
+SCHEMA = {
+    "type": "object",
+    "properties": {"audio_path": {"type": "string"}},
+    "required": ["audio_path"],
+}
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    request = json.loads(line)
+    rid, method = request.get("id"), request.get("method")
+    if method == "initialize":
+        result = {"protocolVersion": "2024-11-05"}
+    elif method == "tools/list":
+        result = {"tools": [{"name": "vad", "inputSchema": SCHEMA}]}
+    elif method == "shutdown":
+        print(json.dumps({"jsonrpc": "2.0", "id": rid, "result": {}}), flush=True)
+        break
+    else:
+        result = {}
+    print(json.dumps({"jsonrpc": "2.0", "id": rid, "result": result}), flush=True)
+"""
+
+VAD_CONFIG = (
+    "name: vad\n"
+    "server:\n"
+    "  command: [{interpreter}, server.py]\n"
+    "  protocol: mcp\n"
+    "tools:\n"
+    "  - name: vad\n"
+    "    input_schema:\n"
+    "      type: object\n"
+    "      required: [audio_path]\n"
+    "      properties:\n"
+    "        audio_path:\n"
+    "          type: string\n"
+)
+
+# The same server, but one that reads its own configuration out of the
+# environment and drops dead without it -- the shape of a wrapper that loads
+# weights from `MODEL_PATH` at startup. The name is one nothing else sets, so a
+# pass can only come from `server.env` reaching the child. `PYTHONIOENCODING` is
+# the second half: the client sets it on every server it starts, so a smoke
+# without it judges a Windows server under a console code page the client never
+# gives it.
+NEEDS_ENV_FAKE = '''
+import os, sys
+if os.environ.get("SURE_SMOKE_DECLARED_ENV") != "declared-by-config":
+    sys.exit("SURE_SMOKE_DECLARED_ENV did not arrive")
+if os.environ.get("PYTHONIOENCODING") != "utf-8":
+    sys.exit("PYTHONIOENCODING did not arrive: " + repr(os.environ.get("PYTHONIOENCODING")))
+''' + MCP_FAKE
+
+# Dies at startup with the reason on stderr, the way a wrapper that cannot find
+# its weights does.
+DYING_FAKE = '''
+import sys
+print("no weights under MODEL_PATH: refusing to start", file=sys.stderr, flush=True)
+sys.exit(3)
+'''
+
+
+class ServerContractTests(unittest.TestCase):
+    """The candidate's own config.yaml, read again at approval.
+
+    `verify_server_contract` only needs a directory, so these cases skip the
+    audit/publication fixture and build the two shapes directly.
+    """
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.candidate = Path(temporary.name) / "demo-model"
+        self.candidate.mkdir(parents=True)
+
+    def _config(self, body: str) -> Path:
+        (self.candidate / "config.yaml").write_text(body, encoding="utf-8")
+        return self.candidate
+
+    def test_a_tool_with_no_input_schema_is_refused_before_publication(self) -> None:
+        # The FireRedVAD shape: approved, packaged, and only then found
+        # uncallable by the infer client. Refusing it here costs a re-onboard.
+        self._config(
+            "name: vad\n"
+            "server:\n"
+            "  command: [python, server.py]\n"
+            "  protocol: mcp\n"
+            "tools:\n"
+            "  - name: vad\n"
+            "    description: Voice activity detection returning speech_segments.\n"
+        )
+        with self.assertRaisesRegex(approval_core.ApprovalError, "no input_schema mapping"):
+            approval_core.verify_server_contract(self.candidate, "python")
+
+    def test_a_model_that_declares_no_server_is_left_to_the_harness_wrapper(self) -> None:
+        # The fallback wrapper is MCP by construction and carries its own
+        # schema, so a config with no server block has no tool contract to
+        # check -- refusing it would block every such model from approval.
+        self._config("task: asr\n")
+        evidence = approval_core.verify_server_contract(self.candidate, "python")
+        self.assertEqual(evidence["status"], "passed")
+        self.assertNotIn("contracts", evidence)
+
+    def test_a_declared_command_with_no_declared_framing_is_refused(self) -> None:
+        # The onboard gate refuses this. Approve resolved the same config through
+        # the client's silent default instead, so a bundle the gate would have
+        # stopped was published and only failed once inference started.
+        self._config(VAD_CONFIG.format(interpreter="python").replace("  protocol: mcp\n", ""))
+        with self.assertRaisesRegex(approval_core.ApprovalError, "no server.protocol"):
+            approval_core.verify_server_contract(self.candidate, "python")
+
+    def test_an_unsupported_framing_is_refused_with_the_value_named(self) -> None:
+        # The dialect a hand-authored config arrived in: nothing in the tree
+        # spells MCP this way, and the infer client cannot speak it.
+        self._config(
+            VAD_CONFIG.format(interpreter="python").replace("protocol: mcp", "protocol: jsonrpc-2.0-lines")
+        )
+        with self.assertRaisesRegex(approval_core.ApprovalError, "jsonrpc-2.0-lines"):
+            approval_core.verify_server_contract(self.candidate, "python")
+
+    def test_the_smoke_starts_the_server_with_the_interpreter_the_binding_names(self) -> None:
+        # sure_feed scaffolds `command: [".venv/bin/python", "server.py"]`, and
+        # `_copy_candidate` drops `.venv` on the way into the candidate -- so the
+        # shorthand is not a path the published bundle has. The binding is what
+        # swaps in the interpreter the runtime sealed, and the smoke has to use
+        # it, exactly as the infer client does.
+        (self.candidate / "server.py").write_text(MCP_FAKE, encoding="utf-8")
+        self._config(VAD_CONFIG.format(interpreter=".venv/bin/python"))
+        binding = {
+            "python": {
+                "server_command": [sys.executable, "server.py"],
+                "working_dir": str(self.candidate),
+            }
+        }
+        evidence = approval_core.verify_server_contract(self.candidate, "python", binding)
+        self.assertTrue(evidence["advertised"]["ok"], evidence["advertised"])
+
+    def test_the_shorthand_interpreter_alone_cannot_start_the_sealed_server(self) -> None:
+        # Pins the case above: without the binding there is nothing to launch.
+        # The smoke reports that in its own evidence rather than by raising, so
+        # the caller sees the command it could not start.
+        (self.candidate / "server.py").write_text(MCP_FAKE, encoding="utf-8")
+        self._config(VAD_CONFIG.format(interpreter=".venv/bin/python"))
+        with self.assertRaisesRegex(approval_core.ApprovalError, "cannot start the declared server"):
+            approval_core.verify_server_contract(self.candidate, "python")
+
+    def test_the_smoke_hands_the_server_the_env_its_config_declares(self) -> None:
+        # The infer client starts this server with `server.env` laid over the
+        # harness environment, and a scaffolded wrapper reads `MODEL_PATH` out of
+        # it. A smoke that starts the server on the harness env alone judges a
+        # wrapper broken that never got the configuration it was built around.
+        (self.candidate / "server.py").write_text(NEEDS_ENV_FAKE, encoding="utf-8")
+        self._config(
+            VAD_CONFIG.format(interpreter=".venv/bin/python").replace(
+                "  protocol: mcp\n",
+                "  protocol: mcp\n  env:\n    SURE_SMOKE_DECLARED_ENV: declared-by-config\n",
+            )
+        )
+        binding = {
+            "python": {
+                "server_command": [sys.executable, "server.py"],
+                "working_dir": str(self.candidate),
+            }
+        }
+        evidence = approval_core.verify_server_contract(self.candidate, "python", binding)
+        self.assertTrue(evidence["advertised"]["ok"], evidence["advertised"])
+
+    def test_a_server_whose_declared_env_is_absent_is_still_refused(self) -> None:
+        # Pins the case above in the other direction: the smoke passes the
+        # declared env, it does not relax the check.
+        (self.candidate / "server.py").write_text(NEEDS_ENV_FAKE, encoding="utf-8")
+        self._config(VAD_CONFIG.format(interpreter=".venv/bin/python"))
+        binding = {
+            "python": {
+                "server_command": [sys.executable, "server.py"],
+                "working_dir": str(self.candidate),
+            }
+        }
+        with self.assertRaisesRegex(approval_core.ApprovalError, "does not advertise the tool contract"):
+            approval_core.verify_server_contract(self.candidate, "python", binding)
+
+    def test_a_declared_pythonpath_is_not_sanitized_back_out(self) -> None:
+        # The client sanitizes the harness env and lays `server.env` over it, so
+        # a declared path under the harness runtime root still reaches the
+        # server. Handing the declaration to the runner as its own environment
+        # would have let the sanitizer strip it again -- the same model would
+        # pass here and fail at inference.
+        marker = "sure-declared-lib"
+        (self.candidate / "server.py").write_text(
+            'import os, sys\n'
+            f'if "{marker}" not in os.environ.get("PYTHONPATH", ""):\n'
+            "    sys.exit(\"declared PYTHONPATH did not arrive\")\n" + MCP_FAKE,
+            encoding="utf-8",
+        )
+        self._config(
+            VAD_CONFIG.format(interpreter=".venv/bin/python").replace(
+                "  protocol: mcp\n",
+                f"  protocol: mcp\n  env:\n    PYTHONPATH: /runtime-root/{marker}\n",
+            )
+        )
+        binding = {
+            "python": {
+                "server_command": [sys.executable, "server.py"],
+                "working_dir": str(self.candidate),
+            }
+        }
+        with mock.patch.dict(os.environ, {"SURE_HARNESS_RUNTIME_ROOT": "/runtime-root"}):
+            evidence = approval_core.verify_server_contract(self.candidate, "python", binding)
+        self.assertTrue(evidence["advertised"]["ok"], evidence["advertised"])
+
+    def test_a_device_that_dies_at_startup_is_reported_with_its_stderr(self) -> None:
+        # The evidence carries the server's own stderr and dies with the mirror;
+        # a refusal a reviewer cannot read is one they have to reproduce by hand.
+        (self.candidate / "server.py").write_text(DYING_FAKE, encoding="utf-8")
+        self._config(VAD_CONFIG.format(interpreter=".venv/bin/python"))
+        binding = {
+            "python": {
+                "server_command": [sys.executable, "server.py"],
+                "working_dir": str(self.candidate),
+            }
+        }
+        with self.assertRaisesRegex(approval_core.ApprovalError, "no weights under MODEL_PATH"):
+            approval_core.verify_server_contract(self.candidate, "python", binding)
+
+    def test_the_budget_the_server_got_is_the_one_its_config_declares(self) -> None:
+        # A slow but healthy server must not be judged broken by a gate that
+        # gave it less room than inference would: the deadline is the config's
+        # own startup budget, plus the margin the gate adds for its own work.
+        (self.candidate / "server.py").write_text(MCP_FAKE, encoding="utf-8")
+        self._config(
+            VAD_CONFIG.format(interpreter=".venv/bin/python").replace(
+                "  protocol: mcp\n", "  protocol: mcp\n  startup_timeout_sec: 900\n"
+            )
+        )
+        binding = {
+            "python": {
+                "server_command": [sys.executable, "server.py"],
+                "working_dir": str(self.candidate),
+            }
+        }
+        evidence = approval_core.verify_server_contract(self.candidate, "python", binding)
+        self.assertEqual(evidence["advertised"]["budget_seconds"], 1200)
+
+
 if __name__ == "__main__":
     unittest.main()
