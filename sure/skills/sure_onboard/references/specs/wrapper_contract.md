@@ -48,14 +48,29 @@ class ModelWrapper:
 
 ### server.py
 
-**Purpose**: Service/MCP entrypoint only
+**Purpose**: Service entrypoint only -- the model-local server the harness
+spawns and talks to over stdio.
+
+**Framing**: `server.protocol` in `config.yaml` names how the bytes on that
+channel are framed, and it is never inferred from the channel itself:
+
+- `mcp` (or an alias such as `jsonrpc`): JSON-RPC -- `initialize`,
+  `tools/list`, `tools/call`, `shutdown`. This is also the default the infer
+  client applies when the key is absent.
+- `jsonl`: one flat JSON object per request line, one JSON line back, no
+  handshake.
+
+A line-oriented server that leaves `protocol` unsaid is driven as MCP and fails
+at inference; `config.yaml` that declares `server.command` must therefore name
+its protocol, and VALIDATE_INFER refuses one that does not. The alias table and
+the canonical spelling live in
+`sure/skills/sure_infer/scripts/server_protocol.py` -- do not re-derive them.
 
 **Scope exemption**: A model wrapper does not need to provide its own `server.py`
 with `class MCPServer` when the harness-provided fallback wrapper serves MCP for
 it instead. The harness decides this from `config.yaml`: if the model's `server`
 section omits `command`, `_resolve_server_command()` in
-`sure/skills/sure_infer/scripts/generate_predictions_via_server.py` and
-`sure/skills/sure_infer/scripts/run_model_mcp_smoke.py` launches
+`sure/skills/sure_infer/scripts/generate_predictions_via_server.py` launches
 `model_wrapper_mcp_server.py --model-dir <model_dir>` instead of
 `<model_dir>/server.py`. That adapter implements `initialize`, `tools/list`, and
 `tools/call` itself and calls the model's `model.py` `ModelWrapper` directly (or
@@ -139,6 +154,7 @@ model:
 
 server:
   command: [".venv/bin/python", "server.py"]
+  protocol: mcp          # or: jsonl -- the framing on the channel, never inferred
   env:
     MODEL_PATH: "org/model-id"
   timeout: 300
@@ -210,6 +226,16 @@ def predict(self, input_data: Any) -> Any:
 - Wrapper generation happens after contract passes
 - If wrapper smoke is executed, it should verify the model-local wrapper path only
 - Wrapper smoke must not require unrelated top-level `sure_eval` package extras to be installed
+- A model that declares `server.command` is smoke-tested inside the VALIDATE_INFER
+  gate: `scripts/run_validate.py --kind infer` starts that server and drives it in
+  the framing its `config.yaml` declares, requiring a non-empty primary output. The
+  server is launched the way the infer client launches it -- in the declared
+  `server.working_dir`, with `server.env` merged into its environment -- so a
+  wrapper that loads its weights from `MODEL_PATH` is tested, not starved. The
+  evidence lands in `<run_dir>/artifacts/server_smoke.json`; a tool whose input is
+  not the fixture audio is driven with `<run_dir>/artifacts/server_smoke_input.json`.
+  A model without `server.command` is served by the harness fallback wrapper, which
+  is MCP by construction, and the step is recorded as skipped.
 
 ---
 

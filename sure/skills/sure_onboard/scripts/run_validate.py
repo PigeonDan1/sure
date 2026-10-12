@@ -34,8 +34,19 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "runtime" / "harness"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+# The protocol alias table has one home. Re-deriving it here would let the gate
+# and the infer client drift apart on what "jsonl" is spelled like.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "sure_infer" / "scripts"))
+from deployment_contract import declared_server_protocol
 from model_child_env import model_child_env
+from server_protocol import JSONL_SERVER_PROTOCOL
+from sure.runtime.model_server.tool_contract import tool_contracts
 from sure.runtime.uvenv import runtime_python_relative
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - harness dependency
+    yaml = None
 
 KIND_TO_PASS_KEY = {
     "import": "import_passed",
@@ -364,6 +375,206 @@ def run_validation_command(
     return proc.returncode, elapsed, log_path, detail, cwd
 
 
+def infer_model_dir(data: dict, run_dir: Path) -> Path:
+    """The model directory this run validates, from the artifact or the fixture."""
+    for raw in (data.get("model_dir"), data.get("wrapper_path")):
+        candidate = resolve_path(raw, run_dir)
+        if candidate is not None and candidate.is_dir():
+            return candidate
+    # The hook refuses VALIDATE_INFER without a fixture manifest, so it is a
+    # safe second source for the model dir when the artifact does not name one.
+    manifest = run_dir / "artifacts" / "fixture_manifest.json"
+    if manifest.is_file():
+        candidate = resolve_path(read_json(manifest).get("model_dir"), run_dir)
+        if candidate is not None and candidate.is_dir():
+            return candidate
+    raise ValueError("validate_infer cannot locate the model dir whose declared server it must smoke")
+
+
+def load_model_config(model_dir: Path) -> dict:
+    path = model_dir / "config.yaml"
+    if yaml is None or not path.is_file():
+        return {}
+    value = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return value if isinstance(value, dict) else {}
+
+
+def smoke_arguments(run_dir: Path, input_schema: dict) -> dict:
+    """The tool arguments the smoke drives with, taken from the prepared fixture.
+
+    The fixture gate guarantees every sample carries an audio field, so that
+    audio is the argument unless the tool declares an input the fixture also
+    provides under that name. A tool whose input is not a fixture audio file (a
+    TTS text prompt, say) is driven by an authored
+    `<run_dir>/artifacts/server_smoke_input.json`; the evidence records whatever
+    was actually sent, so a reviewer can see it either way.
+    """
+    authored = run_dir / "artifacts" / "server_smoke_input.json"
+    if authored.is_file():
+        body = read_json(authored)
+        arguments = body.get("arguments") if isinstance(body.get("arguments"), dict) else body
+        if isinstance(arguments, dict) and arguments:
+            return arguments
+        raise ValueError(f"{authored} must hold a non-empty arguments object")
+    manifest = run_dir / "artifacts" / "fixture_manifest.json"
+    if not manifest.is_file():
+        raise ValueError("driving the declared server needs fixture_manifest.json; run prepare_fixture first")
+    samples = read_json(manifest).get("samples")
+    sample = samples[0] if isinstance(samples, list) and samples and isinstance(samples[0], dict) else {}
+    roles = sample.get("audio_roles") if isinstance(sample.get("audio_roles"), dict) else {}
+    properties = input_schema.get("properties") if isinstance(input_schema.get("properties"), dict) else {}
+    required = [name for name in input_schema.get("required", []) if isinstance(name, str)] if isinstance(input_schema.get("required"), list) else []
+    field = next((name for name in [*required, *properties] if name in roles), None)
+    value = roles.get(field or "audio_path") or sample.get("audio_path")
+    if not isinstance(value, str) or not value:
+        raise ValueError(
+            f"the fixture records no audio input for the declared server smoke; "
+            f"author {authored} with the arguments this tool takes"
+        )
+    return {field or "audio_path": value}
+
+
+def declared_server_env(server: dict) -> dict[str, str]:
+    """The env the infer client merges into the child before launching it."""
+    raw = server.get("env")
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(key): str(value)
+        for key, value in raw.items()
+        if isinstance(value, (str, int, float, bool))
+    }
+
+
+def declared_working_dir(server: dict, model_dir: Path) -> Path:
+    """The cwd the server must start in, kept inside the model bundle.
+
+    Same containment rule the infer client applies. Starting the smoke anywhere
+    else exercises a process the model never runs, and a wrapper that resolves
+    its weights relative to `.` then fails for a reason inference would not hit.
+    """
+    raw = server.get("working_dir")
+    if not isinstance(raw, str) or not raw.strip():
+        return model_dir
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        candidate = model_dir / candidate
+    candidate = candidate.resolve()
+    try:
+        candidate.relative_to(model_dir.resolve())
+    except ValueError as exc:
+        raise ValueError(f"config.yaml server.working_dir escapes the model bundle: {raw!r}") from exc
+    if not candidate.is_dir():
+        raise ValueError(f"config.yaml server.working_dir does not exist: {candidate}")
+    return candidate
+
+
+def server_declaration(model_dir: Path, run_dir: Path) -> dict | None:
+    """What VALIDATE_INFER must drive, or None when the harness owns the wrapper.
+
+    A `server:` block without `command` is served by the harness fallback
+    wrapper, which is MCP by construction, so there is nothing model-local to
+    start. A declared `command` must also declare the framing it speaks --
+    `declared_server_protocol` refuses the silent default -- and must declare a
+    tool a client can call: `tool_contracts` refuses a `tools[]` entry with no
+    `input_schema.properties` here, rather than letting inference discover it.
+    The response the smoke gets is checked against the framing resolved here,
+    from the same resolver the infer client uses.
+    """
+    config = load_model_config(model_dir)
+    declared = declared_server_protocol(config, model_dir)
+    if declared is None:
+        return None
+    # A declared command owns a callable tool contract, and the infer client
+    # filters the arguments it sends against `input_schema.properties`. A config
+    # that declares `tools: [{name: vad}]` and stops there describes a tool that
+    # cannot be called, and the client only says so after the bundle was
+    # packaged and approved. Refusing it here is what the gate is for;
+    # `tool_contracts` reads the same fields the client reads.
+    contract = tool_contracts(config, source=f"{model_dir}/config.yaml")[0]
+    server = config.get("server") if isinstance(config.get("server"), dict) else {}
+    command = [str(item) for item in server.get("command", [])]
+    startup = server.get("startup_timeout_sec")
+    startup = float(startup) if isinstance(startup, (int, float)) and startup > 0 else 0.0
+    return {
+        "command": command,
+        "protocol": "jsonl" if declared == JSONL_SERVER_PROTOCOL else "mcp",
+        "tool": contract.name,
+        # The smoke compares what the server advertises on `tools/list` against
+        # this, so a config and a server that disagree are caught before sealing.
+        "input_schema": contract.input_schema,
+        "arguments": smoke_arguments(run_dir, contract.input_schema),
+        # The infer client launches this server with the model's declared env
+        # and working directory. The smoke has to reproduce both, or a wrapper
+        # that reads MODEL_PATH out of server.env is judged broken by a gate
+        # that never gave it one.
+        "env": declared_server_env(server),
+        "cwd": declared_working_dir(server, model_dir),
+        # The smoke's own deadline covers start, the tool call and shutdown, so
+        # it gets the model's declared startup budget plus room to answer.
+        "timeout": startup + 300.0,
+    }
+
+
+def drive_declared_server(data: dict, run_dir: Path, model_dir: Path, validation_device: str | None) -> tuple[str, str]:
+    """Run the protocol smoke for this model. Returns (status, detail).
+
+    Returns ("skipped", reason) when the harness fallback wrapper serves the
+    model, ("passed", evidence path) when the declared server answered in the
+    declared framing, and raises ValueError with the evidence's own account
+    when it did not.
+    """
+    declaration = server_declaration(model_dir, run_dir)
+    if declaration is None:
+        return "skipped", "config.yaml omits server.command: the harness fallback wrapper serves MCP"
+    produces = run_dir / "artifacts" / "server_smoke.json"
+    timeout = float(declaration["timeout"])
+    invocation = {
+        **data,
+        "cwd": str(declaration["cwd"]),
+        # The model's declared env, then whatever the artifact declared over it:
+        # the gate's own statement outranks the model's, the way a CLI override
+        # outranks config.
+        "env": {
+            **declaration["env"],
+            **(data.get("env") if isinstance(data.get("env"), dict) else {}),
+        },
+        "log_path": str(run_dir / "artifacts" / "server_smoke.log"),
+        "timeout_seconds": timeout + 60.0,
+        "run_command": [
+            sys.executable,
+            str(Path(__file__).resolve().parent / "run_server_smoke.py"),
+            "--server-command", json.dumps(declaration["command"]),
+            "--protocol", declaration["protocol"],
+            "--tool", declaration["tool"],
+            "--input-schema-json", json.dumps(declaration["input_schema"]),
+            "--arguments-json", json.dumps(declaration["arguments"]),
+            "--cwd", str(declaration["cwd"]),
+            "--timeout", f"{timeout:.0f}",
+            "--produces", str(produces),
+            "--server-stderr-log", str(run_dir / "artifacts" / "server_smoke_stderr.log"),
+        ],
+    }
+    exit_code, _, log_path, detail, _ = run_validation_command(invocation, "infer", run_dir, validation_device)
+    if exit_code != 0:
+        raise ValueError(
+            f"the declared server did not answer as {declaration['protocol']} (exit {exit_code}); "
+            f"log_path={log_path}\n{detail}"
+        )
+    evidence = read_json(produces)
+    if evidence.get("status") != "passed":
+        raise ValueError(
+            f"server smoke evidence did not pass: {evidence.get('error')} "
+            f"(protocol={evidence.get('protocol')}, tool={evidence.get('tool')}, evidence={produces})"
+        )
+    if evidence.get("protocol") != declaration["protocol"]:
+        raise ValueError(
+            f"server smoke evidence records protocol={evidence.get('protocol')!r}, "
+            f"but {model_dir}/config.yaml declares {declaration['protocol']!r}"
+        )
+    return "passed", str(produces)
+
+
 def generated_result_candidates(data: dict, kind: str, run_dir: Path, cwd: Path, produces: Path) -> list[Path]:
     filename = f"{kind}_result.json"
     candidates: list[Path] = []
@@ -561,6 +772,16 @@ def main() -> int:
         if not sample_output:
             print(f"VALIDATE_INFER gate failed: sample_output is empty: {sample_path}", file=sys.stderr)
             return 1
+        # In-process inference proves the model, not the server. A model that
+        # ships server.py is driven here in the framing its config declares, so
+        # a protocol mismatch fails at onboarding rather than at inference.
+        try:
+            smoke_status, smoke_detail = drive_declared_server(
+                data, run_dir, infer_model_dir(data, run_dir), validation_device
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"VALIDATE_INFER gate failed: {exc}", file=sys.stderr)
+            return 1
 
     if args.kind == "contract":
         try:
@@ -584,9 +805,13 @@ def main() -> int:
             )
             return 1
 
+    if args.kind == "infer":
+        smoke_note = f", server_smoke={smoke_status} ({smoke_detail})"
+    else:
+        smoke_note = ""
     print(
         f"run_validate OK: kind={args.kind}, {pass_key}=true, "
-        f"executed=true, duration_seconds={elapsed:.3f}, log_path={log_path}"
+        f"executed=true, duration_seconds={elapsed:.3f}, log_path={log_path}{smoke_note}"
     )
     return 0
 

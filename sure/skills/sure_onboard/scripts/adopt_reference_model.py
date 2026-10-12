@@ -279,7 +279,6 @@ def ensure_env_compat_result(target_dir: Path, verdict: dict[str, Any]) -> None:
             "model_dir": str(target_dir),
             "requested_device": "auto",
             "python_version_match": True,
-            "adapter_protocol_supported": True,
             "weights_loadable": True,
             "runtime": {
                 "backend": backend,

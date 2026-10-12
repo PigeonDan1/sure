@@ -313,7 +313,12 @@ model:
   url: {_yaml_string(_modelscope_model_url(source))}
 
 server:
+  # The wrapper scaffolded below is an MCP JSON-RPC stdio server. A
+  # line-oriented server would declare `protocol: jsonl` instead: the framing
+  # is never inferred from the channel, and sure_onboard's VALIDATE_INFER
+  # refuses a declared command that leaves it unsaid.
   command: [".venv/bin/python", "server.py"]
+  protocol: mcp
   working_dir: "."
   env:
     MODEL_PATH: {_yaml_string(model_path)}

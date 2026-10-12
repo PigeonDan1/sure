@@ -17,6 +17,7 @@ except ImportError:  # pragma: no cover - harness dependency
     yaml = None
 
 from deployment_contract import (
+    declared_server_protocol,
     immutable_image_ref,
     load_model_artifact,
     read_json,
@@ -106,6 +107,9 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
     build_env = load_model_artifact(model_dir, "build_env_result.json")
     weights = load_model_artifact(model_dir, "weights_manifest.json")
     config = load_config(model_dir)
+    # An inventory is consumed by a client that must pick a framing; refuse to
+    # write one whose server.command leaves that choice to a default.
+    declared_server_protocol(config, model_dir)
     deployment_type = str(resolved.get("deployment_type") or "local")
     profile = str(package.get("package_profile") or resolved.get("package_profile") or "none")
     readiness = package.get("readiness") if isinstance(package.get("readiness"), dict) else {}

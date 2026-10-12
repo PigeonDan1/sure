@@ -578,5 +578,47 @@ class SmokeMirrorTests(unittest.TestCase):
         self.assertNotEqual(mirrored.stat().st_ino, (self.candidate / "checkpoints" / "weights.bin").stat().st_ino)
 
 
+class ServerContractTests(unittest.TestCase):
+    """The candidate's own config.yaml, read again at approval.
+
+    `verify_server_contract` only needs a directory, so these cases skip the
+    audit/publication fixture and build the two shapes directly.
+    """
+
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.candidate = Path(temporary.name) / "demo-model"
+        self.candidate.mkdir(parents=True)
+
+    def _config(self, body: str) -> Path:
+        (self.candidate / "config.yaml").write_text(body, encoding="utf-8")
+        return self.candidate
+
+    def test_a_tool_with_no_input_schema_is_refused_before_publication(self) -> None:
+        # The FireRedVAD shape: approved, packaged, and only then found
+        # uncallable by the infer client. Refusing it here costs a re-onboard.
+        self._config(
+            "name: vad\n"
+            "server:\n"
+            "  command: [python, server.py]\n"
+            "  protocol: mcp\n"
+            "tools:\n"
+            "  - name: vad\n"
+            "    description: Voice activity detection returning speech_segments.\n"
+        )
+        with self.assertRaisesRegex(approval_core.ApprovalError, "no input_schema mapping"):
+            approval_core.verify_server_contract(self.candidate, "python")
+
+    def test_a_model_that_declares_no_server_is_left_to_the_harness_wrapper(self) -> None:
+        # The fallback wrapper is MCP by construction and carries its own
+        # schema, so a config with no server block has no tool contract to
+        # check -- refusing it would block every such model from approval.
+        self._config("task: asr\n")
+        evidence = approval_core.verify_server_contract(self.candidate, "python")
+        self.assertEqual(evidence["status"], "passed")
+        self.assertNotIn("contracts", evidence)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -27,8 +27,15 @@ sys.path.insert(0, str(REPO_ROOT / "sure" / "runtime" / "harness"))
 
 from deployment_binding import DeploymentBindingError, load_deployment_binding
 from model_child_env import model_child_env
+from server_protocol import MCP_SERVER_PROTOCOL, resolve_server_protocol
 from sure.runtime import bundle_content
+from sure.runtime.model_server.tool_contract import ToolContractError, tool_contracts
 from sure.site.loader import SitePolicyError, load_site_policy
+
+try:
+    import yaml
+except ImportError:  # pragma: no cover - harness dependency
+    yaml = None
 
 
 APPROVAL_GENERATED = {
@@ -689,6 +696,100 @@ def _mirror_candidate_for_smoke(candidate: Path, destination: Path) -> None:
         shutil.copytree(candidate / "artifacts", artifacts)
 
 
+def load_model_config(model_dir: Path) -> dict[str, Any]:
+    """The candidate's own `config.yaml`, parsed. Raises rather than guessing."""
+    if yaml is None:
+        raise ApprovalError("approving a candidate needs PyYAML to read its config.yaml")
+    path = model_dir / "config.yaml"
+    if not path.is_file():
+        raise ApprovalError(f"candidate has no config.yaml: {path}")
+    value = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return value if isinstance(value, dict) else {}
+
+
+def _advertised_contract(candidate: Path, command: list[str], contract: Any) -> dict[str, Any]:
+    """Ask the sealed server what contract it advertises for the declared tool.
+
+    Runs on a throwaway mirror: a server started in the sealed tree may write a
+    cache into the model directory (weight caches routinely land beside the
+    weights), and the digest check that follows would read that as a mutated
+    candidate.
+    """
+    smoke_script = REPO_ROOT / "sure" / "skills" / "sure_onboard" / "scripts" / "run_server_smoke.py"
+    with tempfile.TemporaryDirectory(prefix="sure-approve-contract-", dir=candidate.parent) as smoke_root:
+        mirror = Path(smoke_root) / candidate.name
+        _mirror_candidate_for_smoke(candidate, mirror)
+        produces = Path(smoke_root) / "server_contract_smoke.json"
+        completed = subprocess.run(
+            [
+                sys.executable, str(smoke_script),
+                "--server-command", json.dumps(command),
+                "--protocol", "mcp",
+                "--tool", contract.name,
+                "--input-schema-json", json.dumps(contract.input_schema),
+                "--arguments-json", "{}",
+                "--list-only",
+                "--cwd", str(mirror),
+                "--timeout", "300",
+                "--produces", str(produces),
+            ],
+            capture_output=True, text=True, timeout=900, check=False,
+        )
+        evidence = read_json(produces) if produces.is_file() else {}
+    if completed.returncode != 0:
+        raise ApprovalError(
+            "candidate's server does not advertise the tool contract its config.yaml declares: "
+            + str(evidence.get("error") or completed.stderr[-2000:])
+        )
+    return evidence.get("steps", {}).get("tools_list", {})
+
+
+def verify_server_contract(candidate: Path, runtime_kind: str) -> dict[str, Any]:
+    """Re-read the candidate's own config.yaml and prove its tool contract holds.
+
+    The run artifacts say what the producer meant to ship; this reads what was
+    actually sealed. The infer client filters the arguments it sends against
+    `tools[].input_schema.properties` and refuses a tool that declares none --
+    correct, but it only finds that out at inference time, on a bundle that was
+    already packaged and approved. The same rule is applied here, where refusing
+    costs a re-onboard instead of a failed run.
+
+    A Python candidate's server is also started so the contract it advertises on
+    `tools/list` can be compared against its config: a config and a server that
+    name the same tool but describe different arguments cannot be called, and no
+    later stage would notice. A container candidate is not started here -- doing
+    that inside the pinned image belongs to container re-verification -- so only
+    its declared contract is checked.
+    """
+    config = load_model_config(candidate)
+    evidence: dict[str, Any] = {"schema": "sure.approve.server_contract.v1", "status": "passed"}
+    server = config.get("server") if isinstance(config.get("server"), dict) else {}
+    command = [str(item) for item in server.get("command") or []]
+    if not command:
+        # The same boundary the onboard gate draws: a model that declares no
+        # server has no tool contract of its own to check. The harness fallback
+        # wrapper serves MCP, and its schema is not this config's business.
+        evidence["advertised"] = "config.yaml omits server.command: the harness fallback wrapper serves MCP"
+        return evidence
+    try:
+        contracts = tool_contracts(config, source=f"{candidate.name}/config.yaml")
+    except ToolContractError as exc:
+        raise ApprovalError(
+            "approved candidate has an incomplete model server tool contract; "
+            "rerun /sure_onboard and regenerate config.yaml with tools[].input_schema: " + str(exc)
+        ) from exc
+    evidence["contracts"] = [{"name": contract.name, "digest": contract.digest()} for contract in contracts]
+    protocol = resolve_server_protocol(server)
+    if protocol != MCP_SERVER_PROTOCOL:
+        evidence["advertised"] = f"{protocol} carries the arguments alone; there is no tool list to compare"
+        return evidence
+    if runtime_kind != "python":
+        evidence["advertised"] = "deferred: listing an in-image server's tools belongs to container re-verification"
+        return evidence
+    evidence["advertised"] = _advertised_contract(candidate, command, contracts[0])
+    return evidence
+
+
 def verify_runtime(run_dir: Path) -> dict[str, Any]:
     manifest = read_json(artifact(run_dir, "approval_manifest.json"))
     resolved = read_json(artifact(run_dir, "approve_input_resolved.json"))
@@ -708,6 +809,10 @@ def verify_runtime(run_dir: Path) -> dict[str, Any]:
         else:
             os.environ["SURE_SITE_POLICY"] = previous_policy
     runtime_kind = binding.get("runtime_kind")
+    # A bundle whose declared tool contract cannot be called is refused before it
+    # is published, which is the point at which the same defect would otherwise
+    # first surface: at inference, on an already-approved model.
+    contract = verify_server_contract(candidate, str(runtime_kind or ""))
     if runtime_kind == "python":
         python = str(binding["python"]["python_executable"])
         validate = candidate / "validate.py"
@@ -769,7 +874,7 @@ def verify_runtime(run_dir: Path) -> dict[str, Any]:
     after, _, _ = tree_digest(candidate, publication=True)
     if after != current_digest:
         raise ApprovalError("runtime verification mutated the candidate bundle")
-    return {"schema": "sure.approve.runtime_verification.v1", "status": "passed", "verified_at": now_iso(), "runtime_kind": runtime_kind, "candidate_digest_before": current_digest, "candidate_digest_after": after, "binding": binding, "smoke": smoke}
+    return {"schema": "sure.approve.runtime_verification.v1", "status": "passed", "verified_at": now_iso(), "runtime_kind": runtime_kind, "candidate_digest_before": current_digest, "candidate_digest_after": after, "binding": binding, "server_contract": contract, "smoke": smoke}
 
 
 def verify_decision(review_path: Path, decision: str, rationale: str | None) -> dict[str, Any]:
