@@ -620,6 +620,16 @@ VAD_CONFIG = (
     "          type: string\n"
 )
 
+# The same server, but one that reads its own configuration out of the
+# environment and drops dead without it -- the shape of a wrapper that loads
+# weights from `MODEL_PATH` at startup. The name is one nothing else sets, so a
+# pass can only come from `server.env` reaching the child.
+NEEDS_ENV_FAKE = '''
+import os, sys
+if os.environ.get("SURE_SMOKE_DECLARED_ENV") != "declared-by-config":
+    sys.exit("SURE_SMOKE_DECLARED_ENV did not arrive")
+''' + MCP_FAKE
+
 
 class ServerContractTests(unittest.TestCase):
     """The candidate's own config.yaml, read again at approval.
@@ -704,6 +714,41 @@ class ServerContractTests(unittest.TestCase):
         self._config(VAD_CONFIG.format(interpreter=".venv/bin/python"))
         with self.assertRaisesRegex(approval_core.ApprovalError, "cannot start the declared server"):
             approval_core.verify_server_contract(self.candidate, "python")
+
+    def test_the_smoke_hands_the_server_the_env_its_config_declares(self) -> None:
+        # The infer client starts this server with `server.env` laid over the
+        # harness environment, and a scaffolded wrapper reads `MODEL_PATH` out of
+        # it. A smoke that starts the server on the harness env alone judges a
+        # wrapper broken that never got the configuration it was built around.
+        (self.candidate / "server.py").write_text(NEEDS_ENV_FAKE, encoding="utf-8")
+        self._config(
+            VAD_CONFIG.format(interpreter=".venv/bin/python").replace(
+                "  protocol: mcp\n",
+                "  protocol: mcp\n  env:\n    SURE_SMOKE_DECLARED_ENV: declared-by-config\n",
+            )
+        )
+        binding = {
+            "python": {
+                "server_command": [sys.executable, "server.py"],
+                "working_dir": str(self.candidate),
+            }
+        }
+        evidence = approval_core.verify_server_contract(self.candidate, "python", binding)
+        self.assertTrue(evidence["advertised"]["ok"], evidence["advertised"])
+
+    def test_a_server_whose_declared_env_is_absent_is_still_refused(self) -> None:
+        # Pins the case above in the other direction: the smoke passes the
+        # declared env, it does not relax the check.
+        (self.candidate / "server.py").write_text(NEEDS_ENV_FAKE, encoding="utf-8")
+        self._config(VAD_CONFIG.format(interpreter=".venv/bin/python"))
+        binding = {
+            "python": {
+                "server_command": [sys.executable, "server.py"],
+                "working_dir": str(self.candidate),
+            }
+        }
+        with self.assertRaisesRegex(approval_core.ApprovalError, "does not advertise the tool contract"):
+            approval_core.verify_server_contract(self.candidate, "python", binding)
 
 
 if __name__ == "__main__":

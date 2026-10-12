@@ -712,7 +712,33 @@ def load_model_config(model_dir: Path) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _advertised_contract(candidate: Path, command: list[str], contract: Any, working_dir: Any = None) -> dict[str, Any]:
+def _server_child_env(server: dict[str, Any]) -> dict[str, str]:
+    """The child environment to start the declared server with.
+
+    `model_child_env` is what the infer client starts from -- the harness env
+    without the interpreter state that belongs to the harness rather than the
+    model -- and `server.env` is the model's own configuration over it (a
+    scaffolded wrapper reads `MODEL_PATH` and its cache directory out of it).
+
+    Values are passed exactly as the config spells them. The infer client
+    resolves a relative path against the model directory; this smoke's cwd is the
+    mirror, so a relative value resolves inside the mirror -- which is where a
+    server warming a cache should write. Remapping it back to the candidate would
+    let that write reach the sealed tree through the mirror's hard links and fail
+    the digest check that follows.
+    """
+    env = model_child_env()
+    declared = server.get("env")
+    if isinstance(declared, dict):
+        env.update(
+            {str(key): str(value) for key, value in declared.items()
+             if isinstance(value, (str, int, float, bool))}
+        )
+    return env
+
+
+def _advertised_contract(candidate: Path, command: list[str], contract: Any,
+                         working_dir: Any = None, env: dict[str, str] | None = None) -> dict[str, Any]:
     """Ask the sealed server what contract it advertises for the declared tool.
 
     Runs on a throwaway mirror: a server started in the sealed tree may write a
@@ -746,7 +772,7 @@ def _advertised_contract(candidate: Path, command: list[str], contract: Any, wor
                 "--timeout", "300",
                 "--produces", str(produces),
             ],
-            capture_output=True, text=True, timeout=900, check=False,
+            capture_output=True, text=True, timeout=900, check=False, env=env,
         )
         evidence = read_json(produces) if produces.is_file() else {}
     if completed.returncode != 0:
@@ -818,7 +844,7 @@ def verify_server_contract(candidate: Path, runtime_kind: str, binding: dict[str
     # same substitution the infer client makes before it launches this server.
     launch = [str(item) for item in python_runtime.get("server_command") or command]
     evidence["advertised"] = _advertised_contract(
-        candidate, launch, contracts[0], python_runtime.get("working_dir")
+        candidate, launch, contracts[0], python_runtime.get("working_dir"), _server_child_env(server)
     )
     return evidence
 
