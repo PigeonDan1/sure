@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import queue
 import subprocess
 import sys
@@ -39,6 +38,15 @@ import time
 from collections import deque
 from pathlib import Path
 from typing import Any
+
+# The environment a model server is started in has one home, the same module the
+# infer client starts its server with. A runner that hands the child its own
+# `os.environ` instead would judge the model under interpreter state the client
+# never gives it -- and this runner is itself started under a harness runtime
+# that exports its own `PYTHONHOME`, which a child on another Python then reads
+# as its stdlib base.
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "runtime" / "harness"))
+from model_child_env import model_child_env
 
 SCHEMA = "sure.onboard.server_smoke.v1"
 STDERR_TAIL_LINES = 200
@@ -347,7 +355,7 @@ def main() -> int:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 bufsize=0,
-                env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                env={**model_child_env(), "PYTHONUNBUFFERED": "1"},
             )
             threading.Thread(target=_drain_stderr, args=(proc, server_stderr, stderr_handle), daemon=True).start()
             lines: queue.Queue = queue.Queue()
