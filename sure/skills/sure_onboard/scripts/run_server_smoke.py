@@ -188,12 +188,19 @@ def drive_mcp(proc: subprocess.Popen, lines: queue.Queue, junk: deque, deadline:
     def rpc(request_id: int, method: str, params: dict | None = None) -> tuple[bool, Any]:
         if not _send(proc, {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}}, deadline):
             return False, None
-        ok, payload = _next_json_line(lines, deadline, junk)
-        if not ok or not isinstance(payload, dict) or payload.get("id") != request_id:
-            return False, payload
-        if "error" in payload:
-            return False, payload
-        return "result" in payload, payload
+        # A server may announce progress -- a notification carries no `id`, or one
+        # of its own -- before it answers, and the infer client reads past those
+        # until it finds the response to its request. Reading only the next line
+        # fails a server here that inference would have driven fine.
+        while True:
+            ok, payload = _next_json_line(lines, deadline, junk)
+            if not ok or not isinstance(payload, dict):
+                return False, payload
+            if payload.get("id") != request_id:
+                continue
+            if "error" in payload:
+                return False, payload
+            return "result" in payload, payload
 
     ok, payload = rpc(1, "initialize")
     if not ok:

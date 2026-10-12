@@ -34,7 +34,7 @@ import json, os, sys
 SCHEMA = {
     "type": "object",
     "properties": {"noisy_audio": {"type": "string"}, "audio_path": {"type": "string"}},
-    "required": ["noisy_audio"],
+    "required": ["audio_path"],
 }
 for line in sys.stdin:
     if not line.strip():
@@ -58,6 +58,18 @@ for line in sys.stdin:
     print(json.dumps({"jsonrpc": "2.0", "id": rid, "result": result}), flush=True)
 """
 
+
+def fake_server_source(*, notify: bool) -> str:
+    """The echo server, optionally announcing progress before every answer."""
+    if not notify:
+        return ECHO_FAKE
+    line = (
+        '    print(json.dumps({"jsonrpc": "2.0", "method": "notifications/progress",'
+        ' "params": {"progress": 0.5}}), flush=True)\n'
+    )
+    return ECHO_FAKE.replace("    request = json.loads(line)", line + "    request = json.loads(line)", 1)
+
+
 SERVER_CONFIG = """name: demo
 model:
   id: demo/model
@@ -67,7 +79,7 @@ server:
   - name: enhance_speech
     input_schema:
       type: object
-      required: [noisy_audio]
+      required: [audio_path]
       properties:
         noisy_audio:
           type: string
@@ -131,10 +143,24 @@ class DeclarationTests(unittest.TestCase):
         model_dir = self._model_dir()
         declaration = run_validate.server_declaration(model_dir, self.run_dir)
         assert declaration is not None
-        # The tool requires noisy_audio but the fixture only carries audio_path,
-        # so the fallback keeps the fixture's own field name rather than
-        # inventing a value for a field nothing provides.
+        # The tool requires audio_path and the fixture records it under that same
+        # role, so the smoke drives the tool with the input it asks for.
         self.assertEqual(declaration["arguments"], {"audio_path": str(self.sample)})
+
+    def test_a_required_input_the_fixture_cannot_fill_is_refused(self) -> None:
+        # The fixture records audio_path; this tool requires noisy_audio. Driving
+        # the call anyway sends it without the one field its own contract calls
+        # mandatory, and a lenient answer would carry the gate on a call that
+        # proved nothing. The escape hatch is server_smoke_input.json.
+        model_dir = self._model_dir()
+        (model_dir / "config.yaml").write_text(
+            SERVER_CONFIG.format(declared="  protocol: mcp\n").replace(
+                "required: [audio_path]", "required: [noisy_audio]"
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "required tool input"):
+            run_validate.server_declaration(model_dir, self.run_dir)
 
     def test_an_authored_argument_file_overrides_the_fixture_input(self) -> None:
         model_dir = self._model_dir()
@@ -174,7 +200,7 @@ class DeclarationTests(unittest.TestCase):
             run_validate.server_declaration(model_dir, self.run_dir)
 
 
-def stage_infer_gate(scratch: Path, declared: str) -> tuple[Path, Path, Path]:
+def stage_infer_gate(scratch: Path, declared: str, *, notify: bool = False) -> tuple[Path, Path, Path]:
     """Lay out a model whose declared server really answers MCP."""
     model_dir = scratch / "sure" / "models" / "demo"
     artifacts = model_dir / "artifacts"
@@ -185,7 +211,7 @@ def stage_infer_gate(scratch: Path, declared: str) -> tuple[Path, Path, Path]:
     (model_dir / "model.py").write_text("class ModelWrapper:\n    pass\n", encoding="utf-8")
     (model_dir / "sub").mkdir()
     server = scratch / "fake_server.py"
-    server.write_text(ECHO_FAKE, encoding="utf-8")
+    server.write_text(fake_server_source(notify=notify), encoding="utf-8")
     (model_dir / "config.yaml").write_text(
         SERVER_CONFIG.format(declared=declared).replace(
             "[python, server.py]",
@@ -253,6 +279,21 @@ class GateTests(unittest.TestCase):
             # infer client would.
             self.assertEqual(output["MODEL_PATH"], "/models/demo")
             self.assertEqual(Path(output["cwd"]).resolve(), (model_dir / "sub").resolve())
+
+
+    def test_a_server_that_announces_progress_before_answering_still_passes(self) -> None:
+        # The infer client reads past a server's progress notifications to find
+        # the response to its own request. A smoke that reads only the next line
+        # fails a server that inference would have driven without complaint.
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp)
+            _, run_dir, produces = stage_infer_gate(scratch, "  protocol: mcp\n", notify=True)
+            result = run_gate(run_dir, produces)
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            evidence = json.loads((run_dir / "artifacts" / "server_smoke.json").read_text(encoding="utf-8"))
+            self.assertEqual(evidence["status"], "passed")
+            self.assertTrue(evidence["steps"]["tools_call"]["output_nonempty"])
 
 
     def test_the_gate_refuses_a_tool_no_client_can_call(self) -> None:

@@ -21,13 +21,18 @@ from typing import Any, Iterable
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 EVAL_SCRIPTS = REPO_ROOT / "sure" / "skills" / "sure_infer" / "scripts"
+ONBOARD_SCRIPTS = REPO_ROOT / "sure" / "skills" / "sure_onboard" / "scripts"
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(EVAL_SCRIPTS))
 sys.path.insert(0, str(REPO_ROOT / "sure" / "runtime" / "harness"))
+# Appended, never inserted: this directory shadows sure_infer's docker_runtime.py
+# and build_run_digest.py, and the eval client's copies are the ones that must win.
+sys.path.append(str(ONBOARD_SCRIPTS))
 
 from deployment_binding import DeploymentBindingError, load_deployment_binding
+from deployment_contract import declared_server_protocol
 from model_child_env import model_child_env
-from server_protocol import MCP_SERVER_PROTOCOL, resolve_server_protocol
+from server_protocol import MCP_SERVER_PROTOCOL
 from sure.runtime import bundle_content
 from sure.runtime.model_server.tool_contract import ToolContractError, tool_contracts
 from sure.site.loader import SitePolicyError, load_site_policy
@@ -707,7 +712,7 @@ def load_model_config(model_dir: Path) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _advertised_contract(candidate: Path, command: list[str], contract: Any) -> dict[str, Any]:
+def _advertised_contract(candidate: Path, command: list[str], contract: Any, working_dir: Any = None) -> dict[str, Any]:
     """Ask the sealed server what contract it advertises for the declared tool.
 
     Runs on a throwaway mirror: a server started in the sealed tree may write a
@@ -719,6 +724,14 @@ def _advertised_contract(candidate: Path, command: list[str], contract: Any) -> 
     with tempfile.TemporaryDirectory(prefix="sure-approve-contract-", dir=candidate.parent) as smoke_root:
         mirror = Path(smoke_root) / candidate.name
         _mirror_candidate_for_smoke(candidate, mirror)
+        # The binding already proved this stays inside the bundle, so the mirror
+        # carries it: the smoke has to start where the infer client starts.
+        cwd = mirror
+        if isinstance(working_dir, str) and working_dir:
+            try:
+                cwd = mirror / Path(working_dir).relative_to(candidate)
+            except ValueError as exc:
+                raise ApprovalError(f"approved Python working_dir escapes the candidate: {working_dir}") from exc
         produces = Path(smoke_root) / "server_contract_smoke.json"
         completed = subprocess.run(
             [
@@ -729,7 +742,7 @@ def _advertised_contract(candidate: Path, command: list[str], contract: Any) -> 
                 "--input-schema-json", json.dumps(contract.input_schema),
                 "--arguments-json", "{}",
                 "--list-only",
-                "--cwd", str(mirror),
+                "--cwd", str(cwd),
                 "--timeout", "300",
                 "--produces", str(produces),
             ],
@@ -744,7 +757,7 @@ def _advertised_contract(candidate: Path, command: list[str], contract: Any) -> 
     return evidence.get("steps", {}).get("tools_list", {})
 
 
-def verify_server_contract(candidate: Path, runtime_kind: str) -> dict[str, Any]:
+def verify_server_contract(candidate: Path, runtime_kind: str, binding: dict[str, Any] | None = None) -> dict[str, Any]:
     """Re-read the candidate's own config.yaml and prove its tool contract holds.
 
     The run artifacts say what the producer meant to ship; this reads what was
@@ -754,12 +767,20 @@ def verify_server_contract(candidate: Path, runtime_kind: str) -> dict[str, Any]
     already packaged and approved. The same rule is applied here, where refusing
     costs a re-onboard instead of a failed run.
 
+    The framing rule is the onboard gate's, read from the same helper: a config
+    that declares a command has to declare what it speaks. Resolving that here
+    with the client's silent default let approve publish a bundle whose
+    line-oriented server only failed once inference started.
+
     A Python candidate's server is also started so the contract it advertises on
     `tools/list` can be compared against its config: a config and a server that
     name the same tool but describe different arguments cannot be called, and no
-    later stage would notice. A container candidate is not started here -- doing
-    that inside the pinned image belongs to container re-verification -- so only
-    its declared contract is checked.
+    later stage would notice. `binding` is what tells the smoke which interpreter
+    to start -- the sealed bundle has no `.venv`, and the config's `command[0]` is
+    the shorthand the model was built with, not a path that still exists. A
+    container candidate is not started here -- doing that inside the pinned image
+    belongs to container re-verification -- so only its declared contract is
+    checked.
     """
     config = load_model_config(candidate)
     evidence: dict[str, Any] = {"schema": "sure.approve.server_contract.v1", "status": "passed"}
@@ -772,6 +793,13 @@ def verify_server_contract(candidate: Path, runtime_kind: str) -> dict[str, Any]
         evidence["advertised"] = "config.yaml omits server.command: the harness fallback wrapper serves MCP"
         return evidence
     try:
+        protocol = declared_server_protocol(config, candidate)
+    except ValueError as exc:
+        raise ApprovalError(
+            f"approved candidate does not declare a usable server framing; rerun /sure_onboard and "
+            f"regenerate {candidate.name}/config.yaml: {exc}"
+        ) from exc
+    try:
         contracts = tool_contracts(config, source=f"{candidate.name}/config.yaml")
     except ToolContractError as exc:
         raise ApprovalError(
@@ -779,14 +807,19 @@ def verify_server_contract(candidate: Path, runtime_kind: str) -> dict[str, Any]
             "rerun /sure_onboard and regenerate config.yaml with tools[].input_schema: " + str(exc)
         ) from exc
     evidence["contracts"] = [{"name": contract.name, "digest": contract.digest()} for contract in contracts]
-    protocol = resolve_server_protocol(server)
     if protocol != MCP_SERVER_PROTOCOL:
         evidence["advertised"] = f"{protocol} carries the arguments alone; there is no tool list to compare"
         return evidence
     if runtime_kind != "python":
         evidence["advertised"] = "deferred: listing an in-image server's tools belongs to container re-verification"
         return evidence
-    evidence["advertised"] = _advertised_contract(candidate, command, contracts[0])
+    python_runtime = binding.get("python") if isinstance(binding, dict) and isinstance(binding.get("python"), dict) else {}
+    # The binding swaps the shorthand for the interpreter the runtime sealed, the
+    # same substitution the infer client makes before it launches this server.
+    launch = [str(item) for item in python_runtime.get("server_command") or command]
+    evidence["advertised"] = _advertised_contract(
+        candidate, launch, contracts[0], python_runtime.get("working_dir")
+    )
     return evidence
 
 
@@ -811,8 +844,10 @@ def verify_runtime(run_dir: Path) -> dict[str, Any]:
     runtime_kind = binding.get("runtime_kind")
     # A bundle whose declared tool contract cannot be called is refused before it
     # is published, which is the point at which the same defect would otherwise
-    # first surface: at inference, on an already-approved model.
-    contract = verify_server_contract(candidate, str(runtime_kind or ""))
+    # first surface: at inference, on an already-approved model. The binding goes
+    # with it: it is what names the interpreter the sealed server has to be
+    # started with, and this is the last gate that can still refuse the bundle.
+    contract = verify_server_contract(candidate, str(runtime_kind or ""), binding)
     if runtime_kind == "python":
         python = str(binding["python"]["python_executable"])
         validate = candidate / "validate.py"

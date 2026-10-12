@@ -578,6 +578,49 @@ class SmokeMirrorTests(unittest.TestCase):
         self.assertNotEqual(mirrored.stat().st_ino, (self.candidate / "checkpoints" / "weights.bin").stat().st_ino)
 
 
+# An MCP server that answers the handshake and advertises the tool contract its
+# config.yaml declares, so the approve-time smoke can be driven end to end
+# without a model.
+MCP_FAKE = """
+import json, sys
+SCHEMA = {
+    "type": "object",
+    "properties": {"audio_path": {"type": "string"}},
+    "required": ["audio_path"],
+}
+for line in sys.stdin:
+    if not line.strip():
+        continue
+    request = json.loads(line)
+    rid, method = request.get("id"), request.get("method")
+    if method == "initialize":
+        result = {"protocolVersion": "2024-11-05"}
+    elif method == "tools/list":
+        result = {"tools": [{"name": "vad", "inputSchema": SCHEMA}]}
+    elif method == "shutdown":
+        print(json.dumps({"jsonrpc": "2.0", "id": rid, "result": {}}), flush=True)
+        break
+    else:
+        result = {}
+    print(json.dumps({"jsonrpc": "2.0", "id": rid, "result": result}), flush=True)
+"""
+
+VAD_CONFIG = (
+    "name: vad\n"
+    "server:\n"
+    "  command: [{interpreter}, server.py]\n"
+    "  protocol: mcp\n"
+    "tools:\n"
+    "  - name: vad\n"
+    "    input_schema:\n"
+    "      type: object\n"
+    "      required: [audio_path]\n"
+    "      properties:\n"
+    "        audio_path:\n"
+    "          type: string\n"
+)
+
+
 class ServerContractTests(unittest.TestCase):
     """The candidate's own config.yaml, read again at approval.
 
@@ -618,6 +661,49 @@ class ServerContractTests(unittest.TestCase):
         evidence = approval_core.verify_server_contract(self.candidate, "python")
         self.assertEqual(evidence["status"], "passed")
         self.assertNotIn("contracts", evidence)
+
+    def test_a_declared_command_with_no_declared_framing_is_refused(self) -> None:
+        # The onboard gate refuses this. Approve resolved the same config through
+        # the client's silent default instead, so a bundle the gate would have
+        # stopped was published and only failed once inference started.
+        self._config(VAD_CONFIG.format(interpreter="python").replace("  protocol: mcp\n", ""))
+        with self.assertRaisesRegex(approval_core.ApprovalError, "no server.protocol"):
+            approval_core.verify_server_contract(self.candidate, "python")
+
+    def test_an_unsupported_framing_is_refused_with_the_value_named(self) -> None:
+        # The dialect a hand-authored config arrived in: nothing in the tree
+        # spells MCP this way, and the infer client cannot speak it.
+        self._config(
+            VAD_CONFIG.format(interpreter="python").replace("protocol: mcp", "protocol: jsonrpc-2.0-lines")
+        )
+        with self.assertRaisesRegex(approval_core.ApprovalError, "jsonrpc-2.0-lines"):
+            approval_core.verify_server_contract(self.candidate, "python")
+
+    def test_the_smoke_starts_the_server_with_the_interpreter_the_binding_names(self) -> None:
+        # sure_feed scaffolds `command: [".venv/bin/python", "server.py"]`, and
+        # `_copy_candidate` drops `.venv` on the way into the candidate -- so the
+        # shorthand is not a path the published bundle has. The binding is what
+        # swaps in the interpreter the runtime sealed, and the smoke has to use
+        # it, exactly as the infer client does.
+        (self.candidate / "server.py").write_text(MCP_FAKE, encoding="utf-8")
+        self._config(VAD_CONFIG.format(interpreter=".venv/bin/python"))
+        binding = {
+            "python": {
+                "server_command": [sys.executable, "server.py"],
+                "working_dir": str(self.candidate),
+            }
+        }
+        evidence = approval_core.verify_server_contract(self.candidate, "python", binding)
+        self.assertTrue(evidence["advertised"]["ok"], evidence["advertised"])
+
+    def test_the_shorthand_interpreter_alone_cannot_start_the_sealed_server(self) -> None:
+        # Pins the case above: without the binding there is nothing to launch.
+        # The smoke reports that in its own evidence rather than by raising, so
+        # the caller sees the command it could not start.
+        (self.candidate / "server.py").write_text(MCP_FAKE, encoding="utf-8")
+        self._config(VAD_CONFIG.format(interpreter=".venv/bin/python"))
+        with self.assertRaisesRegex(approval_core.ApprovalError, "cannot start the declared server"):
+            approval_core.verify_server_contract(self.candidate, "python")
 
 
 if __name__ == "__main__":

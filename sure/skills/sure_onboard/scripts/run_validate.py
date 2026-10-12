@@ -408,6 +408,10 @@ def smoke_arguments(run_dir: Path, input_schema: dict) -> dict:
     TTS text prompt, say) is driven by an authored
     `<run_dir>/artifacts/server_smoke_input.json`; the evidence records whatever
     was actually sent, so a reviewer can see it either way.
+
+    A required input the fixture cannot fill is refused rather than dropped: the
+    call would reach the server missing a field its own contract calls mandatory,
+    and a lenient answer would carry the gate on a call that proved nothing.
     """
     authored = run_dir / "artifacts" / "server_smoke_input.json"
     if authored.is_file():
@@ -424,12 +428,33 @@ def smoke_arguments(run_dir: Path, input_schema: dict) -> dict:
     roles = sample.get("audio_roles") if isinstance(sample.get("audio_roles"), dict) else {}
     properties = input_schema.get("properties") if isinstance(input_schema.get("properties"), dict) else {}
     required = [name for name in input_schema.get("required", []) if isinstance(name, str)] if isinstance(input_schema.get("required"), list) else []
-    field = next((name for name in [*required, *properties] if name in roles), None)
-    value = roles.get(field or "audio_path") or sample.get("audio_path")
-    if not isinstance(value, str) or not value:
+
+    def supplied(name: str) -> str:
+        """The fixture value for a field name, or "" when it has none."""
+        value = roles.get(name)
+        if isinstance(value, str) and value:
+            return value
+        # A sample always carries its own audio; a fixture written by hand may
+        # have no `audio_roles` at all, and `audio_path` is still its input.
+        fallback = sample.get("audio_path") if name == "audio_path" else None
+        return fallback if isinstance(fallback, str) and fallback else ""
+
+    field = next((name for name in [*required, *properties] if supplied(name)), None)
+    value = supplied(field or "audio_path")
+    if not value:
         raise ValueError(
             f"the fixture records no audio input for the declared server smoke; "
             f"author {authored} with the arguments this tool takes"
+        )
+    # A required input the fixture does not fill is not an argument this tool can
+    # be driven with: the call would reach the server missing a field its own
+    # contract says is mandatory, and a lenient answer would carry the gate on a
+    # call that proved nothing. The escape hatch is the same one above.
+    unedriven = [name for name in required if name != field and not supplied(name)]
+    if unedriven:
+        raise ValueError(
+            f"the fixture supplies no value for the required tool input(s) "
+            f"{', '.join(unedriven)}; author {authored} with the arguments this tool takes"
         )
     return {field or "audio_path": value}
 
