@@ -623,12 +623,25 @@ VAD_CONFIG = (
 # The same server, but one that reads its own configuration out of the
 # environment and drops dead without it -- the shape of a wrapper that loads
 # weights from `MODEL_PATH` at startup. The name is one nothing else sets, so a
-# pass can only come from `server.env` reaching the child.
+# pass can only come from `server.env` reaching the child. `PYTHONIOENCODING` is
+# the second half: the client sets it on every server it starts, so a smoke
+# without it judges a Windows server under a console code page the client never
+# gives it.
 NEEDS_ENV_FAKE = '''
 import os, sys
 if os.environ.get("SURE_SMOKE_DECLARED_ENV") != "declared-by-config":
     sys.exit("SURE_SMOKE_DECLARED_ENV did not arrive")
+if os.environ.get("PYTHONIOENCODING") != "utf-8":
+    sys.exit("PYTHONIOENCODING did not arrive: " + repr(os.environ.get("PYTHONIOENCODING")))
 ''' + MCP_FAKE
+
+# Dies at startup with the reason on stderr, the way a wrapper that cannot find
+# its weights does.
+DYING_FAKE = '''
+import sys
+print("no weights under MODEL_PATH: refusing to start", file=sys.stderr, flush=True)
+sys.exit(3)
+'''
 
 
 class ServerContractTests(unittest.TestCase):
@@ -749,6 +762,68 @@ class ServerContractTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(approval_core.ApprovalError, "does not advertise the tool contract"):
             approval_core.verify_server_contract(self.candidate, "python", binding)
+
+    def test_a_declared_pythonpath_is_not_sanitized_back_out(self) -> None:
+        # The client sanitizes the harness env and lays `server.env` over it, so
+        # a declared path under the harness runtime root still reaches the
+        # server. Handing the declaration to the runner as its own environment
+        # would have let the sanitizer strip it again -- the same model would
+        # pass here and fail at inference.
+        marker = "sure-declared-lib"
+        (self.candidate / "server.py").write_text(
+            'import os, sys\n'
+            f'if "{marker}" not in os.environ.get("PYTHONPATH", ""):\n'
+            "    sys.exit(\"declared PYTHONPATH did not arrive\")\n" + MCP_FAKE,
+            encoding="utf-8",
+        )
+        self._config(
+            VAD_CONFIG.format(interpreter=".venv/bin/python").replace(
+                "  protocol: mcp\n",
+                f"  protocol: mcp\n  env:\n    PYTHONPATH: /runtime-root/{marker}\n",
+            )
+        )
+        binding = {
+            "python": {
+                "server_command": [sys.executable, "server.py"],
+                "working_dir": str(self.candidate),
+            }
+        }
+        with mock.patch.dict(os.environ, {"SURE_HARNESS_RUNTIME_ROOT": "/runtime-root"}):
+            evidence = approval_core.verify_server_contract(self.candidate, "python", binding)
+        self.assertTrue(evidence["advertised"]["ok"], evidence["advertised"])
+
+    def test_a_device_that_dies_at_startup_is_reported_with_its_stderr(self) -> None:
+        # The evidence carries the server's own stderr and dies with the mirror;
+        # a refusal a reviewer cannot read is one they have to reproduce by hand.
+        (self.candidate / "server.py").write_text(DYING_FAKE, encoding="utf-8")
+        self._config(VAD_CONFIG.format(interpreter=".venv/bin/python"))
+        binding = {
+            "python": {
+                "server_command": [sys.executable, "server.py"],
+                "working_dir": str(self.candidate),
+            }
+        }
+        with self.assertRaisesRegex(approval_core.ApprovalError, "no weights under MODEL_PATH"):
+            approval_core.verify_server_contract(self.candidate, "python", binding)
+
+    def test_the_budget_the_server_got_is_the_one_its_config_declares(self) -> None:
+        # A slow but healthy server must not be judged broken by a gate that
+        # gave it less room than inference would: the deadline is the config's
+        # own startup budget, plus the margin the gate adds for its own work.
+        (self.candidate / "server.py").write_text(MCP_FAKE, encoding="utf-8")
+        self._config(
+            VAD_CONFIG.format(interpreter=".venv/bin/python").replace(
+                "  protocol: mcp\n", "  protocol: mcp\n  startup_timeout_sec: 900\n"
+            )
+        )
+        binding = {
+            "python": {
+                "server_command": [sys.executable, "server.py"],
+                "working_dir": str(self.candidate),
+            }
+        }
+        evidence = approval_core.verify_server_contract(self.candidate, "python", binding)
+        self.assertEqual(evidence["advertised"]["budget_seconds"], 1200)
 
 
 if __name__ == "__main__":

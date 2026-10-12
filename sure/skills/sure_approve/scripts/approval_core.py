@@ -712,13 +712,16 @@ def load_model_config(model_dir: Path) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _server_child_env(server: dict[str, Any]) -> dict[str, str]:
-    """The child environment to start the declared server with.
+def _declared_server_env(server: dict[str, Any]) -> dict[str, str]:
+    """The `server.env` config.yaml declares, as the infer client applies it.
 
-    `model_child_env` is what the infer client starts from -- the harness env
-    without the interpreter state that belongs to the harness rather than the
-    model -- and `server.env` is the model's own configuration over it (a
-    scaffolded wrapper reads `MODEL_PATH` and its cache directory out of it).
+    The client starts from `model_child_env()` -- the harness env without the
+    interpreter state that belongs to the harness rather than the model -- and
+    lays these over it, so a declared `PYTHONPATH` or `PYTHONHOME` does reach the
+    server. The smoke cannot simply merge them into the environment it starts the
+    runner in: the runner builds the child's environment from
+    `model_child_env()`, which would strip exactly those two back out. They are
+    handed to the runner instead, which layers them after the strip.
 
     Values are passed exactly as the config spells them. The infer client
     resolves a relative path against the model directory; this smoke's cwd is the
@@ -727,26 +730,33 @@ def _server_child_env(server: dict[str, Any]) -> dict[str, str]:
     let that write reach the sealed tree through the mirror's hard links and fail
     the digest check that follows.
     """
-    env = model_child_env()
     declared = server.get("env")
-    if isinstance(declared, dict):
-        env.update(
-            {str(key): str(value) for key, value in declared.items()
-             if isinstance(value, (str, int, float, bool))}
-        )
-    return env
+    if not isinstance(declared, dict):
+        return {}
+    return {
+        str(key): str(value)
+        for key, value in declared.items()
+        if isinstance(value, (str, int, float, bool))
+    }
 
 
-def _advertised_contract(candidate: Path, command: list[str], contract: Any,
-                         working_dir: Any = None, env: dict[str, str] | None = None) -> dict[str, Any]:
+def _advertised_contract(candidate: Path, command: list[str], contract: Any, server: dict[str, Any],
+                         working_dir: Any = None) -> dict[str, Any]:
     """Ask the sealed server what contract it advertises for the declared tool.
 
     Runs on a throwaway mirror: a server started in the sealed tree may write a
     cache into the model directory (weight caches routinely land beside the
     weights), and the digest check that follows would read that as a mutated
     candidate.
+
+    The server is given the environment the infer client gives it -- the
+    sanitized child env with the model's declared `server.env` over it -- and the
+    deadline its own config declares, so a slow but healthy server is not judged
+    broken by a gate that gave it less room than inference would.
     """
     smoke_script = REPO_ROOT / "sure" / "skills" / "sure_onboard" / "scripts" / "run_server_smoke.py"
+    startup = server.get("startup_timeout_sec")
+    timeout = (float(startup) if isinstance(startup, (int, float)) and startup > 0 else 0.0) + 300.0
     with tempfile.TemporaryDirectory(prefix="sure-approve-contract-", dir=candidate.parent) as smoke_root:
         mirror = Path(smoke_root) / candidate.name
         _mirror_candidate_for_smoke(candidate, mirror)
@@ -767,20 +777,33 @@ def _advertised_contract(candidate: Path, command: list[str], contract: Any,
                 "--tool", contract.name,
                 "--input-schema-json", json.dumps(contract.input_schema),
                 "--arguments-json", "{}",
+                "--env-json", json.dumps(_declared_server_env(server)),
                 "--list-only",
                 "--cwd", str(cwd),
-                "--timeout", "300",
+                "--timeout", f"{timeout:.0f}",
                 "--produces", str(produces),
             ],
-            capture_output=True, text=True, timeout=900, check=False, env=env,
+            capture_output=True, text=True, timeout=timeout + 60.0, check=False, env=model_child_env(),
         )
         evidence = read_json(produces) if produces.is_file() else {}
     if completed.returncode != 0:
+        # The evidence carries the server's own stderr, and it dies with the
+        # mirror; a failure a reviewer cannot read is a failure they have to
+        # reproduce by hand.
+        tail = evidence.get("server_stderr_tail") if isinstance(evidence, dict) else None
+        detail = "\n".join(str(line) for line in tail[-20:]) if isinstance(tail, list) and tail else ""
         raise ApprovalError(
             "candidate's server does not advertise the tool contract its config.yaml declares: "
             + str(evidence.get("error") or completed.stderr[-2000:])
+            + (f"\nserver stderr:\n{detail}" if detail else "")
         )
-    return evidence.get("steps", {}).get("tools_list", {})
+    return {
+        **evidence.get("steps", {}).get("tools_list", {}),
+        # The deadline the server was given, recorded with the contract it
+        # answered under: a failure that reads as a slow server should say how
+        # long the gate let it run.
+        "budget_seconds": round(timeout),
+    }
 
 
 def verify_server_contract(candidate: Path, runtime_kind: str, binding: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -844,7 +867,7 @@ def verify_server_contract(candidate: Path, runtime_kind: str, binding: dict[str
     # same substitution the infer client makes before it launches this server.
     launch = [str(item) for item in python_runtime.get("server_command") or command]
     evidence["advertised"] = _advertised_contract(
-        candidate, launch, contracts[0], python_runtime.get("working_dir"), _server_child_env(server)
+        candidate, launch, contracts[0], server, python_runtime.get("working_dir")
     )
     return evidence
 
