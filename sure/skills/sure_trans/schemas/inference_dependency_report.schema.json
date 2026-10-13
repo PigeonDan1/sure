@@ -1,34 +1,38 @@
 {
 	"$schema": "http://json-schema.org/draft-07/schema#",
 	"type": "object",
-	"required": ["schema", "entrypoint", "build_context", "docker_copy_sources", "python_imports", "backend_signals", "dependency_file", "support_paths", "model_path", "unresolved", "external_paths", "dynamic_validation_required", "status"],
+	"required": [
+		"schema", "entrypoint", "entrypoint_language", "syntax_check", "build_context",
+		"docker_copy_sources", "python_imports", "literal_file_references",
+		"subprocess_references", "support_paths", "model_path", "unresolved",
+		"external_paths", "dependency_evidence", "hard_conflicts", "review_signals",
+		"dynamic_references", "dynamic_validation_required", "review_required",
+		"evidence_digest", "agent_review", "evidence", "status"
+	],
 	"properties": {
-		"schema": { "const": "sure.trans.dependencies.v1" },
+		"schema": { "const": "sure.trans.dependencies.v2" },
 		"entrypoint": { "type": "string" },
+		"entrypoint_language": { "enum": ["python", "bash", "sh", "unknown"] },
+		"syntax_check": { "type": "object" },
 		"build_context": { "type": "string" },
 		"docker_copy_sources": { "type": "array", "items": { "type": "string" } },
 		"python_imports": { "type": "array", "items": { "type": "string" } },
-		"backend_signals": {
-			"type": "object",
-			"required": ["dockerfile", "uv_files", "conda_files", "python_executable", "conda_prefix"],
-			"properties": {
-				"dockerfile": { "type": ["string", "null"] },
-				"uv_files": { "type": "array", "items": { "type": "string" } },
-				"conda_files": { "type": "array", "items": { "type": "string" } },
-				"python_executable": { "type": ["string", "null"] },
-				"conda_prefix": { "type": ["string", "null"] }
-			},
-			"additionalProperties": false
-		},
-		"dependency_file": { "type": ["string", "null"] },
 		"literal_file_references": { "type": "array", "items": { "type": "string" } },
 		"subprocess_references": { "type": "array", "items": { "type": "string" } },
 		"support_paths": { "type": "array", "items": { "type": "string" } },
 		"model_path": { "type": "string" },
 		"unresolved": { "type": "array", "items": { "type": "string" } },
 		"external_paths": { "type": "array", "items": { "type": "string" } },
+		"dependency_evidence": { "type": "array", "items": { "type": "object" } },
+		"hard_conflicts": { "type": "array", "items": { "type": "object" } },
+		"review_signals": { "type": "array", "items": { "type": "object" } },
+		"dynamic_references": { "type": "array", "items": { "type": "object" } },
 		"dynamic_validation_required": { "type": "boolean" },
-		"status": { "enum": ["ready", "blocked"] }
+		"review_required": { "type": "boolean" },
+		"evidence_digest": { "type": "string" },
+		"agent_review": { "type": ["object", "null"] },
+		"evidence": { "type": "array", "items": { "type": "string" } },
+		"status": { "enum": ["ready", "needs_review", "blocked"] }
 	},
 	"additionalProperties": false
 }
