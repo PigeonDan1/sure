@@ -27,15 +27,23 @@ STDERR_TAIL_LINES = 200
 
 
 def tool_arguments(tool: str, audio: Path) -> dict[str, str]:
+    smoke_output = "/tmp/sure-trans-smoke-output.wav"
     if tool == "synthesize_speech":
         return {
             "text": "SURE smoke test",
             "prompt_audio_path": str(audio),
+            "output_path": smoke_output,
         }
     if tool == "convert_voice":
         return {
             "source_audio_path": str(audio),
             "reference_audio_path": str(audio),
+            "output_path": smoke_output,
+        }
+    if tool == "enhance_speech":
+        return {
+            "audio_path": str(audio),
+            "output_path": smoke_output,
         }
     return {"audio_path": str(audio)}
 
