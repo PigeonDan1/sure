@@ -11,7 +11,7 @@
     "source_url": "https://www.openslr.org/12",
     "citation_url": "https://www.danielpovey.com/files/2015_icassp_librispeech.pdf",
     "source_id": "librispeech",
-    "metadata_sha256": "dd159c14d2c379e988eb0fa3a0f5785a4f1a73638bdbdfc6e34b8ef067e8998a",
+    "metadata_sha256": "3858b270efe9eed67f43c87ac1885b9b024ebb494f5022529e7b6b154715d682",
     "metadata_hash_basis": "canonical selected key/task/annotation projection"
   },
   "selection": {
@@ -23,7 +23,7 @@
   "annotations": {
     "source": "dataset metadata or deterministic fixture transform",
     "ground_truth_path": "gt.jsonl",
-    "ground_truth_sha256": "60d0135d0166b18e1dc681db63f325dec69fddf0ea4d8fb64692b5fc42502104"
+    "ground_truth_sha256": "01fe9369451e678d0ec2eb4fa22cb5a7a1556c6a5dba38a77a0893192f17a454"
   },
   "transforms": [
     {

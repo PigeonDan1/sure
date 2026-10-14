@@ -1,1 +1,1 @@
-{"key":"doa_smoke_001_0000","recording_id":"doa_smoke_001","frame_index":0,"timestamp":0.0,"num_channels":2,"coordinate_system":"array_local_spherical","angle_unit":"degree","audio":"padded_1580.wav","sources":[{"source_id":"source_0","azimuth":30.0,"activity":true}]}
+{"key":"doa_smoke_001_0000","task":"DOA","label":"source_0","recording_id":"doa_smoke_001","frame_index":0,"timestamp":0.0,"num_channels":2,"coordinate_system":"array_local_spherical","angle_unit":"degree","audio":"padded_1580.wav","sources":[{"source_id":"source_0","azimuth":30.0,"activity":true}]}
