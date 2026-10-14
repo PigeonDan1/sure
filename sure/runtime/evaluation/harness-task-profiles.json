@@ -15,14 +15,25 @@
 			"tool_name": "transcribe_audio",
 			"io_contract": { "input_type": "audio_path", "primary_field": "text" }
 		},
-		"classification": {
+  "classification": {
 			"engine_task": "classification",
 			"default_language": "any",
 			"fixture_root": "fixtures/tasks/classification/librispeech_speaker_smoke",
 			"evaluation_bridge": "text_pair",
 			"tool_name": "classify_audio",
 			"io_contract": { "input_type": "audio_path", "primary_field": "label" }
-		},
+  },
+  "doa": {
+    "engine_task": "doa",
+    "default_language": "any",
+    "fixture_root": "fixtures/tasks/doa/doa_smoke",
+    "evaluation_bridge": "doa_jsonl",
+    "tool_name": "estimate_direction",
+    "io_contract": {
+      "input_type": "audio_path",
+      "primary_field": "sources"
+    }
+  },
 		"lid": {
 			"engine_task": "lid",
 			"default_language": "any",

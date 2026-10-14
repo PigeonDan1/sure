@@ -32,6 +32,7 @@ BRIDGE_REQUIRED_ROLES = {
     "text_pair_prompt": {"hyp", "prompt_jsonl", "ref"},
     "sure_json": {"reference_jsonl", "sample_output"},
     "sv_trials": {"sample_output", "trial_manifest"},
+    "doa_jsonl": {"reference_jsonl", "sample_output"},
 }
 AUDIO_SAMPLE_ENGINE_TASKS = {"se", "tse", "tts", "vc"}
 

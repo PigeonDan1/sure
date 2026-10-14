@@ -15,6 +15,7 @@ CHECK = SCRIPTS_DIR / "check_fixture.py"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from materialize_onboard_inputs import task_playbooks_for
+from sure.runtime.evaluation.task_registry import speech_understanding_tasks
 
 
 class TaskRegistryFixtureTests(unittest.TestCase):
@@ -71,7 +72,7 @@ class TaskRegistryFixtureTests(unittest.TestCase):
             )
             self.assertEqual(prepared.returncode, 0, msg=prepared.stderr)
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            self.assertEqual(len(manifest["suite_members"]), 16)
+            self.assertEqual(len(manifest["suite_members"]), len(speech_understanding_tasks()))
             self.assertEqual(
                 {entry["task_type"] for entry in manifest["subtask_fixtures"]},
                 set(manifest["suite_members"]),
