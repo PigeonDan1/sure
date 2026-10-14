@@ -1,0 +1,45 @@
+{
+  "schema": "sure.fixture_provenance.v2",
+  "task": "doa",
+  "dataset": {
+    "repository": "OpenSLR SLR12",
+    "revision": "LibriSpeech ASR corpus release",
+    "configuration": "test-clean or test-other",
+    "split": "test",
+    "license": "CC-BY-4.0",
+    "license_url": "https://www.openslr.org/resources/12/LICENSE.TXT",
+    "source_url": "https://www.openslr.org/12",
+    "citation_url": "https://www.danielpovey.com/files/2015_icassp_librispeech.pdf",
+    "source_id": "librispeech",
+    "metadata_sha256": "dd159c14d2c379e988eb0fa3a0f5785a4f1a73638bdbdfc6e34b8ef067e8998a",
+    "metadata_hash_basis": "canonical selected key/task/annotation projection"
+  },
+  "selection": {
+    "rule": "deterministic smoke subset with task-native labels and at most five inference samples",
+    "sample_ids": [
+      "doa_smoke_001_0000"
+    ]
+  },
+  "annotations": {
+    "source": "dataset metadata or deterministic fixture transform",
+    "ground_truth_path": "gt.jsonl",
+    "ground_truth_sha256": "60d0135d0166b18e1dc681db63f325dec69fddf0ea4d8fb64692b5fc42502104"
+  },
+  "transforms": [
+    {
+      "id": "source_media_copy",
+      "command": "copy source media bytes without modification; verify SHA-256"
+    }
+  ],
+  "files": [
+    {
+      "path": "padded_1580.wav",
+      "roles": [
+        "audio"
+      ],
+      "sha256": "e7222ecc78a1a73749cfce5745c7966859ffb47608b6adbb50a63d87be7d45fc",
+      "transform_id": "source_media_copy",
+      "source_sha256": "e7222ecc78a1a73749cfce5745c7966859ffb47608b6adbb50a63d87be7d45fc"
+    }
+  ]
+}

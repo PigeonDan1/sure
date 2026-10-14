@@ -15,7 +15,7 @@
 		"repo_commit": { "type": ["string", "null"] },
 		"task_type": {
 			"type": "string",
-			"enum": ["asr", "classification", "gr", "kws", "lid", "s2tt", "sa_asr", "sd", "se", "ser", "slu", "sv", "tse", "tts", "vad", "vc", "sa-asr", "saasr", "speech-enhancement", "speech_enhancement", "speech_understanding"]
+			"enum": ["asr", "classification", "doa", "gr", "kws", "lid", "s2tt", "sa_asr", "sd", "se", "ser", "slu", "sv", "tse", "tts", "vad", "vc", "sa-asr", "saasr", "speech-enhancement", "speech_enhancement", "speech_understanding"]
 		},
 		"deployment_type": { "type": "string", "enum": ["local", "api"] },
 		"package_profile": { "type": "string", "enum": ["none", "docker-local", "docker-registry"] },
