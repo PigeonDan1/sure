@@ -363,6 +363,7 @@ def main() -> int:
             "backend choice requires non-empty evidence strings",
         )
     elif kind == "dependencies":
+        require(value.get("schema") == "sure.trans.dependencies.v2", "dependency report schema is incompatible")
         require(value.get("status") == "ready", "dependency inspection is blocked")
         require(value.get("unresolved") == [], "dependency report contains unresolved paths")
         require(value.get("external_paths") == [], "dependency report contains undeclared external paths")
