@@ -494,9 +494,49 @@ def _validate_complete_manifest(
     return manifest
 
 
-def _require_declared_integrity_profile(marker: dict[str, Any]) -> None:
+def _legacy_approval_is_valid(model_dir: Path) -> bool:
+    try:
+        ready = _read_json(model_dir, "artifacts/approval_ready.json")
+        publication = _read_json(model_dir, "artifacts/publication_result.json")
+        decision = _read_json(model_dir, "artifacts/approval_decision.json")
+        destination = Path(str(ready.get("destination") or "")).expanduser().resolve()
+        candidate_values = [
+            ready.get("candidate_digest"),
+            publication.get("candidate_digest"),
+            decision.get("candidate_digest"),
+        ]
+        candidate_digests = set(candidate_values) if all(isinstance(value, str) for value in candidate_values) else set()
+        return (
+            ready.get("schema") == "sure.approve.approval_ready.v1"
+            and ready.get("status") == "ready"
+            and ready.get("eval_visible") is True
+            and destination == model_dir
+            and publication.get("schema") == "sure.approve.publication_result.v1"
+            and publication.get("status") == "passed"
+            and publication.get("destination")
+            and Path(str(publication["destination"])).expanduser().resolve() == model_dir
+            and publication.get("eval_visible") is True
+            and decision.get("schema") == "sure.approve.approval_decision.v1"
+            and decision.get("status") == "approved"
+            and decision.get("decision") == "approve"
+            and len(candidate_digests) == 1
+            and None not in candidate_digests
+            and ready.get("approval_decision_sha256") == _sha256(
+                _artifact_path(model_dir, "artifacts/approval_decision.json")
+            )
+            and ready.get("publication_result_sha256") == _sha256(
+                _artifact_path(model_dir, "artifacts/publication_result.json")
+            )
+        )
+    except (DeploymentBindingError, OSError, ValueError):
+        return False
+
+
+def _require_declared_integrity_profile(marker: dict[str, Any], model_dir: Path | None = None) -> None:
     """Deny the legacy fallback to bundles young enough to have declared a profile."""
     if marker.get("integrity_profile") is not None:
+        return
+    if model_dir is not None and _legacy_approval_is_valid(model_dir):
         return
     raw = marker.get("generated_at") or marker.get("timestamp")
     # Both deployment_ready schemas make generated_at mandatory, so a marker with
@@ -541,7 +581,7 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
     marker = _read_json(model_dir, "artifacts/deployment_ready.json")
     inventory = _read_json(model_dir, "artifacts/runtime_inventory.json")
     package = _read_json(model_dir, "artifacts/package_gate.json")
-    _require_declared_integrity_profile(marker)
+    _require_declared_integrity_profile(marker, model_dir)
 
     if marker.get("package_profile") == "none":
         _require(marker.get("schema") == DEPLOYMENT_READY_V2, "unsupported Python deployment_ready schema")
