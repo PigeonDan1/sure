@@ -27,8 +27,14 @@ from vc_exec import (
 PROBE = """import json
 try:
  import torch
- result={'python_ok':True,'torch':torch.__version__,'cuda_available':torch.cuda.is_available(),'bf16_supported':bool(torch.cuda.is_available() and torch.cuda.is_bf16_supported())}
- if result['cuda_available']:
+ cuda_available=bool(torch.cuda.is_available())
+ bf16_supported=False
+ if cuda_available:
+  probe_bf16=getattr(torch.cuda,'is_bf16_supported',None)
+  if callable(probe_bf16):
+   bf16_supported=bool(probe_bf16())
+ result={'python_ok':True,'torch':torch.__version__,'cuda_available':cuda_available,'bf16_supported':bf16_supported}
+ if cuda_available:
   result['gpu_count']=torch.cuda.device_count()
   result['gpu_name']=torch.cuda.get_device_name(0)
   result['compute_capability']=list(torch.cuda.get_device_capability(0))

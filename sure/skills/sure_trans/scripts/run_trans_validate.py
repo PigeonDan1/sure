@@ -129,8 +129,8 @@ def model_payload_bytes(run_dir: Path, resolved: dict, kind: str) -> int:
     return sum(entry.stat().st_size for entry in path.rglob("*") if entry.is_file())
 
 
-def prepare_container_outputs(spec: object, run_dir: Path) -> None:
-    """Clear the directory the container writes its stage output into.
+def prepare_container_outputs(spec: object, run_dir: Path, kind: str | None = None) -> None:
+    """Clear stale output for one validation stage.
 
     The target is the mount SURE_VALIDATE_ARTIFACTS_DIR names, which is what
     SKILL.md prescribes and what container_stage_error already reads; guessing
@@ -141,6 +141,10 @@ def prepare_container_outputs(spec: object, run_dir: Path) -> None:
     own <stage>_result.json, so a host path here is untrusted input. Refuse
     anything that resolves outside the run directory, and refuse the run's own
     artifacts directory, which holds gate products rather than container output.
+
+    Adapter stages intentionally share one directory: infer writes
+    sample_output.json and contract reads it back. Only the infer stage may
+    remove that sample and its generated audio directory.
     """
     root = run_dir.resolve()
     target = str((getattr(spec, "env", None) or {}).get("SURE_VALIDATE_ARTIFACTS_DIR", "") or "")
@@ -164,7 +168,16 @@ def prepare_container_outputs(spec: object, run_dir: Path) -> None:
                 f"validation output mount must not target the run artifacts directory: {mount!r}"
             )
         output_dir.mkdir(parents=True, exist_ok=True)
+        if kind is None:
+            stale = None
+        else:
+            stale_names = {f"{kind}_result.json"}
+            if kind == "infer":
+                stale_names.update({"sample_output.json", "outputs"})
+            stale = stale_names
         for child in output_dir.iterdir():
+            if stale is not None and child.name not in stale:
+                continue
             if child.is_dir() and not child.is_symlink():
                 shutil.rmtree(child)
             else:
@@ -510,7 +523,7 @@ def run_vc_validation(
 ) -> tuple[int, dict, str]:
     command, _ = command_for(data.get("run_command"))
     spec = docker_run_to_vc(command)
-    prepare_container_outputs(spec, run_dir)
+    prepare_container_outputs(spec, run_dir, kind)
     registry_ref, _, _ = ensure_validation_image(run_dir, resolved, kind, artifacts)
     env: dict[str, str] = dict(spec.env)
     for key, value in (data.get("env") or {}).items():
@@ -540,7 +553,7 @@ def run_vc_validation(
             if budget - GATE_BUDGET_RESERVE_SECONDS - spent < timeout:
                 budget_exhausted = True
                 break
-        prepare_container_outputs(spec, run_dir)
+        prepare_container_outputs(spec, run_dir, kind)
         attempt_log_dir = log_dir if attempt == 1 else log_dir / f"oom-attempt-{attempt}"
         result = run_vc_job(
             image=registry_ref,
