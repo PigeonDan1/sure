@@ -1,0 +1,20 @@
+{
+  "schema": "sure.fixture_provenance.v2",
+  "task": "rir",
+  "dataset": {
+    "repository": "synthetic",
+    "revision": "local smoke fixture",
+    "configuration": "rir_smoke",
+    "split": "test",
+    "license": "internal synthetic fixture",
+    "source_id": "sure_rir_smoke"
+  },
+  "selection": {
+    "rule": "one metadata row; audio files are generated in tests",
+    "sample_ids": ["rir_smoke_001"]
+  },
+  "annotations": {
+    "source": "synthetic metadata",
+    "ground_truth_path": "gt.jsonl"
+  }
+}

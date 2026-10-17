@@ -1,0 +1,41 @@
+schema: sure.rir.model_examples.v1
+examples:
+  - model: Rec-RIR
+    branch: single_channel
+    input_channels: 1
+    output_channels: 1
+    tool: estimate_rir
+    prediction_field: rir_path
+    channel_layout: mono
+    metrics: [rir_nmse, rir_corr, rt60_mae, rir_drr_mae, rir_c50_mae, rir_c80_mae]
+    note: "Use reference/prediction channel 0 for the single-channel chain."
+  - model: Rec-RIR-separate
+    branch: multi_channel
+    input_channels: 2
+    output_channels: 2
+    tool: estimate_rir
+    prediction_field: rir_path
+    channel_layout: binaural_lr
+    inference: "Run the mono model independently on channel 0 and channel 1, then merge L/R outputs."
+    metrics: [rir_nmse, rir_corr, rt60_mae, rir_iacc_mae, rir_itd_mae, rir_ild_mae, rir_ipd_mae]
+    note: "The model remains single-channel; only the wrapper combines its two independent estimates."
+  - model: NeuBIRE-MINT
+    branch: multi_channel
+    input_channels: 1
+    output_channels: 2
+    tool: estimate_rir
+    prediction_field: rir_path
+    channel_layout: binaural_lr
+    metrics: [rir_nmse, rir_corr, rt60_mae, rir_iacc_mae, rir_itd_mae, rir_ild_mae, rir_ipd_mae]
+    note: "Two-channel BIR estimate; spatial metrics require the MINT two-channel output."
+  - model: NeuBIRE-single
+    branch: single_channel
+    input_channels: 2
+    input_transform: duplicate_channel_0_to_left_and_right
+    output_channels: 1
+    output_channel: 0
+    tool: estimate_rir
+    prediction_field: rir_path
+    channel_layout: mono
+    metrics: [rir_nmse, rir_corr, rt60_mae, rir_drr_mae, rir_c50_mae, rir_c80_mae]
+    note: "NeuBIRE receives channel 0 copied to both input channels; score output channel 0 only."

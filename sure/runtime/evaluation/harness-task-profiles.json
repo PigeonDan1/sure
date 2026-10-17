@@ -99,6 +99,14 @@
 			"tool_name": "enhance_speech",
 			"io_contract": { "input_type": "audio_path", "primary_field": "audio_path" }
 		},
+		"rir": {
+			"engine_task": "rir",
+			"default_language": "any",
+			"fixture_root": "fixtures/tasks/rir/rir_smoke",
+			"evaluation_bridge": "samples_jsonl",
+			"tool_name": "estimate_rir",
+			"io_contract": { "input_type": "audio_path", "primary_field": "audio_path" }
+		},
 		"ser": {
 			"engine_task": "classification",
 			"default_language": "any",
