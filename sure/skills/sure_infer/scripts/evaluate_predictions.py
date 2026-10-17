@@ -57,6 +57,16 @@ LOWER_IS_BETTER_METRICS = {
     "tts_cer",
     "vc_wer",
     "vc_cer",
+    "rir_nmse",
+    "rt60_mae",
+    "rir_drr_mae",
+    "rir_c50_mae",
+    "rir_c80_mae",
+    "rir_iacc_mae",
+    "rir_itd_mae",
+    "rir_ild_mae",
+    "rir_ipd_mae",
+    "rir_doa_mae",
 }
 
 
@@ -367,6 +377,38 @@ def _sample_source_audio(sample: dict[str, Any]) -> str:
     )
 
 
+def _sample_reference_rir(sample: dict[str, Any]) -> str:
+    return str(
+        sample.get("reference_rir")
+        or sample.get("reference_rir_path")
+        or sample.get("ground_truth_rir")
+        or ""
+    )
+
+
+def _prediction_rir_path(structured: dict[str, Any], prediction: dict[str, Any]) -> Any:
+    return (
+        prediction.get("rir_path")
+        or prediction.get("prediction_rir")
+        or prediction.get("audio_path")
+        or structured.get("rir_path")
+        or structured.get("prediction_rir")
+        or structured.get("normalized_prediction")
+    )
+
+
+def _rir_metadata(sample: dict[str, Any], structured: dict[str, Any]) -> dict[str, Any]:
+    metadata = sample.get("metadata")
+    result = dict(metadata) if isinstance(metadata, dict) else {}
+    for key in ("sample_rate", "channel_layout", "microphone_spacing_m", "sound_speed_mps"):
+        value = sample.get(key)
+        if value is None:
+            value = structured.get(key)
+        if value is not None:
+            result[key] = value
+    return result
+
+
 def _write_external_audio_samples_jsonl(
     *,
     task: str,
@@ -386,6 +428,27 @@ def _write_external_audio_samples_jsonl(
         if structured is None:
             raise ValueError(f"Missing structured prediction row for {task_upper} sample: {key}")
         prediction = structured.get("prediction") if isinstance(structured.get("prediction"), dict) else {}
+        if task_upper == "RIR":
+            rir_path = _prediction_rir_path(structured, prediction)
+            reference_rir = _localize_sample_audio_path(_sample_reference_rir(sample), dataset_jsonl_path)
+            if not rir_path:
+                raise ValueError(f"Missing prediction RIR path for {task_upper} sample: {key}")
+            generated_rir = _resolve_existing_prediction_path(rir_path, structured_prediction_path.parent)
+            row = {
+                "sample_id": key,
+                "prediction_rir": generated_rir,
+                "reference_rir": reference_rir,
+                "sample_rate": sample.get("sample_rate") or structured.get("sample_rate"),
+                "channel_layout": sample.get("channel_layout") or structured.get("channel_layout"),
+                "metadata": _rir_metadata(sample, structured),
+            }
+            missing_roles = [role for role in ("prediction_rir", "reference_rir") if not row.get(role)]
+            if missing_roles:
+                raise ValueError(
+                    f"{task_upper} sample {key} is missing required role(s): {', '.join(missing_roles)}"
+                )
+            rows.append(row)
+            continue
         audio_path = prediction.get("audio_path") or structured.get("normalized_prediction")
         if not audio_path:
             raise ValueError(f"Missing prediction audio_path for {task_upper} sample: {key}")

@@ -6,7 +6,7 @@
     "speech_enhancement": "se"
   },
   "engine": {
-    "commit": "6083336bccd25bda8089198c08adcb2ce18c56ff",
+    "commit": "4889e438087bd6bedefa3e33ec71818ea77de1b0",
     "path": "sure/external/sure-evaluation"
   },
   "schema": "sure.engine_capabilities.v1",
@@ -19,6 +19,7 @@
         "gr",
         "kws",
         "lid",
+        "rir",
         "s2tt",
         "sa_asr",
         "sd",
@@ -881,6 +882,204 @@
         }
       ],
       "tool_name": "identify_language"
+    },
+    "rir": {
+      "default_language": "any",
+      "engine_task": "rir",
+      "evaluation_bridge": "samples_jsonl",
+      "fixture_root": "fixtures/tasks/rir/rir_smoke",
+      "io_contract": {
+        "input_type": "audio_path",
+        "primary_field": "audio_path"
+      },
+      "language_sensitive": false,
+      "metrics": [
+        "rir_c50_mae",
+        "rir_c80_mae",
+        "rir_doa_mae",
+        "rir_drr_mae",
+        "rir_edc_mae",
+        "rir_iacc_mae",
+        "rir_ild_mae",
+        "rir_ipd_mae",
+        "rir_itd_mae",
+        "rir_npm",
+        "rt30_mae",
+        "rt60_mae"
+      ],
+      "readiness_requirements": {
+        "engine_routes": true,
+        "evaluation_bridge": true,
+        "fixture_ground_truth": true,
+        "fixture_index": true,
+        "fixture_provenance": true,
+        "io_contract": true,
+        "tool_name": true
+      },
+      "ready": true,
+      "required_roles": [
+        "prediction_rir",
+        "reference_rir"
+      ],
+      "routes": [
+        {
+          "input_contract": "scoring/rir_npm",
+          "language": "any",
+          "metric": "rir_npm",
+          "optional_roles": [
+            "metadata"
+          ],
+          "pipeline_id": "rir.any.rir_npm.rir_npm_v1",
+          "required_roles": [
+            "prediction_rir",
+            "reference_rir"
+          ]
+        },
+        {
+          "input_contract": "scoring/rt30_mae",
+          "language": "any",
+          "metric": "rt30_mae",
+          "optional_roles": [
+            "metadata"
+          ],
+          "pipeline_id": "rir.any.rt30_mae.rt30_mae_v1",
+          "required_roles": [
+            "prediction_rir",
+            "reference_rir"
+          ]
+        },
+        {
+          "input_contract": "scoring/rt60_mae",
+          "language": "any",
+          "metric": "rt60_mae",
+          "optional_roles": [
+            "metadata"
+          ],
+          "pipeline_id": "rir.any.rt60_mae.rt60_mae_v1",
+          "required_roles": [
+            "prediction_rir",
+            "reference_rir"
+          ]
+        },
+        {
+          "input_contract": "scoring/rir_drr_mae",
+          "language": "any",
+          "metric": "rir_drr_mae",
+          "optional_roles": [
+            "metadata"
+          ],
+          "pipeline_id": "rir.any.rir_drr_mae.rir_drr_mae_v1",
+          "required_roles": [
+            "prediction_rir",
+            "reference_rir"
+          ]
+        },
+        {
+          "input_contract": "scoring/rir_c50_mae",
+          "language": "any",
+          "metric": "rir_c50_mae",
+          "optional_roles": [
+            "metadata"
+          ],
+          "pipeline_id": "rir.any.rir_c50_mae.rir_c50_mae_v1",
+          "required_roles": [
+            "prediction_rir",
+            "reference_rir"
+          ]
+        },
+        {
+          "input_contract": "scoring/rir_c80_mae",
+          "language": "any",
+          "metric": "rir_c80_mae",
+          "optional_roles": [
+            "metadata"
+          ],
+          "pipeline_id": "rir.any.rir_c80_mae.rir_c80_mae_v1",
+          "required_roles": [
+            "prediction_rir",
+            "reference_rir"
+          ]
+        },
+        {
+          "input_contract": "scoring/rir_edc_mae",
+          "language": "any",
+          "metric": "rir_edc_mae",
+          "optional_roles": [
+            "metadata"
+          ],
+          "pipeline_id": "rir.any.rir_edc_mae.rir_edc_mae_v1",
+          "required_roles": [
+            "prediction_rir",
+            "reference_rir"
+          ]
+        },
+        {
+          "input_contract": "scoring/rir_iacc_mae",
+          "language": "any",
+          "metric": "rir_iacc_mae",
+          "optional_roles": [
+            "metadata"
+          ],
+          "pipeline_id": "rir.any.rir_iacc_mae.rir_iacc_mae_v1",
+          "required_roles": [
+            "prediction_rir",
+            "reference_rir"
+          ]
+        },
+        {
+          "input_contract": "scoring/rir_itd_mae",
+          "language": "any",
+          "metric": "rir_itd_mae",
+          "optional_roles": [
+            "metadata"
+          ],
+          "pipeline_id": "rir.any.rir_itd_mae.rir_itd_mae_v1",
+          "required_roles": [
+            "prediction_rir",
+            "reference_rir"
+          ]
+        },
+        {
+          "input_contract": "scoring/rir_ild_mae",
+          "language": "any",
+          "metric": "rir_ild_mae",
+          "optional_roles": [
+            "metadata"
+          ],
+          "pipeline_id": "rir.any.rir_ild_mae.rir_ild_mae_v1",
+          "required_roles": [
+            "prediction_rir",
+            "reference_rir"
+          ]
+        },
+        {
+          "input_contract": "scoring/rir_ipd_mae",
+          "language": "any",
+          "metric": "rir_ipd_mae",
+          "optional_roles": [
+            "metadata"
+          ],
+          "pipeline_id": "rir.any.rir_ipd_mae.rir_ipd_mae_v1",
+          "required_roles": [
+            "prediction_rir",
+            "reference_rir"
+          ]
+        },
+        {
+          "input_contract": "scoring/rir_doa_mae",
+          "language": "any",
+          "metric": "rir_doa_mae",
+          "optional_roles": [
+            "metadata"
+          ],
+          "pipeline_id": "rir.any.rir_doa_mae.rir_doa_mae_v1",
+          "required_roles": [
+            "prediction_rir",
+            "reference_rir"
+          ]
+        }
+      ],
+      "tool_name": "estimate_rir"
     },
     "s2tt": {
       "default_language": "en",

@@ -1,0 +1,14 @@
+{
+  "schema": "sure.rir.variable_mspacing_selection.v1",
+  "source_manifest": "variableMspacingTestSet/test_manifest.jsonl",
+  "scene_ids": ["scene_0000", "scene_0001"],
+  "microphone_spacing_cm": [3, 6, 9, 12, 15, 18, 21, 24, 27, 30],
+  "samples_per_spacing": 2,
+  "sample_count": 20,
+  "channel_layout": "binaural_lr",
+  "sample_rate": 16000,
+  "models": {
+    "single_channel": "Rec-RIR",
+    "multi_channel": "NeuBIRE-MINT"
+  }
+}
