@@ -74,6 +74,7 @@ def fake_server_source(*, notify: bool) -> str:
 SERVER_CONFIG = """name: demo
 model:
   id: demo/model
+  task: SE
 server:
   command: [python, server.py]
 {declared}tools:
@@ -126,6 +127,7 @@ class DeclarationTests(unittest.TestCase):
         assert declaration is not None
         self.assertEqual(declaration["protocol"], "jsonl")
         self.assertEqual(declaration["tool"], "enhance_speech")
+        self.assertEqual(declaration["task"], "SE")
         self.assertEqual(declaration["command"], ["python", "server.py"])
 
     def test_an_alias_resolves_to_the_same_framing_the_client_uses(self) -> None:
@@ -273,10 +275,29 @@ def run_gate(run_dir: Path, produces: Path) -> subprocess.CompletedProcess:
 class GateTests(unittest.TestCase):
     """The whole gate, on a model whose server.py really answers MCP."""
 
+    def test_the_gate_rejects_jsonl_asr_with_an_unprojectable_result(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp)
+            model_dir, run_dir, produces = stage_infer_gate(scratch, "  protocol: jsonl\n")
+            config = model_dir / "config.yaml"
+            config.write_text(config.read_text(encoding="utf-8").replace("task: SE", "task: ASR"), encoding="utf-8")
+            (scratch / "fake_server.py").write_text(
+                'import json, sys\nsys.stdin.readline()\n'
+                'print(json.dumps({"ok": True, "result": {"text": "نص عربي"}}), flush=True)\n',
+                encoding="utf-8",
+            )
+            result = run_gate(run_dir, produces)
+
+            self.assertNotEqual(result.returncode, 0)
+            evidence = json.loads((run_dir / "artifacts" / "server_smoke.json").read_text(encoding="utf-8"))
+            self.assertEqual(evidence["task"], "ASR")
+            self.assertIn("prediction projection is empty", evidence["error"])
+            self.assertEqual(evidence["steps"]["single_request"]["prediction"], {"text": ""})
+
     def test_the_gate_passes_when_the_declared_server_answers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             scratch = Path(tmp)
-            _, run_dir, produces = stage_infer_gate(scratch, "  protocol: mcp\n")
+            model_dir, run_dir, produces = stage_infer_gate(scratch, "  protocol: mcp\n")
             result = run_gate(run_dir, produces)
 
             self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
@@ -285,6 +306,7 @@ class GateTests(unittest.TestCase):
             self.assertEqual(evidence["status"], "passed")
             self.assertEqual(evidence["protocol"], "mcp")
             self.assertTrue(evidence["steps"]["tools_call"]["output_nonempty"])
+            self.assertEqual(evidence["steps"]["tools_call"]["prediction"]["audio_path"], str(model_dir / "artifacts" / "noisy.wav"))
             self.assertIn("noisy.wav", evidence["steps"]["tools_call"]["primary_output"])
 
     def test_the_gate_starts_the_server_with_the_declared_env_and_cwd(self) -> None:

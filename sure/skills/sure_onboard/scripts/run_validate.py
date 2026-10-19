@@ -40,6 +40,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "sure_infer" / "scr
 from deployment_contract import declared_server_protocol
 from model_child_env import model_child_env
 from server_protocol import JSONL_SERVER_PROTOCOL
+from sure.runtime.evaluation.task_registry import normalize_task
 from sure.runtime.model_server.tool_contract import tool_contracts
 from sure.runtime.uvenv import runtime_python_relative
 
@@ -518,6 +519,8 @@ def server_declaration(model_dir: Path, run_dir: Path) -> dict | None:
     # `tool_contracts` reads the same fields the client reads.
     contract = tool_contracts(config, source=f"{model_dir}/config.yaml")[0]
     server = config.get("server") if isinstance(config.get("server"), dict) else {}
+    model = config.get("model") if isinstance(config.get("model"), dict) else {}
+    task = normalize_task(model.get("task") or config.get("task") or config.get("task_type") or "ASR").upper()
     command = [str(item) for item in server.get("command", [])]
     # `command[0]` is the shorthand the model was built with (`.venv/bin/python`),
     # not a path that resolves here: the infer client and the runtime inventory
@@ -532,6 +535,7 @@ def server_declaration(model_dir: Path, run_dir: Path) -> dict | None:
         "command": command,
         "protocol": "jsonl" if declared == JSONL_SERVER_PROTOCOL else "mcp",
         "tool": contract.name,
+        "task": task,
         # The smoke compares what the server advertises on `tools/list` against
         # this, so a config and a server that disagree are caught before sealing.
         "input_schema": contract.input_schema,
@@ -583,6 +587,7 @@ def drive_declared_server(data: dict, run_dir: Path, model_dir: Path, validation
             "--server-command", json.dumps(declaration["command"]),
             "--protocol", declaration["protocol"],
             "--tool", declaration["tool"],
+            "--task", declaration["task"],
             "--input-schema-json", json.dumps(declaration["input_schema"]),
             "--arguments-json", json.dumps(declaration["arguments"]),
             "--env-json", json.dumps(child_env),
