@@ -135,6 +135,17 @@ class DeclarationTests(unittest.TestCase):
         assert declaration is not None
         self.assertEqual(declaration["protocol"], "mcp")
 
+    def test_classification_supplies_task_when_config_omits_it(self) -> None:
+        model_dir = self._model_dir()
+        config = model_dir / "config.yaml"
+        config.write_text(config.read_text(encoding="utf-8").replace("  task: SE\n", ""), encoding="utf-8")
+        (self.run_dir / "artifacts" / "classification.json").write_text(
+            json.dumps({"task_type": "tts"}), encoding="utf-8"
+        )
+        declaration = run_validate.server_declaration(model_dir, self.run_dir)
+        assert declaration is not None
+        self.assertEqual(declaration["task"], "TTS")
+
     def test_the_shorthand_interpreter_is_swapped_for_the_model_venv(self) -> None:
         # sure_feed scaffolds `command: [".venv/bin/python", "server.py"]`, and by
         # validation time the model's venv is built. Starting the shorthand

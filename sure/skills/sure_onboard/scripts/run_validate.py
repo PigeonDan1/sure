@@ -520,7 +520,12 @@ def server_declaration(model_dir: Path, run_dir: Path) -> dict | None:
     contract = tool_contracts(config, source=f"{model_dir}/config.yaml")[0]
     server = config.get("server") if isinstance(config.get("server"), dict) else {}
     model = config.get("model") if isinstance(config.get("model"), dict) else {}
-    task = normalize_task(model.get("task") or config.get("task") or config.get("task_type") or "ASR").upper()
+    classification_path = run_dir / "artifacts" / "classification.json"
+    classification = read_json(classification_path) if classification_path.is_file() else {}
+    task = normalize_task(
+        model.get("task") or config.get("task") or config.get("task_type")
+        or classification.get("task_type") or "ASR"
+    ).upper()
     command = [str(item) for item in server.get("command", [])]
     # `command[0]` is the shorthand the model was built with (`.venv/bin/python`),
     # not a path that resolves here: the infer client and the runtime inventory
