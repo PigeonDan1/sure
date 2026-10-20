@@ -134,8 +134,7 @@ def _engine_pyproject_sha256(pyproject: Path) -> str:
     return hashlib.sha256(pyproject.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
-def _expected_binding(engine_root: Path) -> dict[str, Any]:
-    engine_root = engine_root.expanduser().resolve()
+def _locked_engine_identity(engine_root: Path) -> tuple[dict[str, Any], Path, str, str]:
     spec = _load_json(SPEC_ROOT / "runtime.json")
     lock_path = SPEC_ROOT / str(spec.get("lock_file") or "requirements.lock.txt")
     pyproject = engine_root / "pyproject.toml"
@@ -168,7 +167,43 @@ def _expected_binding(engine_root: Path) -> dict[str, Any]:
             "evaluation engine pyproject.toml differs from the locked runtime "
             "after newline normalisation"
         )
+    return spec, lock_path, commit, pyproject_sha
 
+
+def check_evaluation_lock(engine_root: Path) -> dict[str, Any]:
+    """Check the repository's pinned engine without preparing Python runtimes."""
+    engine_root = engine_root.expanduser().resolve()
+    _, lock_path, commit, pyproject_sha = _locked_engine_identity(engine_root)
+    try:
+        completed = subprocess.run(
+            ["git", "-c", f"safe.directory={REPO_ROOT}", "ls-files", "--stage", "--", str(engine_root)],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=git_environment(evaluation_child_environment()),
+        )
+    except OSError as exc:
+        raise EvaluationRuntimeError(f"cannot read the evaluation engine gitlink: {exc}") from exc
+    entries = completed.stdout.splitlines()
+    fields = entries[0].split(maxsplit=3) if len(entries) == 1 else []
+    if completed.returncode or len(fields) != 4 or fields[0] != "160000" or fields[2] != "0":
+        raise EvaluationRuntimeError("evaluation engine gitlink is missing or unresolved in the Harness repository")
+    if fields[1] != commit:
+        raise EvaluationRuntimeError(
+            f"evaluation engine gitlink differs from the locked runtime: indexed={fields[1]} locked={commit}"
+        )
+    return {
+        "ok": True,
+        "engine_commit": commit,
+        "engine_pyproject_sha256": pyproject_sha,
+        "lock_sha256": sha256_file(lock_path),
+    }
+
+
+def _expected_binding(engine_root: Path) -> dict[str, Any]:
+    engine_root = engine_root.expanduser().resolve()
+    spec, lock_path, commit, pyproject_sha = _locked_engine_identity(engine_root)
     harness = _approved_harness_runtime()
 
     lock_sha = sha256_file(lock_path)
@@ -431,11 +466,17 @@ def _write_readiness(output: str | None, record: dict[str, Any]) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--engine-root", required=True)
-    parser.add_argument("--prepare", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--prepare", action="store_true")
+    mode.add_argument("--check-lock", action="store_true", help="Check the gitlink and engine lock without installing runtimes")
     parser.add_argument("--output", help="Write the readiness record here, on the failing path too")
     args = parser.parse_args()
     try:
-        binding = ensure_evaluation_runtime(Path(args.engine_root), prepare=args.prepare)
+        binding = (
+            check_evaluation_lock(Path(args.engine_root))
+            if args.check_lock
+            else ensure_evaluation_runtime(Path(args.engine_root), prepare=args.prepare)
+        )
     except EvaluationRuntimeError as exc:
         # [2.6/5] used to redirect this program's stdout into the artifact, so
         # a refusal left a zero-byte file and the reason survived only as a

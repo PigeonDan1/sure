@@ -65,6 +65,14 @@ git -C sure/external/sure-evaluation show HEAD:pyproject.toml | sha256sum   # �
 
 两个值写进 `sure/runtime/evaluation/runtime.json`。gitlink 和 runtime.json 里记的值对不上时,`/sure_eval` 一解析 route plan 就当场报 `evaluation engine commit differs from the locked runtime`,而 `npm run sure:doctor` 在 submodule 正常的情况下查不出这一项。
 
+提交前运行只读一致性检查:
+
+```bash
+python3 sure/skills/sure_infer/scripts/evaluation_runtime.py --engine-root sure/external/sure-evaluation --check-lock
+```
+
+检查要求父仓库索引中的 gitlink、引擎 HEAD 和 runtime lock 的 commit 一致,同时校验归一化后的 pyproject 摘要和依赖锁文件。它不安装 Python 环境;Public CI 还会使用真实 Harness binding 准备 Evaluation Runtime 并再次验证,以检查解释器、manifest 和必要的 pipeline 导入。
+
 三样一起提交:
 
 ```bash
