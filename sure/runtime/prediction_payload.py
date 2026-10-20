@@ -6,7 +6,7 @@ import json
 import math
 from typing import Any
 
-from sure.runtime.evaluation.task_registry import task_profile
+from sure.runtime.evaluation.task_registry import normalize_task, task_profile
 
 
 def extract_mcp_payload(response: dict[str, Any]) -> Any:
@@ -51,7 +51,7 @@ def first_present(*values: Any) -> Any:
 
 
 def normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict[str, Any]]:
-    task_name = task.upper()
+    task_name = normalize_task(task).upper()
     if isinstance(payload, dict):
         prediction = dict(payload.get("prediction") or {})
         if not prediction:
@@ -107,7 +107,7 @@ def normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict[
             if prediction.get("label") is not None:
                 normalized["label"] = single_line_text(prediction["label"])
             return normalized_value, normalized
-        if task_name in {"SD", "SA-ASR", "SA_ASR"}:
+        if task_name in {"SD", "SA_ASR"}:
             if prediction.get("segments") is not None:
                 return json.dumps(prediction["segments"], ensure_ascii=False), {"segments": prediction["segments"]}
             value = prediction.get("annotation_path") or prediction.get("annotation") or payload.get("text") or ""
@@ -189,7 +189,7 @@ def normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict[
         raise ValueError(f"{task_name} prediction must be a JSON object with {field}")
     if task_name in {"TTS", "VC", "SE", "TSE"}:
         value = path_text(payload, field="audio_path")
-    elif task_name in {"SD", "SA-ASR", "SA_ASR"}:
+    elif task_name in {"SD", "SA_ASR"}:
         value = path_text(payload, field="annotation_path")
     else:
         value = single_line_text(payload)
@@ -207,8 +207,11 @@ def normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict[
         if task_name == "LID":
             normalized["language"] = value
         return value, normalized
-    if task_name in {"SD", "SA-ASR", "SA_ASR"}:
+    if task_name in {"SD", "SA_ASR"}:
         return value, {"annotation": value}
+    if task_name in {"S2TT", "SLU"}:
+        field = str(task_profile(task)["io_contract"]["primary_field"])
+        return value, {field: value, "text": value}
     if task_name == "KWS":
         raise ValueError("KWS prediction must be a JSON object with detected, keyword, and score")
     return value, {"text": value}

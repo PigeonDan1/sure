@@ -180,9 +180,14 @@ class ServerSmokeTests(unittest.TestCase):
         self.assertEqual(evidence["steps"]["single_request"]["projection"], "نص عربي")
 
     def test_both_protocols_accept_standard_fields_and_legitimate_zero_values(self) -> None:
+        audio = self.tmp / "generated.wav"
+        audio.write_bytes(b"RIFF")
         cases = [
             ("S2TT", {"translation": "translated text"}, {"translation": "translated text", "text": "translated text"}),
             ("SLU", {"answer": "activate_lights"}, {"answer": "activate_lights", "text": "activate_lights"}),
+            ("S2TT", "translated text", {"translation": "translated text", "text": "translated text"}),
+            ("SLU", "activate_lights", {"answer": "activate_lights", "text": "activate_lights"}),
+            ("speech-enhancement", {"audio_path": str(audio)}, {"audio_path": str(audio), "enhanced_audio": str(audio)}),
             ("DOA", {"sources": []}, {"sources": []}),
             ("SV", {"embedding": [0, 0.5]}, {"embedding": [0, 0.5]}),
             ("CLASSIFICATION", {"label": 0}, {"label": "0"}),

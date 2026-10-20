@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import copy
 import json
 import os
 import subprocess
@@ -14,6 +15,70 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import generate_predictions_via_server as gp  # noqa: E402
+from sure.runtime.evaluation.task_registry import canonical_tasks, capabilities, normalize_task  # noqa: E402
+
+
+DOA_FRAME = {
+    "recording_id": "recording-1", "frame_index": 0, "timestamp": 0.0,
+    "num_channels": 2, "coordinate_system": "array_local_spherical", "angle_unit": "degree",
+    "sources": [],
+}
+DIARIZATION = [{"start": 0.0, "end": 1.0, "speaker": "speaker-1"}]
+TRANSCRIPTION = [{"start": 0.0, "end": 1.0, "speaker": "speaker-1", "text": "hello"}]
+TASK_CASES = {
+    "asr": ({"text": "hello\nworld"}, "hello world", {"text": "hello world"}),
+    "classification": ({"label": 0}, "0", {"label": "0"}),
+    "doa": (DOA_FRAME, DOA_FRAME, DOA_FRAME),
+    "gr": ({"label": 0}, "0", {"label": "0"}),
+    "kws": (
+        {"detected": False, "keyword": None, "score": 0},
+        {"detected": False, "keyword": None, "score": 0.0},
+        {"detected": False, "keyword": None, "score": 0.0},
+    ),
+    "lid": ({"label": "en"}, "en", {"label": "en", "language": "en"}),
+    "s2tt": ({"translation": "translated text"}, "translated text", {"translation": "translated text", "text": "translated text"}),
+    "sa_asr": ({"segments": TRANSCRIPTION}, TRANSCRIPTION, {"segments": TRANSCRIPTION}),
+    "sd": ({"segments": DIARIZATION}, DIARIZATION, {"segments": DIARIZATION}),
+    "se": ({"audio_path": "generated.wav"}, "generated.wav", {"audio_path": "generated.wav", "enhanced_audio": "generated.wav"}),
+    "ser": ({"label": "happy"}, "happy", {"label": "happy"}),
+    "slu": ({"answer": "activate_lights"}, "activate_lights", {"answer": "activate_lights", "text": "activate_lights"}),
+    "sv": ({"embedding": [0, 0.5]}, [0, 0.5], {"embedding": [0, 0.5]}),
+    "tse": ({"audio_path": "generated.wav"}, "generated.wav", {"audio_path": "generated.wav", "prediction_audio": "generated.wav"}),
+    "tts": ({"audio_path": "generated.wav", "sample_rate": 16000}, "generated.wav", {"audio_path": "generated.wav", "sample_rate": 16000}),
+    "vad": ({"speech_segments": []}, {"speech_segments": []}, {"speech_segments": []}),
+    "vc": ({"audio_path": "generated.wav"}, "generated.wav", {"audio_path": "generated.wav", "converted_audio": "generated.wav"}),
+}
+
+
+class TaskProjectionContractTests(unittest.TestCase):
+    def _assert_case(self, task, payload, expected_projection, expected_prediction) -> None:
+        original = copy.deepcopy(payload)
+        projection, prediction = gp._normalize_prediction_payload(payload, task=task)
+        self.assertEqual(payload, original, "projection must not mutate the server response")
+        if isinstance(expected_projection, (dict, list)):
+            self.assertEqual(json.loads(projection), expected_projection)
+        else:
+            self.assertEqual(projection, expected_projection)
+        self.assertEqual(prediction, expected_prediction)
+
+    def test_all_registered_tasks_project_flat_and_nested_predictions(self) -> None:
+        self.assertEqual(set(TASK_CASES), set(canonical_tasks()))
+        for task, (payload, projection, prediction) in TASK_CASES.items():
+            for nested in (False, True):
+                with self.subTest(task=task, nested=nested):
+                    response = {"prediction": payload} if nested else payload
+                    self._assert_case(task.upper() if nested else task, response, projection, prediction)
+
+    def test_registered_aliases_use_the_canonical_task_projection(self) -> None:
+        for alias in capabilities()["aliases"]:
+            with self.subTest(alias=alias):
+                payload, projection, prediction = TASK_CASES[normalize_task(alias)]
+                self._assert_case(alias, payload, projection, prediction)
+
+    def test_plain_text_uses_the_tasks_standard_field(self) -> None:
+        for task, field in (("ASR", "text"), ("S2TT", "translation"), ("SLU", "answer")):
+            with self.subTest(task=task):
+                self._assert_case(task, "hello\nworld", "hello world", {field: "hello world", "text": "hello world"})
 
 
 class AsrPayloadNormalizationTests(unittest.TestCase):
