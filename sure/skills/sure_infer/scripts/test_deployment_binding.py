@@ -663,7 +663,10 @@ class DeploymentBindingTests(unittest.TestCase):
             ],
         )
 
-    def test_local_command_prefers_matching_image_harness_runtime(self) -> None:
+    def test_local_command_ignores_the_image_harness_runtime(self) -> None:
+        # A legacy image may still carry a Harness Runtime. It is dead code:
+        # the run must execute the active injected runtime mounted from the
+        # checkout, never the image's copy, so there is a single source.
         binding = load_deployment_binding(self.model, "demo")
         image_python = "/opt/sure-harness/test/bin/python"
         binding["container"]["harness_runtime"] = {
@@ -671,15 +674,15 @@ class DeploymentBindingTests(unittest.TestCase):
             "python_executable": image_python,
             "manifest_path": "/opt/sure-harness/test/runtime-manifest.json",
             "runtime_root": "/opt/sure-harness/test",
-            "execution_source": "approved_image",
         }
+        active = self._runtime_binding()
         command, provenance = build_local_container_command(
             surface={"env": {}},
             eval_input={
                 "model": {"deployment_binding": binding},
                 "runtime": {
                     "run_dir": str(self.output),
-                    "harness_runtime": self._runtime_binding(),
+                    "harness_runtime": active,
                 },
                 "datasets": [],
             },
@@ -688,9 +691,13 @@ class DeploymentBindingTests(unittest.TestCase):
             repo_root=self.repo,
             device_request="cpu",
         )
-        self.assertIn(f"HARNESS_PYTHON_BIN={image_python}", command)
-        self.assertFalse(provenance["harness_runtime_mounted_from_repo"])
-        self.assertEqual(provenance["harness_runtime"]["execution_source"], "approved_image")
+        self.assertIn(
+            f"HARNESS_PYTHON_BIN={container_side(provenance['harness_runtime']['python_executable'])}",
+            command,
+        )
+        self.assertNotIn(f"HARNESS_PYTHON_BIN={image_python}", command)
+        self.assertTrue(provenance["harness_runtime_mounted_from_repo"])
+        self.assertEqual(provenance["harness_runtime"]["execution_source"], "active_injected_runtime")
 
 
 

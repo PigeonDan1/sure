@@ -62,6 +62,7 @@ def build_execution_provenance(
     *,
     harness_root: Path,
     evaluation_runtime: dict[str, Any] | None,
+    harness_runtime: dict[str, Any] | None = None,
     image_digest: str | None = None,
     image_ref: str | None = None,
     require_harness_commit: bool = False,
@@ -83,11 +84,16 @@ def build_execution_provenance(
     if require_evaluation_runtime and not evaluation_engine_commit:
         raise ExecutionProvenanceError(unavailable["evaluation_engine_commit"])
 
+    harness_payload = dict(harness_runtime or {})
     return {
         "schema": PROVENANCE_SCHEMA,
         "generated_at": _utc_now(),
         "generated_by": "Harness host submission",
         "harness_commit": harness_commit,
+        "harness_runtime_source": "active_injected_runtime" if harness_payload else None,
+        "harness_runtime_id": _required_text(harness_payload, "runtime_id"),
+        "harness_lock_sha256": _required_text(harness_payload, "lock_sha256"),
+        "harness_python_executable": _required_text(harness_payload, "python_executable"),
         "evaluation_engine_commit": evaluation_engine_commit,
         "evaluation_runtime_id": _required_text(evaluation_runtime_payload, "runtime_id"),
         "evaluation_runtime_lock_sha256": _required_text(evaluation_runtime_payload, "lock_sha256"),

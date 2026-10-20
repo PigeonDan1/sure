@@ -362,12 +362,13 @@ class ExpectedBindingSummaryTests(unittest.TestCase):
 
 
 def _probe_fixture() -> tuple[dict, dict]:
+    runtime_root = Path(checks.__file__).resolve().parents[4] / "sure" / ".runtime" / "harness" / "demo"
     harness = {
         "runtime_id": "sure-harness-test",
         "lock_sha256": "c" * 64,
-        "python_executable": "/opt/sure-harness/bin/python",
-        "manifest_path": "/opt/sure-harness/runtime-manifest.json",
-        "runtime_root": "/opt/sure-harness",
+        "python_executable": str(runtime_root / "bin" / "python"),
+        "manifest_path": str(runtime_root / "runtime-manifest.json"),
+        "runtime_root": str(runtime_root),
     }
     binding = {
         "target_image_ref": IMAGE_REF,
@@ -410,13 +411,10 @@ class LiveRuntimeProbeTests(unittest.TestCase):
         self.assertIn(container_side(harness["python_executable"]), command[-1])
         self.assertEqual(result["node_local_python"], container_side(harness["python_executable"]))
 
-    def test_exact_image_probe_executes_node_override(self) -> None:
-        commands: list[list[str]] = []
-
-        def run(command: list[str], **_kwargs: object) -> SimpleNamespace:
-            commands.append(command)
-            return SimpleNamespace(returncode=0, stdout="", stderr="")
-
+    def test_an_image_local_runtime_is_not_probed_as_a_fallback(self) -> None:
+        # A legacy image may still carry a Harness Runtime. It is never a
+        # second execution source: a runtime outside the mounted checkout is
+        # rejected, and nothing inside the image is probed in its place.
         harness = {
             "runtime_id": "sure-harness-test",
             "lock_sha256": "c" * 64,
@@ -432,12 +430,15 @@ class LiveRuntimeProbeTests(unittest.TestCase):
             },
         }
 
-        result = LIVE_RUNTIME_PROBE(binding, harness, run=run)
+        result = LIVE_RUNTIME_PROBE(
+            binding,
+            harness,
+            run=lambda *_args, **_kwargs: self.fail("the image runtime must not be probed"),
+        )
 
-        self.assertTrue(result["passed"])
-        self.assertEqual(result["node_local_python"], harness["python_executable"])
-        self.assertIn("SURE_EVAL_NODE_LOCAL_PYTHON", commands[0][-1])
-        self.assertIn("subprocess.run", commands[0][-1])
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["probe_ran"])
+        self.assertEqual(result["failure_class"], "HARNESS_RUNTIME_NOT_READY")
 
     def test_a_missing_container_runtime_is_a_limit_of_this_node(self) -> None:
         # Nothing was learned about the image here: the node cannot start a

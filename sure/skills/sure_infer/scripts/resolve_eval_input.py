@@ -771,12 +771,9 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         )
     deployment_binding = model.get("deployment_binding") or {}
     runtime_kind = str(deployment_binding.get("runtime_kind") or "container")
-    image_harness = ((deployment_binding.get("container") or {})).get("harness_runtime")
-    if isinstance(image_harness, dict):
-        if image_harness.get("runtime_id") != harness_runtime.get("runtime_id"):
-            raise EvalInputError("approved image Harness Runtime ID differs from the active Harness Runtime")
-        if image_harness.get("lock_sha256") != harness_runtime.get("lock_sha256"):
-            raise EvalInputError("approved image Harness Runtime lock differs from the active Harness Runtime")
+    # The Harness Runtime runs the SURE scripts, not the model. Its version is a
+    # property of the Harness deployment, so it never gates an approved image;
+    # only the model-side identities do (digest, Model Runtime, weights, protocol).
     results_root = (repo_root / "sure" / "results").resolve()
     output_dir = _resolve_output_dir(
         getattr(args, "output_dir", ""),
@@ -852,6 +849,10 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "model_runtime": runtime_kind,
             "deployment_binding": model["deployment_binding"],
             "harness_runtime": harness_runtime,
+            "harness_runtime_source": "active_injected_runtime",
+            "harness_runtime_id": harness_runtime["runtime_id"],
+            "harness_lock_sha256": harness_runtime["lock_sha256"],
+            "harness_python_executable": harness_runtime["python_executable"],
             "dataset_projection": dataset_projection,
         },
         "evaluation": {
