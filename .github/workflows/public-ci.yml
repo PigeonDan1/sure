@@ -36,6 +36,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Check evaluation engine lock consistency
+        run: python sure/skills/sure_infer/scripts/evaluation_runtime.py --engine-root sure/external/sure-evaluation --check-lock
+
       - name: Install system and Node dependencies
         run: |
           sudo apt-get update
@@ -50,7 +53,35 @@ jobs:
           echo "$RUNNER_TEMP/sure-harness-venv/bin" >> "$GITHUB_PATH"
 
       - name: Materialize the Harness Runtime
-        run: python sure/runtime/harness/bootstrap.py --json > /dev/null
+        run: python sure/runtime/harness/bootstrap.py --json > "$RUNNER_TEMP/harness-runtime.json"
+
+      - name: Prepare and verify the Evaluation Runtime binding
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          from pathlib import Path
+
+          temporary = Path(os.environ["RUNNER_TEMP"])
+          harness = json.loads((temporary / "harness-runtime.json").read_text())
+          env = dict(os.environ)
+          for target, source in {
+              "HARNESS_PYTHON_BIN": "python_executable",
+              "SURE_HARNESS_RUNTIME_ID": "runtime_id",
+              "SURE_HARNESS_LOCK_SHA256": "lock_sha256",
+              "SURE_HARNESS_MANIFEST_PATH": "manifest_path",
+              "SURE_HARNESS_RUNTIME_ROOT": "runtime_root",
+          }.items():
+              env[target] = harness[source]
+          command = [
+              harness["python_executable"], "sure/skills/sure_infer/scripts/evaluation_runtime.py",
+              "--engine-root", "sure/external/sure-evaluation",
+              "--output", str(temporary / "evaluation-runtime-binding.json"),
+          ]
+          subprocess.run([*command, "--prepare"], env=env, check=True)
+          subprocess.run(command, env=env, check=True)
+          PY
 
       - name: Validate the shipped default site policy
         run: npm run sure:site-check

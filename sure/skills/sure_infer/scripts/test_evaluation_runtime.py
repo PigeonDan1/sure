@@ -23,6 +23,7 @@ from evaluation_runtime import (
     _expected_binding,
     _materialize,
     _verify,
+    check_evaluation_lock,
     ensure_evaluation_runtime,
     evaluation_child_environment,
     evaluation_runtime_from_eval_input,
@@ -262,6 +263,101 @@ class EngineCommitTests(unittest.TestCase):
                 with self.assertRaises(EvaluationRuntimeError) as caught:
                     _engine_commit(engine_root)
         self.assertIn("git", str(caught.exception))
+
+
+class EvaluationLockTests(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name).resolve()
+        self.engine = self.root / "engine"
+        self.engine.mkdir()
+        self.pyproject = self.engine / "pyproject.toml"
+        self.pyproject.write_text('[project]\nname = "fixture-engine"\n', encoding="utf-8")
+        for directory in (self.root, self.engine):
+            subprocess.run(["git", "init", "--quiet", str(directory)], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(self.engine), "add", "pyproject.toml"], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-C", str(self.engine), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+             "commit", "--quiet", "-m", "fixture"],
+            check=True, capture_output=True,
+        )
+        self.commit = _engine_commit(self.engine)
+        self._index(self.commit)
+        self.spec = {
+            "engine_commit": self.commit,
+            "engine_pyproject_sha256": _engine_pyproject_sha256(self.pyproject),
+            "lock_file": "requirements.lock.txt",
+        }
+        self.lock = self.root / "requirements.lock.txt"
+        self.lock.write_text("demo==1.0\n", encoding="utf-8")
+        self._write_spec()
+        for name in ("REPO_ROOT", "SPEC_ROOT"):
+            patcher = mock.patch(f"evaluation_runtime.{name}", self.root)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _index(self, commit: str) -> None:
+        subprocess.run(
+            ["git", "-C", str(self.root), "update-index", "--add", "--cacheinfo", f"160000,{commit},engine"],
+            check=True, capture_output=True,
+        )
+
+    def _write_spec(self) -> None:
+        (self.root / "runtime.json").write_text(json.dumps(self.spec), encoding="utf-8")
+
+    def test_actual_gitlink_and_engine_match_without_a_harness_binding(self) -> None:
+        with mock.patch.dict(os.environ, {"HARNESS_PYTHON_BIN": "/missing/python"}):
+            report = check_evaluation_lock(self.engine)
+        self.assertEqual(report, {
+            "ok": True,
+            "engine_commit": self.commit,
+            "engine_pyproject_sha256": self.spec["engine_pyproject_sha256"],
+            "lock_sha256": hashlib.sha256(self.lock.read_bytes()).hexdigest(),
+        })
+
+    def test_engine_commit_and_pyproject_drift_are_refused(self) -> None:
+        for field, value, message in (
+            ("engine_commit", "a" * 40, "engine commit differs"),
+            ("engine_pyproject_sha256", "b" * 64, "pyproject.toml differs"),
+        ):
+            with self.subTest(field=field):
+                original = self.spec[field]
+                self.spec[field] = value
+                self._write_spec()
+                with self.assertRaisesRegex(EvaluationRuntimeError, message):
+                    check_evaluation_lock(self.engine)
+                self.spec[field] = original
+
+    def test_gitlink_drift_is_refused(self) -> None:
+        self._index("f" * 40)
+        with self.assertRaisesRegex(EvaluationRuntimeError, "gitlink differs"):
+            check_evaluation_lock(self.engine)
+
+    def test_a_missing_gitlink_is_refused(self) -> None:
+        subprocess.run(["git", "-C", str(self.root), "update-index", "--force-remove", "engine"], check=True)
+        with self.assertRaisesRegex(EvaluationRuntimeError, "gitlink is missing"):
+            check_evaluation_lock(self.engine)
+
+    def test_missing_lock_and_pyproject_are_refused(self) -> None:
+        for path in (self.lock, self.pyproject):
+            with self.subTest(path=path.name):
+                content = path.read_bytes()
+                path.unlink()
+                with self.assertRaisesRegex(EvaluationRuntimeError, "lock or engine pyproject.toml is missing"):
+                    check_evaluation_lock(self.engine)
+                path.write_bytes(content)
+
+    def test_crlf_checkout_uses_the_same_pyproject_identity(self) -> None:
+        self.pyproject.write_bytes(self.pyproject.read_bytes().replace(b"\n", b"\r\n"))
+        self.assertTrue(check_evaluation_lock(self.engine)["ok"])
+
+    def test_lock_check_cli_writes_the_actual_identity(self) -> None:
+        output = self.root / "check.json"
+        argv = ["evaluation_runtime.py", "--engine-root", str(self.engine), "--check-lock", "--output", str(output)]
+        with mock.patch.object(sys, "argv", argv), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(main(), 0)
+        self.assertEqual(json.loads(output.read_text())["engine_commit"], self.commit)
 
 
 class EngineIdentityAbsenceTests(unittest.TestCase):
