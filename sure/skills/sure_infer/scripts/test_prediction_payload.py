@@ -17,6 +17,58 @@ import generate_predictions_via_server as gp  # noqa: E402
 
 
 class AsrPayloadNormalizationTests(unittest.TestCase):
+    def test_standard_text_fields_take_precedence_over_aliases(self) -> None:
+        for task, field in (("S2TT", "translation"), ("SLU", "answer")):
+            for nested in (False, True):
+                with self.subTest(task=task, nested=nested):
+                    output = {field: "canonical answer", "text": "alias answer"}
+                    payload = {"prediction": output} if nested else output
+                    projection, prediction = gp._normalize_prediction_payload(payload, task=task)
+                    self.assertEqual(projection, "canonical answer")
+                    self.assertEqual(prediction[field], "canonical answer")
+
+    def test_standard_text_fields_work_without_aliases(self) -> None:
+        for task, field in (("S2TT", "translation"), ("SLU", "answer")):
+            with self.subTest(task=task):
+                projection, prediction = gp._normalize_prediction_payload({field: "answer"}, task=task)
+                self.assertEqual(projection, "answer")
+                self.assertEqual(prediction[field], "answer")
+
+    def test_doa_projection_preserves_canonical_frame_metadata(self) -> None:
+        frame = {
+            "recording_id": "recording-1",
+            "frame_index": 2,
+            "timestamp": 0.2,
+            "num_channels": 4,
+            "coordinate_system": "array_local_spherical",
+            "angle_unit": "degree",
+            "sources": [{"source_id": "speaker-1", "azimuth": 30.0, "activity": True}],
+        }
+        for payload in (frame, {"prediction": frame}):
+            with self.subTest(nested="prediction" in payload):
+                projection, prediction = gp._normalize_prediction_payload(payload, task="DOA")
+                self.assertEqual(json.loads(projection), frame)
+                self.assertEqual(prediction, frame)
+
+    def test_sv_rejects_missing_empty_or_nonfinite_embeddings(self) -> None:
+        for payload in ({"ok": True}, {"embedding": []}, {"embedding": "vector"},
+                        {"embedding": [True]}, {"embedding": [float("nan")]},
+                        {"embedding": [float("inf")]}, [0.1, 0.2]):
+            with self.subTest(payload=payload):
+                with self.assertRaisesRegex(ValueError, "SV.*embedding"):
+                    gp._normalize_prediction_payload(payload, task="SV")
+
+    def test_sv_accepts_a_finite_embedding_with_zero_values(self) -> None:
+        projection, prediction = gp._normalize_prediction_payload({"embedding": [0, -0.5, 0.25]}, task="SV")
+        self.assertEqual(json.loads(projection), [0, -0.5, 0.25])
+        self.assertEqual(prediction, {"embedding": [0, -0.5, 0.25]})
+
+    def test_doa_requires_an_explicit_sources_array(self) -> None:
+        for payload in ({"ok": True}, {"sources": "speaker"}, "speaker"):
+            with self.subTest(payload=payload):
+                with self.assertRaisesRegex(ValueError, "DOA.*sources"):
+                    gp._normalize_prediction_payload(payload, task="DOA")
+
     def test_snapshot_writer_keeps_text_and_jsonl_on_the_same_line(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

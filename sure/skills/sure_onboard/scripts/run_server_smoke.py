@@ -96,7 +96,7 @@ def check_output(output: Any, task: str) -> tuple[bool, str, dict[str, Any]]:
         try:
             projection, normalized = normalize_prediction_payload(output, task=task)
             evidence.update({"projection": projection, "prediction": normalized})
-            if not projection.strip() or not output_is_nonempty(normalized) or normalized in ({}, {"text": ""}, []):
+            if not projection.strip() or not normalized:
                 violation = violation or f"{task} prediction projection is empty"
             violation = violation or _path_fields_exist(normalized)
         except (TypeError, ValueError) as exc:

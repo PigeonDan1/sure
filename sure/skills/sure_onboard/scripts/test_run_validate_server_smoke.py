@@ -286,6 +286,31 @@ def run_gate(run_dir: Path, produces: Path) -> subprocess.CompletedProcess:
 class GateTests(unittest.TestCase):
     """The whole gate, on a model whose server.py really answers MCP."""
 
+    def test_gate_uses_standard_task_outputs_and_rejects_empty_sv(self) -> None:
+        cases = [
+            ("S2TT", {"translation": "translated text"}, True),
+            ("SLU", {"answer": "activate_lights"}, True),
+            ("DOA", {"sources": [{"azimuth": 30, "activity": True}]}, True),
+            ("SV", {"embedding": [0, 0.5]}, True),
+            ("SV", {"ok": True}, False),
+            ("SV", {"embedding": []}, False),
+        ]
+        for task, payload, passed in cases:
+            with self.subTest(task=task, payload=payload), tempfile.TemporaryDirectory() as tmp:
+                scratch = Path(tmp)
+                model_dir, run_dir, produces = stage_infer_gate(scratch, "  protocol: jsonl\n")
+                config = model_dir / "config.yaml"
+                config.write_text(config.read_text().replace("task: SE", f"task: {task}"), encoding="utf-8")
+                (scratch / "fake_server.py").write_text(
+                    'import json, sys\nsys.stdin.readline()\nprint(json.dumps(' + repr(payload) + '), flush=True)\n',
+                    encoding="utf-8",
+                )
+                result = run_gate(run_dir, produces)
+                self.assertEqual(result.returncode == 0, passed, result.stderr + result.stdout)
+                evidence = json.loads((run_dir / "artifacts" / "server_smoke.json").read_text(encoding="utf-8"))
+                self.assertEqual(evidence["status"], "passed" if passed else "failed")
+                self.assertEqual(evidence["task"], task)
+
     def test_the_gate_rejects_jsonl_asr_with_an_unprojectable_result(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             scratch = Path(tmp)

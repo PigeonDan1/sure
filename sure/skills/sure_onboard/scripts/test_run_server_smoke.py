@@ -179,6 +179,41 @@ class ServerSmokeTests(unittest.TestCase):
         self.assertEqual(evidence["_returncode"], 0)
         self.assertEqual(evidence["steps"]["single_request"]["projection"], "نص عربي")
 
+    def test_both_protocols_accept_standard_fields_and_legitimate_zero_values(self) -> None:
+        cases = [
+            ("S2TT", {"translation": "translated text"}, {"translation": "translated text", "text": "translated text"}),
+            ("SLU", {"answer": "activate_lights"}, {"answer": "activate_lights", "text": "activate_lights"}),
+            ("DOA", {"sources": []}, {"sources": []}),
+            ("SV", {"embedding": [0, 0.5]}, {"embedding": [0, 0.5]}),
+            ("CLASSIFICATION", {"label": 0}, {"label": "0"}),
+            ("KWS", {"detected": False, "score": 0}, {"detected": False, "score": 0.0, "keyword": None}),
+            ("VAD", {"speech_segments": []}, {"speech_segments": []}),
+        ]
+        for protocol in ("mcp", "jsonl"):
+            for task, payload, expected in cases:
+                with self.subTest(protocol=protocol, task=task):
+                    if protocol == "mcp":
+                        command = self._fake(MCP_FAKE, "predict", payload)
+                    else:
+                        command = self._fake(
+                            'import json, sys\nsys.stdin.readline()\nprint(json.dumps(' + repr(payload) + '))\n'
+                        )
+                    evidence = self._run(protocol=protocol, command=command, tool="predict", task=task)
+                    self.assertEqual(evidence["_returncode"], 0, evidence.get("error"))
+                    step = "tools_call" if protocol == "mcp" else "single_request"
+                    self.assertEqual(evidence["steps"][step]["prediction"], expected)
+
+    def test_both_protocols_reject_missing_or_empty_sv_embeddings(self) -> None:
+        for protocol in ("mcp", "jsonl"):
+            for payload in ({"ok": True}, {"embedding": []}):
+                with self.subTest(protocol=protocol, payload=payload):
+                    command = self._fake(MCP_FAKE, "embed_speaker", payload) if protocol == "mcp" else self._fake(
+                        'import json, sys\nsys.stdin.readline()\nprint(json.dumps(' + repr(payload) + '))\n'
+                    )
+                    evidence = self._run(protocol=protocol, command=command, tool="embed_speaker", task="SV")
+                    self.assertEqual(evidence["_returncode"], 1)
+                    self.assertIn("embedding", evidence["error"])
+
     def test_mcp_nested_result_with_text_fails_asr_projection(self) -> None:
         evidence = self._run(
             protocol="mcp", task="ASR",

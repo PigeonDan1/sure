@@ -6,6 +6,8 @@ import json
 import math
 from typing import Any
 
+from sure.runtime.evaluation.task_registry import task_profile
+
 
 def extract_mcp_payload(response: dict[str, Any]) -> Any:
     if "error" in response:
@@ -55,10 +57,10 @@ def normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict[
         if not prediction:
             prediction = dict(payload)
         if task_name in {"ASR", "S2TT"}:
-            value = prediction.get("text") or prediction.get("transcript") or payload.get("text") or ""
+            field = str(task_profile(task)["io_contract"]["primary_field"])
+            value = prediction.get(field) or prediction.get("text") or prediction.get("transcript") or payload.get(field) or payload.get("text") or ""
             if isinstance(value, (list, tuple)) and len(value) == 1:
                 value = value[0]
-            field = "translation" if task_name == "S2TT" else "text"
             normalized_value = single_line_text(value)
             return normalized_value, {field: normalized_value, "text": normalized_value}
         if task_name in {"TTS", "VC", "SE", "TSE"}:
@@ -98,9 +100,10 @@ def normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict[
                 normalized["language"] = normalized_value
             return normalized_value, normalized
         if task_name == "SLU":
-            value = first_present(prediction.get("text"), prediction.get("label"), payload.get("text"), payload.get("label"))
+            field = str(task_profile(task)["io_contract"]["primary_field"])
+            value = first_present(prediction.get(field), prediction.get("text"), prediction.get("label"), payload.get(field), payload.get("text"), payload.get("label"))
             normalized_value = single_line_text(value)
-            normalized = {"answer": normalized_value, "text": normalized_value}
+            normalized = {field: normalized_value, "text": normalized_value}
             if prediction.get("label") is not None:
                 normalized["label"] = single_line_text(prediction["label"])
             return normalized_value, normalized
@@ -163,10 +166,27 @@ def normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict[
             return json.dumps(normalized, ensure_ascii=False), normalized
         if task_name == "SV":
             embedding = prediction.get("embedding") or payload.get("embedding") or []
+            if (
+                not isinstance(embedding, list)
+                or not embedding
+                or any(
+                    isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value)
+                    for value in embedding
+                )
+            ):
+                raise ValueError("SV embedding must be a non-empty array of finite numbers")
             return json.dumps(embedding), {"embedding": embedding}
+        if task_name == "DOA":
+            field = str(task_profile(task)["io_contract"]["primary_field"])
+            if not isinstance(prediction.get(field), list):
+                raise ValueError(f"DOA prediction must provide a {field} array")
+            return json.dumps(prediction, ensure_ascii=False), prediction
         normalized_value = single_line_text(payload.get("text", ""))
         return normalized_value, {"text": normalized_value}
 
+    if task_name in {"SV", "DOA"}:
+        field = str(task_profile(task)["io_contract"]["primary_field"])
+        raise ValueError(f"{task_name} prediction must be a JSON object with {field}")
     if task_name in {"TTS", "VC", "SE", "TSE"}:
         value = path_text(payload, field="audio_path")
     elif task_name in {"SD", "SA-ASR", "SA_ASR"}:
