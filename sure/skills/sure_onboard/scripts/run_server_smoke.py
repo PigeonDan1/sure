@@ -46,7 +46,9 @@ from typing import Any
 # that exports its own `PYTHONHOME`, which a child on another Python then reads
 # as its stdlib base.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "runtime" / "harness"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 from model_child_env import model_child_env
+from sure.runtime.prediction_payload import extract_mcp_payload, normalize_prediction_payload
 
 SCHEMA = "sure.onboard.server_smoke.v1"
 STDERR_TAIL_LINES = 200
@@ -87,25 +89,19 @@ def _path_fields_exist(payload: Any) -> str:
     return ""
 
 
-def extract_mcp_payload(response: dict[str, Any]) -> tuple[Any, str]:
-    """The tool payload from an MCP tools/call response, or a failure message."""
-    if "error" in response:
-        return None, f"tools/call answered an error: {response['error']}"
-    result = response.get("result")
-    if isinstance(result, dict) and result.get("isError"):
-        content = result.get("content") or []
-        message = ""
-        if content and isinstance(content[0], dict):
-            message = str(content[0].get("text") or "")
-        return None, f"tools/call returned isError: {message or 'no message'}"
-    content = result.get("content") if isinstance(result, dict) else None
-    if not content:
-        return result, ""
-    text = content[0].get("text") if isinstance(content[0], dict) else None
-    try:
-        return json.loads(text), ""
-    except (TypeError, json.JSONDecodeError):
-        return text, ""
+def check_output(output: Any, task: str) -> tuple[bool, str, dict[str, Any]]:
+    violation = _path_fields_exist(output)
+    evidence: dict[str, Any] = {}
+    if task:
+        try:
+            projection, normalized = normalize_prediction_payload(output, task=task)
+            evidence.update({"projection": projection, "prediction": normalized})
+            if not projection.strip() or not normalized:
+                violation = violation or f"{task} prediction projection is empty"
+            violation = violation or _path_fields_exist(normalized)
+        except (TypeError, ValueError) as exc:
+            violation = violation or f"{task} prediction projection failed: {exc}"
+    return not violation and output_is_nonempty(output), violation, evidence
 
 
 def _drain(stream, sink) -> None:
@@ -180,7 +176,7 @@ def contract_essentials(schema: Any) -> dict[str, Any]:
 
 def drive_mcp(proc: subprocess.Popen, lines: queue.Queue, junk: deque, deadline: float, tool: str,
               arguments: dict, input_schema: dict | None = None,
-              list_only: bool = False) -> tuple[dict, str | None]:
+              list_only: bool = False, task: str = "") -> tuple[dict, str | None]:
     """initialize / tools/list / tools/call / shutdown, mirroring the sure_trans smoke.
 
     `input_schema` is the contract `config.yaml` declares for `tool`. When given,
@@ -245,14 +241,16 @@ def drive_mcp(proc: subprocess.Popen, lines: queue.Queue, junk: deque, deadline:
         ok, payload = rpc(3, "tools/call", {"name": tool, "arguments": arguments})
         if not ok:
             return steps, f"tools/call failed: {json.dumps(payload, ensure_ascii=False)[:500]}"
-        output, violation = extract_mcp_payload(payload)
-        if not violation:
-            violation = _path_fields_exist(output)
-        nonempty = not violation and output_is_nonempty(output)
+        try:
+            output = extract_mcp_payload(payload)
+        except RuntimeError as exc:
+            return steps, f"tools/call returned an error: {exc}"
+        nonempty, violation, projection_evidence = check_output(output, task)
         steps["tools_call"] = {
             "ok": nonempty,
             "output_nonempty": nonempty,
             "primary_output": json.dumps(output, ensure_ascii=False)[:500],
+            **projection_evidence,
         }
         if not nonempty:
             return steps, f"tools/call returned no usable output: {violation or json.dumps(output)[:200]}"
@@ -266,7 +264,7 @@ def drive_mcp(proc: subprocess.Popen, lines: queue.Queue, junk: deque, deadline:
 
 def drive_jsonl(proc: subprocess.Popen, lines: queue.Queue, junk: deque, deadline: float, tool: str,
                 arguments: dict, input_schema: dict | None = None,
-                list_only: bool = False) -> tuple[dict, str | None]:
+                list_only: bool = False, task: str = "") -> tuple[dict, str | None]:
     """One flat JSON request line in, one JSON response line out, no handshake.
 
     `tool` is unused: a jsonl request carries the arguments alone, with no tool
@@ -280,12 +278,12 @@ def drive_jsonl(proc: subprocess.Popen, lines: queue.Queue, junk: deque, deadlin
     ok, payload = _next_json_line(lines, deadline, junk)
     if not ok:
         return steps, "no JSON response line arrived within the deadline"
-    violation = _path_fields_exist(payload)
-    nonempty = not violation and output_is_nonempty(payload)
+    nonempty, violation, projection_evidence = check_output(payload, task)
     steps["single_request"] = {
         "ok": nonempty,
         "output_nonempty": nonempty,
         "primary_output": json.dumps(payload, ensure_ascii=False)[:500],
+        **projection_evidence,
     }
     if not nonempty:
         return steps, f"the response carried no usable output: {violation or json.dumps(payload)[:200]}"
@@ -298,6 +296,7 @@ def main() -> int:
     parser.add_argument("--protocol", required=True, choices=[MCP_PROTOCOL, JSONL_PROTOCOL],
                         help="framing resolved from config.yaml by the caller")
     parser.add_argument("--tool", required=True)
+    parser.add_argument("--task", default="", help="resolved inference task used to project the server output")
     parser.add_argument("--arguments-json", required=True, help="JSON object of tool arguments")
     parser.add_argument("--input-schema-json",
                         help="JSON object of the input_schema config.yaml declares for --tool; "
@@ -390,7 +389,7 @@ def main() -> int:
 
             driver = drive_mcp if args.protocol == MCP_PROTOCOL else drive_jsonl
             steps, error = driver(proc, lines, junk, deadline, args.tool, arguments,
-                                  input_schema, list_only=args.list_only)
+                                  input_schema, list_only=args.list_only, task=args.task)
 
             if error is None and args.protocol == MCP_PROTOCOL:
                 if proc.stdin is not None:
@@ -430,6 +429,7 @@ def main() -> int:
         "status": status,
         "protocol": args.protocol,
         "tool": args.tool,
+        "task": args.task,
         "arguments": arguments,
         "declared_input_schema": input_schema,
         "list_only": args.list_only,
