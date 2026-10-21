@@ -38,7 +38,8 @@ const finishToolParams = Type.Object({
 		description: "Final Sure run status.",
 	}),
 	manifest_path: Type.String({
-		description: "Path to the final artifact manifest, relative to the project cwd or absolute under the project.",
+		description:
+			"Path to the run-level Sure finish manifest (normally .sure/runs/<run_id>/manifest.json), not a skill-produced artifact manifest such as Feed's artifacts/debug/handoff_manifest.json; use a project-relative path or an absolute path inside the project.",
 	}),
 	summary: Type.String({ description: "Concise final summary of the Sure run." }),
 	artifacts: Type.Optional(Type.Unsafe<unknown>({ description: "Structured final artifact summary." })),

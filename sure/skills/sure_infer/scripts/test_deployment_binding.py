@@ -304,8 +304,56 @@ class DeploymentBindingTests(unittest.TestCase):
         marker.update(fields)
         write_json(self.artifacts / "deployment_ready.json", marker)
 
+    def _write_legacy_approval(self) -> None:
+        candidate_digest = "d" * 64
+        decision = {
+            "schema": "sure.approve.approval_decision.v1",
+            "status": "approved",
+            "decision": "approve",
+            "candidate_digest": candidate_digest,
+        }
+        publication = {
+            "schema": "sure.approve.publication_result.v1",
+            "status": "passed",
+            "destination": str(self.model),
+            "eval_visible": True,
+            "candidate_digest": candidate_digest,
+        }
+        write_json(self.artifacts / "approval_decision.json", decision)
+        write_json(self.artifacts / "publication_result.json", publication)
+        write_json(
+            self.artifacts / "approval_ready.json",
+            {
+                "schema": "sure.approve.approval_ready.v1",
+                "status": "ready",
+                "destination": str(self.model),
+                "eval_visible": True,
+                "candidate_digest": candidate_digest,
+                "approval_decision_sha256": sha256(self.artifacts / "approval_decision.json"),
+                "publication_result_sha256": sha256(self.artifacts / "publication_result.json"),
+            },
+        )
+
     def test_marker_sealed_at_the_cutoff_must_declare_an_integrity_profile(self) -> None:
         self._rewrite_marker(generated_at="2026-09-01T00:00:00+00:00")
+
+        with self.assertRaisesRegex(DeploymentBindingError, "integrity_profile"):
+            load_deployment_binding(self.model, "demo")
+
+    def test_approved_legacy_bundle_after_cutoff_keeps_the_legacy_profile(self) -> None:
+        self._rewrite_marker(generated_at="2026-09-23T07:11:19+00:00")
+        self._write_legacy_approval()
+
+        binding = load_deployment_binding(self.model, "demo")
+
+        self.assertEqual(binding["evidence"]["integrity_profile"], "legacy-partial-v1")
+
+    def test_invalid_legacy_approval_does_not_bypass_the_cutoff(self) -> None:
+        self._rewrite_marker(generated_at="2026-09-23T07:11:19+00:00")
+        self._write_legacy_approval()
+        publication = json.loads((self.artifacts / "publication_result.json").read_text())
+        publication["eval_visible"] = False
+        write_json(self.artifacts / "publication_result.json", publication)
 
         with self.assertRaisesRegex(DeploymentBindingError, "integrity_profile"):
             load_deployment_binding(self.model, "demo")

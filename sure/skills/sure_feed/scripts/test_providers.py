@@ -305,7 +305,7 @@ pip install sherpa-onnx
         self.assertEqual(fixture["fixture_source"], "task_registry")
         self.assertEqual(fixture["fixture_index"], "fixtures/tasks/speech_understanding/README.md")
         self.assertEqual(fixture["selected_subtasks"], list(canonical_tasks()))
-        self.assertEqual(len(fixture["subtask_fixtures"]), 16)
+        self.assertEqual(len(fixture["subtask_fixtures"]), len(canonical_tasks()))
         self.assertEqual(set(fixture["subtask_io_contracts"]), set(canonical_tasks()))
         self.assertEqual(io_contract["primary_field"], "text")
 

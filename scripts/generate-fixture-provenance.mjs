@@ -12,6 +12,7 @@ let stale = false;
 const taskSources = {
 	asr: "librispeech",
 	classification: "librispeech",
+	doa: "librispeech",
 	lid: ["librispeech", "aishell1"],
 	gr: "librispeech",
 	kws: "librispeech",

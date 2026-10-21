@@ -353,11 +353,26 @@ class TransScriptsTest(unittest.TestCase):
         )
         self.assertEqual(
             mcp_smoke.tool_arguments("synthesize_speech", audio),
-            {"text": "SURE smoke test", "prompt_audio_path": str(audio)},
+            {
+                "text": "SURE smoke test",
+                "prompt_audio_path": str(audio),
+                "output_path": "/tmp/sure-trans-smoke-output.wav",
+            },
         )
         self.assertEqual(
             mcp_smoke.tool_arguments("convert_voice", audio),
-            {"source_audio_path": str(audio), "reference_audio_path": str(audio)},
+            {
+                "source_audio_path": str(audio),
+                "reference_audio_path": str(audio),
+                "output_path": "/tmp/sure-trans-smoke-output.wav",
+            },
+        )
+        self.assertEqual(
+            mcp_smoke.tool_arguments("enhance_speech", audio),
+            {
+                "audio_path": str(audio),
+                "output_path": "/tmp/sure-trans-smoke-output.wav",
+            },
         )
         self.assertEqual(mcp_smoke.primary_output_field("transcribe_audio"), "text")
         self.assertEqual(mcp_smoke.primary_output_field("synthesize_speech"), "audio_path")
@@ -554,6 +569,36 @@ class TransScriptsTest(unittest.TestCase):
             )
             run_trans_validate.prepare_container_outputs(spec, run_dir)
             self.assertEqual(list(output.iterdir()), [])
+
+    def test_stage_cleanup_preserves_infer_sample_for_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp) / "run"
+            output = run_dir / "artifacts" / "adapter_validation"
+            output.mkdir(parents=True)
+            spec = mock.Mock(
+                mounts=[f"{output}:/validation:rw"],
+                env={"SURE_VALIDATE_ARTIFACTS_DIR": "/validation"},
+            )
+
+            (output / "sample_output.json").write_text("stale", encoding="utf-8")
+            (output / "outputs").mkdir()
+            (output / "outputs" / "stale.wav").write_bytes(b"stale")
+            (output / "load_result.json").write_text("keep", encoding="utf-8")
+            run_trans_validate.prepare_container_outputs(spec, run_dir, "infer")
+
+            self.assertFalse((output / "sample_output.json").exists())
+            self.assertFalse((output / "outputs").exists())
+            self.assertTrue((output / "load_result.json").is_file())
+
+            (output / "sample_output.json").write_text('{"audio_path":"outputs/enhanced.wav"}', encoding="utf-8")
+            (output / "outputs").mkdir()
+            (output / "outputs" / "enhanced.wav").write_bytes(b"audio")
+            (output / "contract_result.json").write_text("stale", encoding="utf-8")
+            run_trans_validate.prepare_container_outputs(spec, run_dir, "contract")
+
+            self.assertTrue((output / "sample_output.json").is_file())
+            self.assertTrue((output / "outputs" / "enhanced.wav").is_file())
+            self.assertFalse((output / "contract_result.json").exists())
 
     def test_output_cleanup_leaves_mounts_the_container_does_not_write_stage_output_into(self) -> None:
         """Only the declared stage output directory is the gate's to clear."""
