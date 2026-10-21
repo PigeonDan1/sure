@@ -36,6 +36,7 @@ TASK_CASES = {
         {"detected": False, "keyword": None, "score": 0.0},
     ),
     "lid": ({"label": "en"}, "en", {"label": "en", "language": "en"}),
+    "rir": ({"rir_path": "prediction.wav"}, "prediction.wav", {"rir_path": "prediction.wav", "prediction_rir": "prediction.wav"}),
     "s2tt": ({"translation": "translated text"}, "translated text", {"translation": "translated text", "text": "translated text"}),
     "sa_asr": ({"segments": TRANSCRIPTION}, TRANSCRIPTION, {"segments": TRANSCRIPTION}),
     "sd": ({"segments": DIARIZATION}, DIARIZATION, {"segments": DIARIZATION}),
