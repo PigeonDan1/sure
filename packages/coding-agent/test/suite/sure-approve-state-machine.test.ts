@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
 	advance,
@@ -5,7 +9,13 @@ import {
 	initialCheckpoint,
 	retryExhausted,
 } from "../../../../sure/skills/sure_approve/hooks/checkpoints.ts";
-import { gateBlocks, modeFromArgs, preStart, preToolCall } from "../../../../sure/skills/sure_approve/hooks/index.ts";
+import {
+	gateBlocks,
+	modeFromArgs,
+	preFinish,
+	preStart,
+	preToolCall,
+} from "../../../../sure/skills/sure_approve/hooks/index.ts";
 import {
 	APPROVE_UNITS,
 	AUDIT_UNITS,
@@ -110,6 +120,62 @@ describe("sure_approve state machine", () => {
 				eval_visible: false,
 			}),
 		).toContain("unsupported schema");
+	});
+
+	it("finishes a failed audit only with matching blocked-gate evidence and no publication", () => {
+		const runDir = mkdtempSync(join(tmpdir(), "sure-approve-failed-"));
+		try {
+			mkdirSync(join(runDir, "artifacts"));
+			const artifact = {
+				schema: "sure.approve.runtime_verification.v1",
+				status: "failed",
+				runtime_kind: "python",
+				binding: {},
+				smoke: {},
+				error: "generated sample audio must be stored below artifacts/outputs",
+			};
+			writeFileSync(join(runDir, "artifacts", "runtime_verification.json"), JSON.stringify(artifact));
+			let checkpoint = initialCheckpoint("audit");
+			for (let index = 0; index < 6; index += 1) checkpoint = advance(checkpoint);
+			checkpoint = bumpRetry(checkpoint, createHash("sha256").update(JSON.stringify(artifact)).digest("hex"));
+			writeFileSync(join(runDir, "state.json"), JSON.stringify({ checkpoint }));
+			const event = {
+				finish: { status: "failed" },
+				manifest: { validation: { failed_unit: "verify_runtime", error: artifact.error, published: false } },
+			};
+			const context = {
+				args: "model_dir=/tmp/model",
+				runDir,
+				event,
+			} as SureHookContext;
+			expect(preFinish(context).ok).toBe(true);
+			expect(preFinish({ ...context, event: { ...event, finish: { status: "success" } } }).ok).toBe(false);
+			expect(
+				preFinish({
+					...context,
+					event: {
+						...event,
+						manifest: { validation: { failed_unit: "verify_runtime", error: artifact.error, published: true } },
+					},
+				}).ok,
+			).toBe(false);
+			expect(
+				preFinish({
+					...context,
+					event: {
+						...event,
+						manifest: { validation: { failed_unit: "publish", error: artifact.error, published: false } },
+					},
+				}).ok,
+			).toBe(false);
+			writeFileSync(
+				join(runDir, "artifacts", "runtime_verification.json"),
+				JSON.stringify({ ...artifact, error: "changed" }),
+			);
+			expect(preFinish(context).ok).toBe(false);
+		} finally {
+			rmSync(runDir, { recursive: true, force: true });
+		}
 	});
 
 	it("enforces the approval gate retry limit", () => {

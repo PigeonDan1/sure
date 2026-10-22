@@ -264,7 +264,7 @@ sure/models/<model_name>/
 
 ## Backend
 
-The deterministic backend is bundled in `scripts/`. Gate scripts validate each unit. `materialize_model_runtime.py` is the only local-Python runtime materializer; `stage_model_artifacts.py` stages existing run evidence; `write_package_gate.py`, `write_runtime_inventory.py`, and `write_verdict.py` derive terminal evidence in dependency order; `finalize_model_bundle.py` repeats that derivation after making the manifest portable and then seals the bundle. No helper may infer an Eval runtime from `.venv`, host Python, a Dockerfile, or an image name alone.
+The deterministic backend is bundled in `scripts/`. Gate scripts validate each unit. `materialize_model_runtime.py` is the only local-Python runtime materializer; `stage_model_artifacts.py` stages existing run evidence; `write_package_gate.py`, `write_runtime_inventory.py`, and `write_verdict.py` derive terminal evidence in dependency order; `finalize_model_bundle.py` repeats that derivation after making the manifest portable and then seals the bundle. It rejects `sample_output.json` paths named `audio_path` unless they identify generated files under `artifacts/outputs`; use a different field such as `input_audio` to report an ASR input. No helper may infer an Eval runtime from `.venv`, host Python, a Dockerfile, or an image name alone.
 
 ```bash
 "$HARNESS_PYTHON_BIN" scripts/<script>.py <args>   # cwd = skill package dir
