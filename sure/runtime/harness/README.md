@@ -7,8 +7,14 @@ rewrites `pyvenv.cfg` to name the in-tree copy. A uv virtual environment on its
 own is not relocatable — `pyvenv.cfg` and `bin/python` both point at a base
 interpreter outside the tree — but after the relocation nothing in the tree
 reaches outside it, so the same directory can be mounted into a container that
-has no host Python and entered through its own `bin/python`. The image build
-runs the same bootstrap at the destination path, so it inherits that recipe.
+has no host Python and entered through its own `bin/python`.
+
+`pyvenv.cfg home` stays absolute, because CPython reads a relative `home`
+against the process working directory and the tree then only starts from one
+directory. The consequence is that the tree runs where it was materialized:
+mount it at the path it was built at, which is what the container launcher does
+(it mounts the repository at its own host path). The image build runs the same
+bootstrap at the destination path, so it inherits that recipe.
 Because the identity is the lock hash, the image's `runtime_id` equals the
 host's by construction, and the build fails if it does not. Bootstrap the host
 runtime first; the image is built from its identity:

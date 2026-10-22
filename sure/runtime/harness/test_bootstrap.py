@@ -104,14 +104,17 @@ class HarnessRuntimeBootstrapTests(unittest.TestCase):
         # machine that built it.
         contract = resolve_runtime(self.runtime_root)
         root = Path(contract["runtime_root"]).resolve()
-        self.assertTrue((root / BASE_PYTHON_NAME).is_dir())
+        base = (root / BASE_PYTHON_NAME).resolve()
+        self.assertTrue(base.is_dir())
         cfg_home = Path(
             bootstrap._home_of(
                 bootstrap._read_lines(root / "pyvenv.cfg", "pyvenv.cfg")
             )
         ).resolve()
-        self.assertTrue(cfg_home.is_relative_to(root))
-        self.assertEqual(cfg_home.name, BASE_PYTHON_NAME)
+        # home names the directory holding the interpreter, which is
+        # base-python/bin on POSIX and base-python itself on Windows, so the
+        # contract is containment, not the last path component.
+        self.assertTrue(cfg_home.is_relative_to(base), f"{cfg_home} is not inside {base}")
         for current, dirs, files in os.walk(root):
             for name in dirs + files:
                 path = Path(current) / name
@@ -151,45 +154,57 @@ class HarnessRuntimeBootstrapTests(unittest.TestCase):
         os.name == "nt",
         "the container surface runs a Linux runtime",
     )
-    def test_a_mounted_runtime_runs_with_the_host_interpreter_gone(self) -> None:
-        # The host interpreter uv fetched is deleted once the tree has its own
-        # copy, which is exactly the situation inside a container. Copying the
-        # tree to another path first and hiding the original is how that gets
-        # proven rather than assumed: any surviving reference to the original
-        # turns into a failure here.
+    def test_a_runtime_runs_with_nothing_but_the_interpreter_it_carries(self) -> None:
+        # The container mounts the tree at the path it was materialized at and
+        # has none of the host's Pythons, so the interpreter has to start from
+        # the tree alone. pyvenv.cfg home is absolute by design (a relative one
+        # is read against the process CWD and breaks the tree), so what has to
+        # hold is that home names the in-tree copy and that the uv install
+        # directory it was built from is gone.
         contract = resolve_runtime(self.runtime_root)
         root = Path(contract["runtime_root"])
-        copy = Path(self._temporary.name) / "mounted" / root.name
-        shutil.copytree(root, copy, symlinks=True)
-        hidden = Path(self._temporary.name) / "hidden"
-        root.rename(hidden)
-        try:
-            python = copy / runtime_python_relative()
-            completed = subprocess.run(
-                [str(python), "-s", "-c", "import sys;print(sys.prefix);print(sys.base_prefix)"],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=120,
-                cwd=str(copy.parent),
-                env=child_environment(),
+        base = (root / BASE_PYTHON_NAME).resolve()
+        home = Path(
+            bootstrap._home_of(
+                bootstrap._read_lines(root / "pyvenv.cfg", "pyvenv.cfg")
             )
-            self.assertEqual(completed.returncode, 0, completed.stderr)
-            prefix, base_prefix = completed.stdout.split()
-            self.assertEqual(Path(prefix).resolve(), copy.resolve())
-            self.assertEqual(Path(base_prefix).resolve(), (copy / BASE_PYTHON_NAME).resolve())
-        finally:
-            hidden.rename(root)
+        ).resolve()
+        self.assertTrue(home.is_relative_to(base), f"pyvenv.cfg home {home} escapes {base}")
+        install_dirs = [
+            entry for entry in self.runtime_root.iterdir()
+            if bootstrap.INSTALL_DIR_NAME in entry.name
+        ]
+        self.assertEqual(install_dirs, [], "the uv install directory outlived the relocation")
+        python = root / runtime_python_relative()
+        completed = subprocess.run(
+            [str(python), "-s", "-c", "import sys;print(sys.prefix);print(sys.base_prefix)"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=120,
+            cwd=str(root),
+            env=child_environment(),
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        prefix, base_prefix = completed.stdout.split()
+        self.assertEqual(Path(prefix).resolve(), root.resolve())
+        self.assertEqual(Path(base_prefix).resolve(), base)
 
-    def test_the_base_python_hash_survives_the_copy(self) -> None:
-        # The hash is over the interpreter the tree now carries, so the copy has
-        # the same identity as the original and the gates' runtime_id still
-        # describes what runs.
+    def test_the_manifest_hash_describes_the_interpreter_in_the_tree(self) -> None:
+        # pyvenv.cfg home is absolute, so the tree only runs where it stands;
+        # what has to hold is that the hash in the manifest is the hash of the
+        # interpreter the tree carries, which is what _verified_contract reads
+        # back on every resolve.
         contract = resolve_runtime(self.runtime_root)
-        copy = Path(self._temporary.name) / "copied"
-        shutil.copytree(Path(contract["runtime_root"]), copy, symlinks=True)
-        identity = bootstrap.probe_python(copy / runtime_python_relative(), error=HarnessRuntimeError)
+        root = Path(contract["runtime_root"])
+        identity = bootstrap.probe_python(
+            root / runtime_python_relative(), error=HarnessRuntimeError
+        )
         self.assertEqual(identity["base_python_sha256"], contract["base_python_sha256"])
+        self.assertTrue(
+            Path(identity["base_python"]).resolve().is_relative_to((root / BASE_PYTHON_NAME).resolve()),
+            identity["base_python"],
+        )
 
     def test_a_materialized_windows_runtime_runs_on_its_own_tree(self) -> None:
         # The entry-point byte-equality above proves the launcher stub was
