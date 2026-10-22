@@ -266,6 +266,7 @@ def _build_surface(
         "MAX_SAMPLES": str(max_samples),
         "PROTOCOL_ID": protocol_id,
         "METRICS": " ".join(metrics),
+        "SURE_INFER_NUM_WORKERS": str(runtime.get("num_workers", 1)),
         "SURE_EVAL_INPUT_RESOLVED": str(input_resolved_path),
     }
     projection = runtime.get("dataset_projection") if isinstance(runtime.get("dataset_projection"), dict) else {}
@@ -292,6 +293,7 @@ def _build_surface(
             "device_actual": device_actual,
             "cuda_visible_devices": "" if cuda_visible is None else cuda_visible,
             "execution_path": execution["path_planned"],
+            "num_workers": int(runtime.get("num_workers", 1)),
         },
         "source_provenance": {
             "template_file": str(ENTRYPOINT),
@@ -377,6 +379,10 @@ def _dataset_rows(product_dir: Path, names: list[str], stems: dict[str, str]) ->
         if not isinstance(expected, int):
             expected = validation.get("expected_samples") if isinstance(validation.get("expected_samples"), int) else 0
         generated = _nonempty_prediction_rows(product_dir / "predictions" / f"{stem}.txt")
+        if status.get("parallel_report") or status.get("requested_workers", 1) > 1:
+            generated = int(status.get("num_generated_samples") or 0)
+            if status.get("status") != "completed":
+                validation = {}
         provided = validation.get("provided_predictions") if isinstance(validation.get("provided_predictions"), int) else generated
         invalid = len(validation.get("empty_prediction_keys") or []) + len(validation.get("contract_violation_keys") or [])
         rows.append(
@@ -395,11 +401,37 @@ def _failed_stage(stdout_text: str) -> str:
     return matches[-1] if matches else ""
 
 
+def _parallel_summary(product_dir: Path, workers: int) -> dict[str, Any]:
+    status = _read_json(product_dir / "prediction_generation_status.json")
+    rows = [row for row in status.get("datasets", []) if isinstance(row, dict)]
+    return {
+        "requested_workers": workers,
+        "worker_selection": status.get("worker_selection", "explicit"),
+        "gpu_devices": [value for value in str(status.get("cuda_visible_devices") or "").split(",") if value],
+        "datasets": [
+            {
+                "dataset": str(row.get("dataset") or ""),
+                "planned_workers": int(row.get("planned_workers", workers)),
+                "total_samples": int(row.get("total_samples", row.get("num_expected_samples")) or 0),
+                "selected_samples": int(row.get("selected_samples", row.get("num_expected_samples")) or 0),
+                "effective_workers": int(row.get("effective_workers") or 0),
+                "expected": int(row.get("num_expected_samples") or 0),
+                "generated": int(row.get("num_generated_samples") or 0),
+                "status": str(row.get("status") or "failed"),
+                "report_path": str(row.get("parallel_report") or ""),
+            }
+            for row in rows
+        ],
+        "recovery_available": (product_dir / "parallel_inference").is_dir(),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Launch model inference for a /sure_infer run")
     parser.add_argument("--run-dir", required=True, help="SURE skill run directory, e.g. .sure/runs/<run_id>")
     parser.add_argument("--execution-output", help="Path to execution_result.json")
     parser.add_argument("--cwd", help="Repository root used as the working directory")
+    parser.add_argument("--resume-predictions", action="store_true", help="Reuse verified parallel prediction keys in the same product directory")
     parser.add_argument(
         "--from-stage",
         choices=("validate", "protocol", "references", "finalize"),
@@ -428,6 +460,12 @@ def main() -> int:
     metrics = _metrics(eval_input)
     device_request = _device_request(eval_input)
     device_env, device_actual, cuda_visible = _local_device_env(device_request)
+    workers = int((eval_input.get("runtime") or {}).get("num_workers", 1))
+    if workers > 1:
+        if device_request not in {"auto", "cuda"}:
+            raise ValueError("Multi-GPU inference requires device=auto or device=cuda")
+        device_actual = "cuda"
+        device_env.update({"DEVICE": "cuda", "SURE_EVAL_DEVICE_ACTUAL": "cuda"})
 
     surface = _build_surface(
         eval_input=eval_input,
@@ -445,6 +483,10 @@ def main() -> int:
         read_files=[eval_input_path, decision_path],
     )
     surface_path = artifacts_dir / "execution_surface.json"
+    if workers > 1:
+        surface["env"]["NO_RESUME"] = "1"
+    if args.resume_predictions:
+        surface["env"]["NO_RESUME"] = "0"
     _write_json(surface_path, surface)
     _run_compliance(surface_path)
 
@@ -527,6 +569,9 @@ def main() -> int:
         "input_digest": _input_digest(eval_input_path, decision_path),
         "datasets": _dataset_rows(product_dir, names, stems),
     }
+    if workers > 1 or (eval_input.get("runtime") or {}).get("worker_selection"):
+        execution_payload["parallelism"] = _parallel_summary(product_dir, workers)
+        execution_payload["parallelism"]["worker_selection"] = (eval_input.get("runtime") or {}).get("worker_selection", "explicit")
     _write_json(execution_output, execution_payload)
     print(json.dumps({"execution_result": str(execution_output), **execution_payload}, indent=2, ensure_ascii=False))
     return 0 if returncode == 0 else returncode

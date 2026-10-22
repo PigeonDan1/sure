@@ -495,11 +495,118 @@ def _normalize_execution(
     }
 
 
+def _parallel_request(args: Any, workers: int | None = None) -> int:
+    """Validate the Worker count and the device it needs.
+
+    There is no cluster allocation to reconcile with here: a local run gets
+    whatever this node has, which `_plan_workers` already capped the count to.
+    """
+    if workers is None:
+        workers = getattr(args, "num_workers", None)
+        if workers is None:
+            workers = 1  # Validate explicit input before resolving datasets.
+    if isinstance(workers, bool) or not isinstance(workers, int) or not 1 <= workers <= 8:
+        raise EvalInputError("num_workers must be an integer between 1 and 8")
+    device = str(args.device or "auto").strip().lower()
+    if workers > 1 and device not in {"auto", "cuda"}:
+        raise EvalInputError("num_workers > 1 requires device=auto or device=cuda")
+    return workers
+
+
 def _count_jsonl_rows(path: Path) -> int | None:
     if not path.exists():
         return None
     with path.open("r", encoding="utf-8") as handle:
         return sum(1 for line in handle if line.strip())
+
+
+def _local_gpu_count() -> int:
+    """GPUs this node can hand a local run.
+
+    Planning happens on the node that will run the model, so this is the same
+    allocation `--gpus` later describes: an explicit CUDA_VISIBLE_DEVICES is
+    the allocation, and otherwise nvidia-smi enumerates the machine.
+    """
+    visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if visible is not None:
+        devices = [device.strip() for device in visible.split(",") if device.strip()]
+        if not devices or "-1" in devices:
+            return 0
+        return len(set(devices))
+    if not _nvidia_smi_available():
+        return 0
+    try:
+        completed = subprocess.run(
+            ["nvidia-smi", "--query-gpu=index", "--format=csv,noheader"],
+            capture_output=True, text=True, check=False, timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return 0
+    if completed.returncode != 0:
+        return 0
+    return sum(1 for line in completed.stdout.splitlines() if line.strip())
+
+
+def _auto_workers(selected: int, available: int) -> int:
+    """Size the pool by sample count, then by what the node actually has.
+
+    The sample thresholds say how much parallel work is worth starting. They
+    are not a claim about the hardware: a two-GPU node given a 4000-sample
+    dataset must plan two Workers, not eight, or the run fails at GPU discovery
+    for a dataset it could have processed.
+    """
+    if selected < 1000:
+        planned = 1
+    elif selected < 2000:
+        planned = 2
+    elif selected < 4000:
+        planned = 4
+    else:
+        planned = 8
+    return max(1, min(planned, available))
+
+
+def _plan_workers(
+    args: Any, manager: DatasetManager, datasets: list[dict[str, Any]]
+) -> tuple[int, str]:
+    """Decide the Worker count per dataset before the run materializes anything."""
+    cap = args.max_samples
+    if type(cap) is not int or cap < 0:
+        raise EvalInputError("max_samples must be a non-negative integer")
+    if not datasets:
+        raise EvalInputError("No datasets available for Worker planning")
+    explicit = getattr(args, "num_workers", None)
+    available = _local_gpu_count()
+    if explicit is not None and explicit > 1 and explicit > available:
+        raise EvalInputError(
+            f"num_workers={explicit} asks for {explicit} GPUs but this node provides {available}"
+        )
+    for row in datasets:
+        # The projection `_dataset_details` already resolved is authoritative:
+        # counting it is a local file read, while re-projecting would redo the
+        # download during input resolution. A source root whose projection is
+        # not on disk yet is materialized here, because its task is only known
+        # once the source itself has been read.
+        path = row.get("jsonl_path")
+        count = _count_jsonl_rows(Path(str(path))) if path else None
+        if count is None:
+            try:
+                materialized = manager.download_and_convert(
+                    row.get("requested_name") or row["name"], task=row["task"]
+                )
+                count = _count_jsonl_rows(materialized)
+            except (OSError, ValueError) as exc:
+                raise EvalInputError(f"Cannot prepare Worker plan for {row['name']}: {exc}") from exc
+            row.update(jsonl_path=str(materialized), jsonl_exists=True)
+        if not isinstance(count, int) or count < 1:
+            raise EvalInputError(f"Dataset {row['name']} has no samples in its task projection")
+        selected = min(count, cap) if cap else count
+        planned = explicit if explicit is not None else _auto_workers(selected, available)
+        row.update(num_samples=count, selected_samples=selected, planned_workers=planned)
+    return (
+        max(row["planned_workers"] for row in datasets),
+        "explicit" if explicit is not None else "auto",
+    )
 
 
 def _first_jsonl_sample(path: Path) -> dict[str, Any]:
@@ -800,6 +907,8 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         dataset_source_key=args.dataset_source_key,
     )
     _check_task_compatibility(model, datasets)
+    num_workers, worker_selection = _plan_workers(args, manager, datasets)
+    num_workers = _parallel_request(args, num_workers)
     tasks = _dedupe([str(item.get("task") or "UNKNOWN") for item in datasets])
     languages = _dedupe([str(item.get("language") or "") for item in datasets if item.get("language")])
     metric_list = _dedupe([metric for item in datasets for metric in item.get("default_metrics", [])])
@@ -822,6 +931,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "device": args.device,
             "metrics": requested_metrics,
             "max_samples": args.max_samples,
+            "num_workers": getattr(args, "num_workers", None),
             "execution": execution["requested"],
             "execution_path": args.execution_path or "auto",
             "dataset_source_key": args.dataset_source_key,
@@ -842,6 +952,8 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "run_dir": str(output_dir),
             "protocol_id": protocol,
             "max_samples": args.max_samples,
+            "num_workers": num_workers,
+            "worker_selection": worker_selection,
             "sample_scope": "full_dataset" if args.max_samples == 0 else "bounded",
             "device": device,
             "execution": execution,
@@ -883,6 +995,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--device", default="auto")
     parser.add_argument("--metrics", nargs="*", default=[])
     parser.add_argument("--max-samples", type=int, default=0)
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        help="Override automatic per-dataset Worker selection; range: 1-8",
+    )
     parser.add_argument("--execution", choices=("auto", "local"))
     parser.add_argument(
         "--execution-path",

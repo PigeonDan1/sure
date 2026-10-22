@@ -22,7 +22,8 @@ Control principle: **agent decides scope, scripts execute.** You (the agent) con
 | `protocol` | — | `standard_system` (default) follows the approved model's upstream configuration. `strict_core` requires every conservative parameter to be mapped to an MCP argument or explicitly proven not applicable. |
 | `device` | — | `auto \| cpu \| cuda \| cuda:<index>`. Default `auto`; resolved by `scripts/resolve_eval_input.py` and handed to `scripts/infer_entrypoint.py` by `scripts/run_infer.py`. `cuda:<index>` selects the local host GPU by setting `CUDA_VISIBLE_DEVICES=<index>`; because the process then sees one GPU, model code receives `DEVICE=cuda:0`. The original request and the process-visible device are recorded separately. |
 | `max_samples` | — | Sample cap for bounded validation runs. Omitted or `0` means full dataset. |
-| `execution` | — | `auto \| local`. Both resolve to the approved local runtime: `local_docker` for container bindings, `local_python` for approved Python runtimes. `vc` is not accepted. |
+| `num_workers` | — | Optional integer `1`–`8` overriding automatic per-dataset selection. When omitted, select 1/2/4/8 Workers for fewer than 1000/2000/4000/otherwise samples in the task projection, after applying `max_samples`, then cap the result at the number of GPUs this node provides (`CUDA_VISIBLE_DEVICES` when set, otherwise `nvidia-smi`), so automatic selection never asks for hardware the node lacks. An explicit value above that count is rejected at input resolution. Allocate the maximum across all datasets before execution, then process datasets sequentially with their own Worker counts. Multiple Workers require `device=auto` or `cuda`; no silent fallback. Model calls remain single-sample. |
+| `execution` | — | `auto \| local`. Both resolve to `local_docker` or approved `local_python`; a remote cluster surface is not available here. |
 | `execution_path` | — | Legacy alias: `auto \| local_docker \| local_python`. `local_bash` is normalized to the approved local runtime; arbitrary host inference is forbidden. |
 | `metrics` | — | Comma-separated metrics the later `/sure_eval` run should report, e.g. `metrics=cer`. Recorded in the resolved input; inference itself does not evaluate. |
 | `config` | — | Explicit harness config path (otherwise materialized into `<run_dir>/_harness_config.yaml` from the engine's `config/default.yaml`). |
@@ -210,6 +211,67 @@ writing the terminal bundle, resume without loading the model again:
 `--from-stage` accepts `validate`, `protocol`, `references`, or `finalize`.
 The entrypoint still runs the guards, config, and dataset preparation needed by
 the selected stage, and records the recovery stage in `execution_surface.json`.
+
+## Optional multi-GPU inference
+
+Omitting `num_workers` selects Workers per dataset from the projected sample count,
+limited by `max_samples`: 1–999 → 1, 1000–1999 → 2, 2000–3999 → 4, ≥4000 → 8,
+then capped at the GPUs this node provides. The cap is the allocation a local run
+will actually get: `CUDA_VISIBLE_DEVICES` when it is set, otherwise the `nvidia-smi`
+device list. A 4000-sample dataset on a two-GPU node plans two Workers, not eight,
+so automatic selection never asks for hardware the node lacks. An explicit
+`num_workers` above that count is rejected during input resolution, before any
+model is loaded. Explicit `num_workers=1` uses the existing single-server path for
+every dataset.
+Local uses that many GPUs available to the approved runtime. The entrypoint probes
+CUDA in Model Python before loading a model.
+Each Worker sees only its assigned GPU through `CUDA_VISIBLE_DEVICES` and uses
+`cuda:0`. Model configuration cannot widen that visibility.
+
+The sample cap applies once per dataset before splitting. Samples are divided
+into contiguous shards whose sizes differ by at most one; a small dataset uses
+fewer Workers. All Workers for a dataset start before waiting, and the next
+dataset starts after the current dataset's attempts finish. Smoke outputs are
+isolated under `parallel_inference/smoke/`.
+
+For a mixed run, each dataset uses its own planned Worker count, including a
+one-Worker dataset handled by the same isolated controller. Processes exit after
+each dataset; models are loaded again for the next. Planning and execution record
+selection mode, full and selected sample counts, planned Workers and actual shard
+count. Changed sample counts or execution evidence inconsistent with the plan are
+rejected.
+
+A Worker records each successful sample durably in its own `completed.jsonl`.
+Sample errors leave other samples running when the server remains usable.
+Stdio timeouts use the approved server's `timeout` and `startup_timeout_sec`
+(300 seconds by default), end that attempt and clean its server process.
+Only missing keys are retried on the original GPU, at most twice after the
+first attempt. Proven input/configuration errors are not automatically retried.
+Other Workers continue. A shared container OOM can stop every process; persisted
+journals remain available for recovery.
+
+The controller validates unique keys, task contracts and output files, then
+publishes text and JSONL predictions in source order. The dataset is marked
+`completed` last. Remaining missing keys make the execution fail; successful
+shards and complete datasets stay on disk, and subsequent datasets are still
+processed after an independent Worker failure.
+
+Audit artifacts are `parallel_inference/<projection>/plan.json`,
+`workers/worker_<rank>/attempt_<number>/{attempt.json,keys.txt,completed.jsonl,worker.log}`,
+`merge_report.json` and session records. The execution result adds `parallelism`.
+
+To recover the same product directory after correcting the failure:
+
+```bash
+"$HARNESS_PYTHON_BIN" scripts/run_infer.py --run-dir <original_control_run_dir> --resume-predictions
+```
+
+Recovery verifies model configuration, approved runtime, dataset projection,
+protocol and sample scope before reusing results. It starts new attempt
+directories and only loads models for missing keys. Changed identities require
+a new product directory. Ordinary new runs do not reuse previous parallel
+attempts. `/sure_resume` handles skill state; the command above controls key-level
+prediction reuse. A full dataset is required for the subsequent full `/sure_eval`.
 
 ## Gate Checks (enforced by hooks)
 

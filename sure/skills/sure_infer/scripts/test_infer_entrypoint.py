@@ -19,12 +19,12 @@ ENTRYPOINT = Path(__file__).resolve().parent / "infer_entrypoint.py"
 STAGE_MARKER = "INFER_STAGE_FAILED"
 
 FAKE_PREPARE = """
-import json, sys
+import json, os, sys
 from pathlib import Path
 args = sys.argv[1:]
 datasets = args[args.index("--dataset") + 1 : args.index("--output")]
 Path(args[args.index("--output") + 1]).write_text(
-    json.dumps({"prepared": [{"dataset": f"{name}__v1"} for name in datasets]}), encoding="utf-8"
+    json.dumps({"prepared": [{"dataset": f"{name}__v1", "jsonl_path": str(Path(os.environ["SURE_EVAL_DATASETS_ROOT"]) / "sure_benchmark/jsonl" / f"{name}__v1.jsonl")} for name in datasets]}), encoding="utf-8"
 )
 """
 
@@ -208,6 +208,32 @@ class InferEntrypointTests(unittest.TestCase):
         for call in calls:
             self.assertEqual(call[call.index("--tool-name") + 1], "transcribe_audio")
             self.assertIn("--resume", call)
+
+    def test_automatic_single_worker_keeps_existing_path_and_records_plan(self) -> None:
+        payload = json.loads(self.input_resolved.read_text())
+        payload["runtime"] = {"num_workers": 1, "worker_selection": "auto"}
+        for row in payload["datasets"]:
+            row.update(jsonl_path=str(self.datasets_root / "sure_benchmark/jsonl" / f"{row['name']}.jsonl"),
+                       num_samples=1, selected_samples=1, planned_workers=1)
+        self.input_resolved.write_text(json.dumps(payload))
+        completed = self.run_entrypoint(MAX_SAMPLES="1")
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertFalse((self.run_dir / "parallel_inference").exists())
+        status = json.loads((self.run_dir / "prediction_generation_status.json").read_text())
+        self.assertEqual(status["worker_selection"], "auto")
+        for row in status["datasets"]:
+            self.assertEqual(row["planned_workers"], 1)
+            self.assertEqual(row["total_samples"], 1)
+            self.assertEqual(row["selected_samples"], 1)
+
+    def test_preparation_rejects_count_changed_after_automatic_plan(self) -> None:
+        self.input_resolved.write_text(json.dumps({"runtime": {"worker_selection": "auto"}, "datasets": [
+            {"name": f"ds_{suffix}__v1", "jsonl_path": str(self.datasets_root / "sure_benchmark/jsonl" / f"ds_{suffix}__v1.jsonl"),
+             "num_samples": 2, "selected_samples": 2, "planned_workers": 1} for suffix in ("a", "b")]}))
+        completed = self.run_entrypoint()
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(self.failed_stage(completed), "prepare")
+        self.assertEqual(self.generate_calls(), [])
 
     def test_smoke_runs_first_and_bounds_the_sample_count(self) -> None:
         completed = self.run_entrypoint()

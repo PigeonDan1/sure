@@ -180,7 +180,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_infer parameters: ${missing.join(", ")}. Usage: /sure_infer model=<name> datasets=<source_path[@version][,source_path[@version]...]> [dataset_source_key=<key> (recorded only, does not select a root)] [datasets_root=<writable_projection_root>] [protocol=standard_system|strict_core] [execution=auto|local] [device=auto|cpu|cuda[:index]] [max_samples=...] [metrics=<metric[,metric...]>] [run_id=<id>] [output_dir=<abs_dir>] [config=<harness_config.yaml>]`,
+			`Missing required /sure_infer parameters: ${missing.join(", ")}. Usage: /sure_infer model=<name> datasets=<source_path[@version][,source_path[@version]...]> [dataset_source_key=<key> (recorded only, does not select a root)] [datasets_root=<writable_projection_root>] [protocol=standard_system|strict_core] [execution=auto|local] [num_workers=<1..8> (omitted: automatic per dataset, capped at the GPUs this node provides)] [device=auto|cpu|cuda[:index]] [max_samples=...] [metrics=<metric[,metric...]>] [run_id=<id>] [output_dir=<abs_dir>] [config=<harness_config.yaml>]`,
 			"Missing required parameters.",
 		);
 	}
@@ -270,6 +270,11 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (typeof args.datasets_root === "string") {
 		resolveArgs.push("--datasets-root", args.datasets_root);
+	}
+	// Only the Worker count crosses this boundary. There is no cluster surface
+	// to describe: a local run uses the GPUs this node already has.
+	if (typeof args.num_workers === "string" || typeof args.num_workers === "number") {
+		resolveArgs.push("--num-workers", String(args.num_workers));
 	}
 	const resolvedInput = spawnSync(runtime.contract.python_executable, resolveArgs, {
 		cwd: ctx.packageDir,
