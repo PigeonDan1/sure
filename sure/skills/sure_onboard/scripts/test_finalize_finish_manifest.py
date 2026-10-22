@@ -132,6 +132,27 @@ class FinishManifestTests(unittest.TestCase):
         self.assertEqual(structured[0]["output"]["audio_path"], "artifacts/outputs/enhanced.wav")
         self.assertEqual(json.loads(weights.read_text())["checkpoint_root"], ".runtime/weights")
 
+    def test_input_audio_cannot_be_reported_as_generated_audio(self) -> None:
+        model_dir = Path(self._tmp.name) / "model"
+        fixture = model_dir / "fixture" / "asr" / "sample.wav"
+        fixture.parent.mkdir(parents=True)
+        fixture.write_bytes(b"RIFFinput")
+        artifacts = model_dir / "artifacts"
+        artifacts.mkdir()
+        sample = artifacts / "sample_output.json"
+        sample.write_text(json.dumps({"text": "transcription", "audio_path": str(fixture)}))
+
+        with self.assertRaisesRegex(ValueError, "generated sample audio must be stored below artifacts/outputs"):
+            normalize_generated_samples(self.run_dir, model_dir)
+
+        sample.write_text(json.dumps({"text": "transcription", "input_audio": str(fixture)}))
+        normalize_generated_samples(self.run_dir, model_dir)
+        self.assertEqual(json.loads(sample.read_text())["text"], "transcription")
+
+        sample.write_text(json.dumps({"audio_path": "artifacts/outputs/missing.wav"}))
+        with self.assertRaisesRegex(ValueError, "generated sample audio file is missing"):
+            normalize_generated_samples(self.run_dir, model_dir)
+
 
 if __name__ == "__main__":
     unittest.main()

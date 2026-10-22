@@ -269,6 +269,41 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 export function preFinish(ctx: SureHookContext): SureHookResult {
 	const mode = modeFromArgs(ctx.args);
 	const checkpoint = readCheckpoint(ctx, mode);
+	const event = typeof ctx.event === "object" && ctx.event !== null ? (ctx.event as Record<string, unknown>) : {};
+	const finish =
+		typeof event.finish === "object" && event.finish !== null ? (event.finish as Record<string, unknown>) : {};
+	const status = finish.status;
+	if (status === "failed") {
+		const unit = findUnit(checkpoint.data.currentUnit);
+		const artifact = unit ? readArtifact(ctx.runDir, unit.produces) : undefined;
+		const manifest =
+			typeof event.manifest === "object" && event.manifest !== null
+				? (event.manifest as Record<string, unknown>)
+				: {};
+		const validation =
+			typeof manifest.validation === "object" && manifest.validation !== null
+				? (manifest.validation as Record<string, unknown>)
+				: {};
+		if (
+			!unit ||
+			checkpoint.data.completedUnits.includes(unit.id) ||
+			!artifact ||
+			typeof artifact !== "object" ||
+			(artifact as Record<string, unknown>).status !== "failed" ||
+			validateProduces(unit, { ...artifact, status: "passed" }) ||
+			createHash("sha256").update(JSON.stringify(artifact)).digest("hex") !==
+				checkpoint.data.failedArtifactDigests[unit.id] ||
+			validation.failed_unit !== unit.id ||
+			typeof validation.error !== "string" ||
+			!validation.error.trim() ||
+			validation.published !== false
+		) {
+			return failure(
+				"A failed approval must cite the blocked unit and its unchanged failure artifact; publication is forbidden.",
+			);
+		}
+		return { ok: true };
+	}
 	const terminal =
 		mode === "approve" && parseArgs(ctx.args).decision === "reject"
 			? findUnit("verify_decision")!
@@ -278,12 +313,6 @@ export function preFinish(ctx: SureHookContext): SureHookResult {
 	const artifact = readArtifact(ctx.runDir, terminal.produces);
 	const invalid = validateProduces(terminal, artifact);
 	if (invalid) return failure(invalid);
-	const status =
-		typeof ctx.event === "object" &&
-		ctx.event !== null &&
-		typeof (ctx.event as Record<string, unknown>).finish === "object"
-			? (ctx.event as Record<string, { status?: unknown }>).finish?.status
-			: undefined;
 	return status === "success" ? { ok: true } : failure("A completed approval flow must finish with status=success.");
 }
 
