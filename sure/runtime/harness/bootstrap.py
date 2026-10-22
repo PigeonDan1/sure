@@ -258,7 +258,11 @@ def _aliases_of(install_dir: Path, source: Path) -> set[str]:
 
 
 def _relative_links_into(
-    runtime_dir: Path, install_dir: Path, source: Path, base_dir: Path
+    runtime_dir: Path,
+    install_dir: Path,
+    source: Path,
+    base_dir: Path,
+    aliases: set[str],
 ) -> list[str]:
     """Re-point absolute links at the relocated interpreter; return escaped ones.
 
@@ -290,7 +294,7 @@ def _relative_links_into(
                 inside = resolved.relative_to(source_root)
             except ValueError:
                 try:
-                    inside = resolved.relative_to(install_root)
+                    under_install = resolved.relative_to(install_root)
                 except ValueError:
                     # Not one of the interpreter's own links. If it still
                     # resolves inside the tree, leave it; otherwise it escapes.
@@ -299,6 +303,17 @@ def _relative_links_into(
                     except ValueError:
                         escaped.append(str(path))
                     continue
+                # uv spells the entry point through its version-agnostic alias
+                # (cpython-3.11-...) rather than the release-named directory it
+                # links to (cpython-3.11.17-...). The alias is unlinked before
+                # this runs, so resolving it no longer reaches the real
+                # directory and the name has to be rewritten here; carrying it
+                # over would publish a link into a directory that is gone.
+                first, *rest = under_install.parts
+                if first not in aliases:
+                    escaped.append(str(path))
+                    continue
+                inside = Path(*rest)
             relative = Path(os.path.relpath(base_dir, path.parent)) / inside
             path.unlink()
             path.symlink_to(relative, target_is_directory=True)
@@ -402,7 +417,7 @@ def _relocate_base_python(runtime_dir: Path, install_dir: Path) -> None:
             except OSError:
                 pass
     shutil.move(str(source), str(base_dir))
-    escaped = _relative_links_into(runtime_dir, install_dir, source, base_dir)
+    escaped = _relative_links_into(runtime_dir, install_dir, source, base_dir, aliases)
     if escaped:
         raise HarnessRuntimeError(
             "Harness Runtime links to paths outside the tree: " + "; ".join(escaped)
@@ -479,6 +494,13 @@ def _assert_self_contained(runtime_dir: Path) -> None:
                 raise HarnessRuntimeError(
                     f"Harness Runtime is not self-contained: {path} -> {target}"
                 ) from exc
+            # A link that stays inside the tree can still be broken: pointing it
+            # at a directory the relocation removed keeps it "inside" while
+            # making the entry point unstartable.
+            if not resolved.exists():
+                raise HarnessRuntimeError(
+                    f"Harness Runtime link does not resolve: {path} -> {target}"
+                )
     cfg = runtime_dir / "pyvenv.cfg"
     home = Path(_home_of(_read_lines(cfg, "pyvenv.cfg")))
     try:

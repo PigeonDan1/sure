@@ -75,6 +75,38 @@ class HarnessRuntimeBootstrapTests(unittest.TestCase):
         self.assertFalse(bootstrap._is_link(real))
         self.assertEqual(bootstrap._aliases_of(install_dir, real), {real.name, alias.name})
 
+    def test_a_link_spelled_through_uv_s_alias_follows_the_interpreter_in(self) -> None:
+        # uv names the entry point through its version-agnostic alias
+        # (cpython-3.11-...) while installing into the release-named directory
+        # (cpython-3.11.17-...). The alias is unlinked before the relocation
+        # re-points links, so resolving the old spelling no longer reaches the
+        # real directory and the link has to be rebuilt against the in-tree
+        # copy. Carrying the alias segment over publishes a dangling entry
+        # point, which is a runtime that cannot start.
+        if os.name == "nt":
+            self.skipTest("the POSIX layout spells its entry point through the alias")
+        install_dir = Path(self._temporary.name) / "install"
+        real = install_dir / "cpython-3.11.17-linux-x86_64-gnu"
+        (real / "bin").mkdir(parents=True)
+        (real / "bin" / "python3.11").write_bytes(b"#!/bin/sh\n")
+        alias = install_dir / "cpython-3.11-linux-x86_64-gnu"
+        alias.symlink_to(real, target_is_directory=True)
+        staging = Path(self._temporary.name) / "staging"
+        (staging / "bin").mkdir(parents=True)
+        (staging / "pyvenv.cfg").write_text(f"home = {real / 'bin'}\n", encoding="utf-8")
+        entry = staging / "bin" / "python"
+        entry.symlink_to(alias / "bin" / "python3.11")
+
+        bootstrap._relocate_base_python(staging, install_dir)
+
+        self.assertFalse(entry.is_symlink() and not entry.exists(), f"{entry} dangles")
+        self.assertEqual(os.readlink(entry), "../base-python/bin/python3.11")
+        self.assertTrue((staging / "base-python" / "bin" / "python3.11").is_file())
+        home = Path(
+            bootstrap._home_of(bootstrap._read_lines(staging / "pyvenv.cfg", "pyvenv.cfg"))
+        )
+        self.assertTrue(home.is_relative_to(staging / "base-python"), home)
+
     def test_materializing_twice_yields_one_verified_runtime(self) -> None:
         first = resolve_runtime(self.runtime_root)
         second = resolve_runtime(self.runtime_root)
