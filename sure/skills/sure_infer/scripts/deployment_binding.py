@@ -697,13 +697,23 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
                     marker_harness.get(key) == image_harness.get(key),
                     f"deployment_ready Harness Runtime {key} disagrees with runtime inventory",
                 )
-        normalized_harness: dict[str, Any] | None = {
-            key: value
-            for key, value in image_harness.items()
-            if key not in {"required", "checks"}
+        # The runtime an approved bundle carries is approval evidence, not an
+        # execution source: every run mounts the active Harness Runtime from the
+        # checkout and enters it through its own interpreter. Recording it under
+        # a name that cannot be mistaken for the runtime that ran is what keeps
+        # the two from being compared, and keeps `harness_runtime_source` from
+        # ever saying a run executed the image's copy.
+        image_harness_evidence: dict[str, Any] | None = {
+            "role": "legacy_approval_evidence",
+            "participates_in_execution": False,
+            **{
+                key: value
+                for key, value in image_harness.items()
+                if key not in {"required", "checks", "role", "participates_in_execution"}
+            },
         }
     else:
-        normalized_harness = None
+        image_harness_evidence = None
 
     declared_hashes = marker.get("required_artifact_sha256")
     _require(isinstance(declared_hashes, dict) and declared_hashes, "deployment_ready artifact hashes are missing")
@@ -775,7 +785,7 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
             "server_command": server_command,
             "tool_names": tool_names,
             "gpu_required": container.get("gpu_required") is True,
-            "harness_runtime": normalized_harness,
+            "harness_runtime_evidence": image_harness_evidence,
             "model_mount": {"source": str(model_dir), "target": model_target, "read_only": True},
             "result_mount": {"target": result_target, "read_only": False},
         },
@@ -791,7 +801,12 @@ def load_deployment_binding(model_dir: Path, model_name: str) -> dict[str, Any]:
             "package_gate": str(_artifact_path(model_dir, "artifacts/package_gate.json")),
             "verified_sha256": verified_hashes,
             "bundle_identity_sha256": bundle_identity,
-            "harness_runtime_source": "approved_image" if normalized_harness else "legacy_external_common_runtime",
+            # The approved bundle's Harness Runtime is evidence that the bundle
+            # was sealed against a real runtime; it is never executed. Naming it
+            # here, next to the active runtime's own identity in the run's
+            # provenance, is how the two stay distinguishable.
+            "harness_runtime_source": "legacy_approval_evidence" if image_harness_evidence else "no_image_harness_runtime",
+            "harness_runtime_participates_in_execution": False,
             "integrity_profile": integrity_profile,
         },
     }

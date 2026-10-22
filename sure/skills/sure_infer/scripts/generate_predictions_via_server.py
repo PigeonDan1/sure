@@ -571,6 +571,7 @@ def _harness_runtime_summary(env: dict[str, str]) -> dict[str, Any]:
         "lock_sha256": env.get("SURE_HARNESS_LOCK_SHA256"),
         "manifest_path": env.get("SURE_HARNESS_MANIFEST_PATH"),
         "runtime_root": env.get("SURE_HARNESS_RUNTIME_ROOT"),
+        "execution_source": "active_injected_runtime",
     }
 
 

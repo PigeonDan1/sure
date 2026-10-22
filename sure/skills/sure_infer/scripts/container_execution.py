@@ -179,29 +179,15 @@ def resolve_container_harness_runtime(
     host_runtime: dict[str, Any],
     repo_root: Path,
 ) -> tuple[dict[str, Any], bool]:
-    container = binding.get("container") if isinstance(binding.get("container"), dict) else {}
-    image_runtime = container.get("harness_runtime")
-    model_python = str(container.get("python_executable") or "python")
-    if isinstance(image_runtime, dict):
-        if image_runtime.get("runtime_id") != host_runtime.get("runtime_id"):
-            raise ValueError("approved image Harness Runtime ID differs from the active common runtime")
-        if image_runtime.get("lock_sha256") != host_runtime.get("lock_sha256"):
-            raise ValueError("approved image Harness Runtime lock differs from the active common runtime")
-        python = str(image_runtime.get("python_executable") or "")
-        manifest = str(image_runtime.get("manifest_path") or "")
-        root = str(image_runtime.get("runtime_root") or "")
-        if not all(PurePosixPath(value).is_absolute() for value in (python, manifest, root)):
-            raise ValueError("approved image Harness Runtime paths must be absolute")
-        if python == model_python:
-            raise ValueError("Harness Python and Model Python must be separate execution roles")
-        return {**image_runtime, "execution_source": "approved_image"}, False
-
+    # Single source: the active Harness Runtime, mounted out of the repository.
+    # Whatever an older image carries is dead code and is never mounted, run or
+    # compared; comparing would only re-introduce a second execution source.
     harness_root = Path(str(host_runtime["runtime_root"])).resolve()
     try:
         harness_root.relative_to(repo_root.resolve())
     except ValueError as exc:
-        raise ValueError("external Harness Runtime must be materialized under the mounted repository") from exc
-    return {**host_runtime, "execution_source": "mounted_common_runtime"}, True
+        raise ValueError("active Harness Runtime must be materialized under the mounted repository") from exc
+    return {**host_runtime, "execution_source": "active_injected_runtime"}, True
 
 
 def build_local_container_command(
@@ -251,6 +237,7 @@ def build_local_container_command(
     execution_provenance = build_execution_provenance(
         harness_root=repo_root,
         evaluation_runtime=evaluation_runtime,
+        harness_runtime=harness_runtime,
         image_digest=str(binding.get("target_image_digest") or ""),
         image_ref=str(binding.get("target_image_ref") or ""),
     )
@@ -393,7 +380,7 @@ def build_local_container_command(
         "evaluation_node_runtime": {
             "runtime_type": "evaluation_node_python",
             "python_executable": harness_python,
-            "source": "approved_common_harness_runtime",
+            "source": "active_injected_runtime",
         },
         "harness_runtime_mounted_from_repo": harness_mounted_from_repo,
         "model_runtime": {

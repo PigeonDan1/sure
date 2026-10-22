@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -37,6 +38,12 @@ SPEC_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SPEC_DIR.parents[2]
 DEFAULT_RUNTIME_ROOT = REPO_ROOT / "sure" / ".runtime" / "harness"
 MANIFEST_NAME = "runtime-manifest.json"
+# uv installs the interpreter it fetched beside the environment, because it
+# refuses to create a virtual environment in a directory that already exists and
+# therefore cannot install into one. The tree is made self-contained afterwards
+# by moving that interpreter in; see _relocate_base_python.
+INSTALL_DIR_NAME = ".python-base"
+BASE_PYTHON_NAME = "base-python"
 
 
 class HarnessRuntimeError(RuntimeError):
@@ -150,12 +157,13 @@ def _verified_contract(
     python = _python_path(runtime_dir)
     if not python.is_file() or not os.access(python, os.X_OK):
         raise HarnessRuntimeError(f"Harness Runtime Python is missing or not executable: {python}")
-    # The manifest records which base interpreter the venv was built on. Reading
-    # it back is the whole point of recording it: a venv is a handful of paths
-    # pointing at an interpreter this directory does not own, and one that has
-    # been replaced or upgraded underneath it no longer matches the lock that was
-    # resolved for it. A mismatch reaches resolve_runtime, which quarantines the
-    # directory and rebuilds rather than trusting it.
+    _assert_self_contained(runtime_dir)
+    # The manifest records which base interpreter the venv was built on, and this
+    # tree carries that interpreter itself. Reading the hash back is what proves
+    # the interpreter inside the tree is still the one the lock was resolved for:
+    # a tree whose interpreter was replaced underneath it no longer matches, and
+    # a mismatch reaches resolve_runtime, which quarantines the directory and
+    # rebuilds rather than trusting it.
     identity = probe_python(python, error=HarnessRuntimeError)
     if identity["base_python_sha256"] != manifest.get("base_python_sha256"):
         raise HarnessRuntimeError("Harness Runtime base_python_sha256 mismatch")
@@ -168,8 +176,8 @@ def _verified_contract(
     contract.update(
         {
             "status": "ready",
-            # Not python.resolve(): in a venv bin/python is a symlink to the base
-            # interpreter, and following it leaves the venv and its packages behind.
+            # Not python.resolve(): the entry point is what a container executes,
+            # and on POSIX it is a relative link into the tree's own interpreter.
             "python_executable": str(_python_path(runtime_dir.resolve())),
             "runtime_root": str(runtime_dir.resolve()),
             "manifest_path": str(manifest_path.resolve()),
@@ -198,6 +206,317 @@ def _run_logged(command: list[str], env: dict[str, str], log: TextIO, *, timeout
         raise HarnessRuntimeError(f"command failed with exit code {completed.returncode}: {command[0]}")
 
 
+def _is_link(path: Path) -> bool:
+    # On Windows, uv's version-agnostic alias directory is a junction, which
+    # Path.is_symlink() reports as False. A junction is a link for relocation
+    # purposes: readlink works on it, and a rename breaks its target. Detect it
+    # via the reparse point tag on the lstat record: Path.is_junction arrived
+    # only in 3.12, and bootstrap.py runs under the 3.11 interpreter it is
+    # preparing, so it cannot rely on that method.
+    if path.is_symlink():
+        return True
+    if os.name == "nt" and getattr(stat, "IO_REPARSE_TAG_MOUNT_POINT", None) is not None:
+        try:
+            return (
+                getattr(path.lstat(), "st_reparse_tag", 0)
+                == stat.IO_REPARSE_TAG_MOUNT_POINT
+            )
+        except OSError:
+            pass
+    return False
+
+
+def _is_same_file(path: Path, other: Path) -> bool:
+    try:
+        return (path.stat().st_dev, path.stat().st_ino) == (
+            other.stat().st_dev,
+            other.stat().st_ino,
+        )
+    except OSError:
+        return False
+
+
+def _link_target(path: Path) -> str:
+    return os.readlink(path)
+
+
+def _aliases_of(install_dir: Path, source: Path) -> set[str]:
+    """Names under install_dir that refer to the same interpreter directory.
+
+    uv writes one real interpreter directory and a version-agnostic alias beside
+    it. On Windows the alias is a junction, on POSIX a symlink, but the
+    identity test below covers both without caring which one uv chose: anything
+    whose st_dev/st_ino equals the source is the same directory.
+    """
+    aliases = {source.name}
+    for entry in install_dir.iterdir():
+        if entry == source or not entry.is_dir() or entry.name.startswith("."):
+            continue
+        if _is_same_file(entry, source):
+            aliases.add(entry.name)
+    return aliases
+
+
+def _relative_links_into(
+    runtime_dir: Path,
+    install_dir: Path,
+    source: Path,
+    base_dir: Path,
+    aliases: set[str],
+) -> list[str]:
+    """Re-point absolute links at the relocated interpreter; return escaped ones.
+
+    uv installed the interpreter under install_dir beside the tree and the
+    tree's links name that location. After the interpreter moves to base_dir,
+    every absolute link naming the old location must be re-pointed relatively
+    at the new one. A link that points anywhere else inside the tree is fine; a
+    link that points outside it is reported so the caller can refuse the tree.
+    """
+    escaped: list[str] = []
+    install_root = install_dir.resolve()
+    source_root = source.resolve()
+    tree_root = runtime_dir.resolve()
+    for root, dirs, files in os.walk(runtime_dir):
+        root_path = Path(root)
+        for name in dirs + files:
+            path = root_path / name
+            if not _is_link(path):
+                continue
+            try:
+                target = Path(_link_target(path))
+            except OSError as exc:
+                escaped.append(f"{path} (unreadable: {exc})")
+                continue
+            if not target.is_absolute():
+                continue
+            resolved = path.parent.joinpath(target).resolve(strict=False)
+            try:
+                inside = resolved.relative_to(source_root)
+            except ValueError:
+                try:
+                    under_install = resolved.relative_to(install_root)
+                except ValueError:
+                    # Not one of the interpreter's own links. If it still
+                    # resolves inside the tree, leave it; otherwise it escapes.
+                    try:
+                        resolved.relative_to(tree_root)
+                    except ValueError:
+                        escaped.append(str(path))
+                    continue
+                # uv spells the entry point through its version-agnostic alias
+                # (cpython-3.11-...) rather than the release-named directory it
+                # links to (cpython-3.11.17-...). The alias is unlinked before
+                # this runs, so resolving it no longer reaches the real
+                # directory and the name has to be rewritten here; carrying it
+                # over would publish a link into a directory that is gone.
+                first, *rest = under_install.parts
+                if first not in aliases:
+                    escaped.append(str(path))
+                    continue
+                inside = Path(*rest)
+            relative = Path(os.path.relpath(base_dir, path.parent)) / inside
+            path.unlink()
+            path.symlink_to(relative, target_is_directory=True)
+    return escaped
+
+
+def _replace_windows_launchers(runtime_dir: Path, base_dir: Path) -> None:
+    """Replace uv's Scripts launcher stubs with the interpreter's own binaries.
+
+    uv writes Scripts/python.exe as a trampoline stub that embeds the base
+    interpreter's absolute path in a fixed-width binary resource; renaming the
+    tree breaks the stub. CPython's own venv avoids this by copying the real
+    python.exe, pythonw.exe and the runtime DLLs into Scripts/, so do the same
+    here. The DLLs matter: copying only python.exe starts and then dies with
+    exit code 0xC0000135 on Windows.
+    """
+    if os.name != "nt":
+        return
+    scripts = runtime_dir / "Scripts"
+    if not scripts.is_dir():
+        return
+    for name in ("python.exe", "pythonw.exe"):
+        source = base_dir / name
+        if source.is_file():
+            shutil.copy2(source, scripts / name)
+    for entry in base_dir.glob("*.dll"):
+        shutil.copy2(entry, scripts / entry.name)
+
+
+def _home_of(lines: list[str]) -> str:
+    for line in lines:
+        if line.startswith("home"):
+            return line.split("=", 1)[1].strip()
+    raise HarnessRuntimeError("Harness Runtime pyvenv.cfg has no home")
+
+
+def _read_lines(path: Path, label: str) -> list[str]:
+    try:
+        return path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise HarnessRuntimeError(f"cannot read {label}: {path}: {exc}") from exc
+
+
+def _write_home(cfg: Path, lines: list[str], home: Path) -> None:
+    rewritten = [
+        f"home = {home}" if line.startswith("home") else line
+        for line in lines
+    ]
+    cfg.write_text("\n".join(rewritten) + "\n", encoding="utf-8")
+
+
+def _relocate_base_python(runtime_dir: Path, install_dir: Path) -> None:
+    """Move uv's managed interpreter into the tree and re-point everything.
+
+    uv installed exactly one real interpreter under install_dir (beside its
+    version-agnostic alias). Move it to `<runtime>/base-python`, re-point the
+    links that named the old location, replace Windows launcher stubs with the
+    real interpreter, and rewrite pyvenv.cfg home to name the in-tree copy.
+    """
+    base_dir = runtime_dir / BASE_PYTHON_NAME
+    directories = [
+        entry for entry in install_dir.iterdir()
+        if entry.is_dir() and not entry.name.startswith(".")
+    ]
+    if not directories:
+        raise HarnessRuntimeError(f"uv installed no interpreter into {install_dir}")
+    # The real interpreter is the one directory that is not itself a link; uv's
+    # version-agnostic alias is a junction on Windows and a symlink on POSIX.
+    # Everything else is then validated against that identity, so the alias
+    # detection and the extra-interpreter check share one source of truth.
+    reals = [entry for entry in directories if not _is_link(entry)]
+    if len(reals) != 1:
+        raise HarnessRuntimeError(
+            f"uv installed {len(reals)} real interpreters into {install_dir}, expected exactly one"
+        )
+    source = reals[0]
+    aliases = _aliases_of(install_dir, source)
+    extras = [entry.name for entry in directories if entry.name not in aliases]
+    if extras:
+        raise HarnessRuntimeError(
+            f"uv installed more than one interpreter into {install_dir}: "
+            f"{', '.join(sorted(extras))}"
+        )
+    cfg = runtime_dir / "pyvenv.cfg"
+    lines = _read_lines(cfg, "pyvenv.cfg")
+    home = _home_of(lines)
+    try:
+        inside = Path(home).resolve().relative_to(source.resolve())
+    except (OSError, ValueError) as exc:
+        raise HarnessRuntimeError(
+            f"Harness Runtime pyvenv.cfg home is not inside uv's interpreter: {home}"
+        ) from exc
+    # Drop the alias link before moving the real directory, so the junction
+    # cannot outlive it. Both unlink and rmdir remove a junction on Windows
+    # without touching its target; unlink is the pathlib spelling that works on
+    # POSIX symlinked directories too.
+    for entry in install_dir.iterdir():
+        if entry.name in aliases and entry.name != source.name:
+            try:
+                entry.unlink()
+            except OSError:
+                pass
+    shutil.move(str(source), str(base_dir))
+    escaped = _relative_links_into(runtime_dir, install_dir, source, base_dir, aliases)
+    if escaped:
+        raise HarnessRuntimeError(
+            "Harness Runtime links to paths outside the tree: " + "; ".join(escaped)
+        )
+    if os.name == "nt":
+        _replace_windows_launchers(runtime_dir, base_dir)
+    _write_home(cfg, lines, base_dir / inside)
+    shutil.rmtree(install_dir, ignore_errors=True)
+
+
+def _retarget(runtime_dir: Path, published: Path) -> None:
+    """Rewrite paths that name the staging directory to the published one.
+
+    The probe has to run while the tree is at its staging path, because
+    pyvenv.cfg home names an absolute path. Right before the publish rename,
+    that home must be re-pointed at the published absolute path, and text files
+    under the entry-point directory (POSIX console-script shebangs like
+    bin/typer) must follow. Windows console-script trampolines embed the staging
+    path in a fixed-width binary resource and cannot be retargeted here; they
+    are not on the execution path, which enters through Scripts/python.exe.
+    """
+    cfg = runtime_dir / "pyvenv.cfg"
+    lines = _read_lines(cfg, "pyvenv.cfg")
+    home = Path(_home_of(lines))
+    staging = runtime_dir.resolve()
+    published = published.resolve()
+    try:
+        inside = home.resolve().relative_to(staging)
+    except ValueError as exc:
+        raise HarnessRuntimeError(
+            f"Harness Runtime pyvenv.cfg home is not inside the staging tree: {home}"
+        ) from exc
+    _write_home(cfg, lines, published / inside)
+    entry_dir = runtime_dir / runtime_python_relative().split("/", 1)[0]
+    old_bytes = str(staging).encode()
+    new_bytes = str(published).encode()
+    for path in entry_dir.iterdir():
+        if not path.is_file() or _is_link(path):
+            continue
+        try:
+            data = path.read_bytes()
+        except OSError:
+            continue
+        if b"\0" in data or old_bytes not in data:
+            continue
+        path.write_bytes(data.replace(old_bytes, new_bytes))
+
+
+def _assert_self_contained(runtime_dir: Path) -> None:
+    """Refuse a runtime that reaches outside its own tree.
+
+    A self-contained runtime is the entire point of the m4 layout: inside a
+    container the host's interpreter is gone, so any link or pyvenv.cfg home
+    that escapes the tree turns into a failure there. Verify it here instead of
+    there.
+    """
+    root = runtime_dir.resolve()
+    for current, dirs, files in os.walk(runtime_dir):
+        current_path = Path(current)
+        for name in dirs + files:
+            path = current_path / name
+            if not _is_link(path):
+                continue
+            try:
+                target = Path(_link_target(path))
+            except OSError as exc:
+                raise HarnessRuntimeError(
+                    f"Harness Runtime link is unreadable: {path}: {exc}"
+                ) from exc
+            resolved = path.parent.joinpath(target).resolve() if not target.is_absolute() else target.resolve()
+            try:
+                resolved.relative_to(root)
+            except ValueError as exc:
+                raise HarnessRuntimeError(
+                    f"Harness Runtime is not self-contained: {path} -> {target}"
+                ) from exc
+            # A link that stays inside the tree can still be broken: pointing it
+            # at a directory the relocation removed keeps it "inside" while
+            # making the entry point unstartable.
+            if not resolved.exists():
+                raise HarnessRuntimeError(
+                    f"Harness Runtime link does not resolve: {path} -> {target}"
+                )
+    cfg = runtime_dir / "pyvenv.cfg"
+    home = Path(_home_of(_read_lines(cfg, "pyvenv.cfg")))
+    try:
+        home.resolve().relative_to(root)
+    except ValueError as exc:
+        raise HarnessRuntimeError(
+            f"Harness Runtime is not self-contained: pyvenv.cfg home {home}"
+        ) from exc
+    try:
+        _python_path(runtime_dir).resolve().relative_to(root)
+    except ValueError as exc:
+        raise HarnessRuntimeError(
+            "Harness Runtime is not self-contained: Python escapes the tree"
+        ) from exc
+
+
 def _build_runtime(
     runtime_root: Path,
     runtime_dir: Path,
@@ -222,12 +541,17 @@ def _build_runtime(
 
     for attempt in range(1, max_attempts + 1):
         staging = Path(tempfile.mkdtemp(prefix=f".{runtime_id}.attempt-{attempt}-", dir=runtime_root))
+        # Beside the staging tree, never inside it: uv writes the interpreter it
+        # fetched here because it refuses to create a venv in a directory that
+        # already exists. _relocate_base_python moves it into the tree.
+        install_dir = runtime_root / f".{runtime_id}.attempt-{attempt}-{INSTALL_DIR_NAME}"
         log_path = logs_dir / f"bootstrap-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{os.getpid()}-attempt-{attempt}.log"
         env = child_environment()
         env.update(
             {
                 "UV_CACHE_DIR": str(cache_dir),
                 "UV_LINK_MODE": "copy",
+                "UV_PYTHON_INSTALL_DIR": str(install_dir),
             }
         )
         try:
@@ -251,7 +575,13 @@ def _build_runtime(
                 # uv's, hash-checked by uv, and it is the reason a plain PC needs no
                 # Python of its own; the interpreter it picked is recorded below.
                 _run_logged(
-                    venv_command(uv, staging, python=str(spec["python"]), allow_python_downloads=True),
+                    venv_command(
+                        uv,
+                        staging,
+                        python=str(spec["python"]),
+                        allow_python_downloads=True,
+                        python_preference="only-managed",
+                    ),
                     env,
                     log,
                     timeout=600,
@@ -272,6 +602,7 @@ def _build_runtime(
                     log,
                     timeout=600,
                 )
+                _relocate_base_python(staging, install_dir)
                 identity = probe_python(runtime_python, error=HarnessRuntimeError)
                 imports = _probe(runtime_python, [str(value) for value in spec.get("required_imports", [])])
                 manifest = {
@@ -291,10 +622,18 @@ def _build_runtime(
                     "materialization": "uv_venv",
                     "materialization_version": spec["materialization_version"],
                     "base_python_sha256": identity["base_python_sha256"],
+                    # The tree carries its own interpreter, so it can be mounted
+                    # into a container that has no Python of the host's.
+                    "self_contained": True,
+                    "base_python_relative": BASE_PYTHON_NAME,
                 }
                 _manifest_path(staging).write_text(
                     json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
                 )
+                # Last, because it is the only thing that has to know the final
+                # name, and the probe above must run while the tree is where it
+                # is: pyvenv.cfg names its interpreter by path.
+                _retarget(staging, runtime_dir)
                 publish(staging, runtime_dir, error=HarnessRuntimeError)
                 return _verified_contract(runtime_dir, spec, lock_sha256, runtime_id)
         except (HarnessRuntimeError, OSError, subprocess.SubprocessError) as exc:
@@ -302,6 +641,8 @@ def _build_runtime(
         finally:
             if staging.exists():
                 shutil.rmtree(staging)
+            if install_dir.exists():
+                shutil.rmtree(install_dir, ignore_errors=True)
     raise HarnessRuntimeError("Harness Runtime preparation failed after bounded attempts: " + "; ".join(errors))
 
 

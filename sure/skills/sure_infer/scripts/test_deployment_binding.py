@@ -240,6 +240,22 @@ class DeploymentBindingTests(unittest.TestCase):
         self.assertEqual(binding["target_image_ref"], self.image_ref)
         self.assertTrue(binding["container"]["model_mount"]["read_only"])
 
+    def _declare_image_harness_runtime(self, declared: dict | None = None) -> None:
+        """Seal the bundle over a Harness Runtime baked into the image."""
+        declared = {"required": True, **self._image_runtime_binding(), **(declared or {})}
+        inventory = json.loads((self.artifacts / "runtime_inventory.json").read_text())
+        inventory["harness_runtime"] = declared
+        write_json(self.artifacts / "runtime_inventory.json", inventory)
+
+        marker = json.loads((self.artifacts / "deployment_ready.json").read_text())
+        marker["harness_runtime"] = {key: value for key, value in declared.items() if key != "required"}
+        hashes = marker["required_artifact_sha256"]
+        hashes["artifacts/runtime_inventory.json"] = sha256(self.artifacts / "runtime_inventory.json")
+        marker["bundle_identity_sha256"] = hashlib.sha256(
+            json.dumps(hashes, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        write_json(self.artifacts / "deployment_ready.json", marker)
+
     def test_derives_legacy_image_runtime_root_from_manifest(self) -> None:
         inventory = json.loads((self.artifacts / "runtime_inventory.json").read_text())
         legacy_binding = self._image_runtime_binding()
@@ -257,7 +273,35 @@ class DeploymentBindingTests(unittest.TestCase):
         write_json(self.artifacts / "deployment_ready.json", marker)
 
         binding = load_deployment_binding(self.model, "demo")
-        self.assertEqual(binding["container"]["harness_runtime"]["runtime_root"], self.image_harness_runtime)
+        self.assertEqual(
+            binding["container"]["harness_runtime_evidence"]["runtime_root"],
+            self.image_harness_runtime,
+        )
+
+    def test_the_approved_binding_records_the_image_runtime_as_evidence_only(self) -> None:
+        # The bundle's own Harness Runtime is what the bundle was approved over.
+        # It is not an execution source any more, and a field named
+        # `harness_runtime` next to the active runtime's identity invites a
+        # comparison that must not happen, so it is recorded under a name and a
+        # flag that say so.
+        self._declare_image_harness_runtime()
+        binding = load_deployment_binding(self.model, "demo")
+        container = binding["container"]
+        self.assertNotIn("harness_runtime", container)
+        evidence = container["harness_runtime_evidence"]
+        self.assertEqual(evidence["role"], "legacy_approval_evidence")
+        self.assertFalse(evidence["participates_in_execution"])
+        self.assertEqual(evidence["runtime_id"], "sure-harness-test")
+        self.assertEqual(binding["evidence"]["harness_runtime_source"], "legacy_approval_evidence")
+        self.assertFalse(binding["evidence"]["harness_runtime_participates_in_execution"])
+
+    def test_a_bundle_without_an_image_runtime_says_so(self) -> None:
+        # A bundle sealed by a newer onboard never carries an image runtime, and
+        # the absence has to be recorded as an absence rather than as a source.
+        binding = load_deployment_binding(self.model, "demo")
+        self.assertIsNone(binding["container"]["harness_runtime_evidence"])
+        self.assertEqual(binding["evidence"]["harness_runtime_source"], "no_image_harness_runtime")
+        self.assertFalse(binding["evidence"]["harness_runtime_participates_in_execution"])
 
     def test_rejects_explicit_harness_runtime_root_mismatch(self) -> None:
         inventory = json.loads((self.artifacts / "runtime_inventory.json").read_text())
@@ -663,23 +707,28 @@ class DeploymentBindingTests(unittest.TestCase):
             ],
         )
 
-    def test_local_command_prefers_matching_image_harness_runtime(self) -> None:
+    def test_local_command_ignores_the_image_harness_runtime(self) -> None:
+        # A legacy image may still carry a Harness Runtime. It is dead code:
+        # the run must execute the active injected runtime mounted from the
+        # checkout, never the image's copy, so there is a single source.
         binding = load_deployment_binding(self.model, "demo")
         image_python = "/opt/sure-harness/test/bin/python"
-        binding["container"]["harness_runtime"] = {
+        binding["container"]["harness_runtime_evidence"] = {
+            "role": "legacy_approval_evidence",
+            "participates_in_execution": False,
             **self._runtime_binding(),
             "python_executable": image_python,
             "manifest_path": "/opt/sure-harness/test/runtime-manifest.json",
             "runtime_root": "/opt/sure-harness/test",
-            "execution_source": "approved_image",
         }
+        active = self._runtime_binding()
         command, provenance = build_local_container_command(
             surface={"env": {}},
             eval_input={
                 "model": {"deployment_binding": binding},
                 "runtime": {
                     "run_dir": str(self.output),
-                    "harness_runtime": self._runtime_binding(),
+                    "harness_runtime": active,
                 },
                 "datasets": [],
             },
@@ -688,9 +737,14 @@ class DeploymentBindingTests(unittest.TestCase):
             repo_root=self.repo,
             device_request="cpu",
         )
-        self.assertIn(f"HARNESS_PYTHON_BIN={image_python}", command)
-        self.assertFalse(provenance["harness_runtime_mounted_from_repo"])
-        self.assertEqual(provenance["harness_runtime"]["execution_source"], "approved_image")
+        self.assertIn(
+            f"HARNESS_PYTHON_BIN={container_side(provenance['harness_runtime']['python_executable'])}",
+            command,
+        )
+        self.assertNotIn(f"HARNESS_PYTHON_BIN={image_python}", command)
+        self.assertNotIn(image_python, " ".join(command))
+        self.assertTrue(provenance["harness_runtime_mounted_from_repo"])
+        self.assertEqual(provenance["harness_runtime"]["execution_source"], "active_injected_runtime")
 
 
 

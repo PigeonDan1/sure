@@ -344,6 +344,7 @@ def write_protocol_yaml(
             },
             "harness_runtime": {
                 "schema": harness_runtime.get("schema"),
+                "execution_source": harness_runtime.get("execution_source"),
                 "runtime_id": harness_runtime.get("runtime_id"),
                 "runtime_type": harness_runtime.get("runtime_type"),
                 "python_executable": harness_runtime.get("python_executable"),
