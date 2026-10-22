@@ -132,11 +132,20 @@ def probe(python: Path, *, error: type[Exception] = UvEnvError) -> dict[str, str
     return value
 
 
-def venv_command(uv: str, staging: Path, *, python: str, allow_python_downloads: bool) -> list[str]:
+def venv_command(
+    uv: str,
+    staging: Path,
+    *,
+    python: str,
+    allow_python_downloads: bool,
+    python_preference: str | None = None,
+) -> list[str]:
     """`uv venv`. Pass a version like "3.11" to let uv fetch an interpreter."""
     command = [uv, "venv", "--no-project"]
     if not allow_python_downloads:
         command.append("--no-python-downloads")
+    if python_preference:
+        command.extend(["--python-preference", python_preference])
     command.extend(["--python", python, str(staging)])
     return command
 

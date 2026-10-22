@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -18,12 +19,13 @@ for _parent in Path(__file__).resolve().parents:
 
 from sure.runtime.harness import bootstrap
 from sure.runtime.harness.bootstrap import (
+    BASE_PYTHON_NAME,
     HarnessRuntimeError,
     _load_spec,
     _probe,
     resolve_runtime,
 )
-from sure.runtime.uvenv import runtime_python_relative
+from sure.runtime.uvenv import child_environment, runtime_python_relative
 
 
 # Materializing the runtime needs uv, and a fresh runtime root every time means a
@@ -48,6 +50,31 @@ class HarnessRuntimeBootstrapTests(unittest.TestCase):
         self.assertTrue(runtime_id.startswith("sure-harness-"))
         self.assertTrue(runtime_id.endswith(lock_sha256[:12]))
 
+    def test_a_junction_alias_is_not_counted_as_a_second_interpreter(self) -> None:
+        # Production runs bootstrap.py under the 3.11 interpreter it prepares,
+        # and Path.is_junction only arrived in 3.12. The alias uv writes beside
+        # the real install is a junction, so _is_link must see it through the
+        # reparse point tag, and _relocate_base_python must not count it as a
+        # second real interpreter. This is the fast, interpreter-agnostic
+        # version of the failure; the materialized-runtime test below proves the
+        # real uv tree end to end.
+        if os.name != "nt":
+            self.skipTest("uv's junction alias is a Windows surface")
+        install_dir = Path(self._temporary.name) / "install"
+        install_dir.mkdir()
+        real = install_dir / "cpython-3.11.15-windows-x86_64-none"
+        real.mkdir()
+        (real / "python.exe").write_bytes(b"MZ")
+        alias = install_dir / "cpython-3.11-windows-x86_64-none"
+        subprocess.run(
+            ["cmd", "/c", "mklink", "/J", str(alias), str(real)],
+            capture_output=True,
+            check=True,
+        )
+        self.assertTrue(bootstrap._is_link(alias))
+        self.assertFalse(bootstrap._is_link(real))
+        self.assertEqual(bootstrap._aliases_of(install_dir, real), {real.name, alias.name})
+
     def test_materializing_twice_yields_one_verified_runtime(self) -> None:
         first = resolve_runtime(self.runtime_root)
         second = resolve_runtime(self.runtime_root)
@@ -67,6 +94,141 @@ class HarnessRuntimeBootstrapTests(unittest.TestCase):
         self.assertEqual(manifest["materialization"], "uv_venv")
         self.assertEqual(len(manifest["base_python_sha256"]), 64)
         self.assertEqual(manifest["runtime_id"], first["runtime_id"])
+
+    def test_a_materialized_runtime_carries_its_own_interpreter(self) -> None:
+        # The runtime is mounted into containers that do not have the host's
+        # interpreter, and a uv venv points at one outside the tree: bin/python
+        # is an absolute symlink, Scripts/python.exe is a stub with the path
+        # compiled in, and pyvenv.cfg names it too. Every one of those has to
+        # name something inside the tree, or the runtime only runs on the
+        # machine that built it.
+        contract = resolve_runtime(self.runtime_root)
+        root = Path(contract["runtime_root"]).resolve()
+        self.assertTrue((root / BASE_PYTHON_NAME).is_dir())
+        cfg_home = Path(
+            bootstrap._home_of(
+                bootstrap._read_lines(root / "pyvenv.cfg", "pyvenv.cfg")
+            )
+        ).resolve()
+        self.assertTrue(cfg_home.is_relative_to(root))
+        self.assertEqual(cfg_home.name, BASE_PYTHON_NAME)
+        for current, dirs, files in os.walk(root):
+            for name in dirs + files:
+                path = Path(current) / name
+                if not bootstrap._is_link(path):
+                    continue
+                target = Path(bootstrap._link_target(path))
+                resolved = (
+                    path.parent.joinpath(target).resolve()
+                    if not target.is_absolute()
+                    else target.resolve()
+                )
+                self.assertTrue(
+                    resolved.is_relative_to(root),
+                    f"{path} -> {target} escapes the tree",
+                )
+
+    def test_the_entry_point_is_the_tree_s_own_interpreter(self) -> None:
+        # The entry point a container executes must be the tree's own binary,
+        # not a launcher that reaches out to wherever the tree was built.
+        contract = resolve_runtime(self.runtime_root)
+        root = Path(contract["runtime_root"]).resolve()
+        python = root / runtime_python_relative()
+        base = root / BASE_PYTHON_NAME
+        if os.name == "nt":
+            self.assertTrue((base / "python.exe").is_file())
+            self.assertEqual(
+                (python).read_bytes(),
+                (base / "python.exe").read_bytes(),
+            )
+        else:
+            self.assertTrue(bootstrap._is_link(python))
+            target = Path(bootstrap._link_target(python))
+            self.assertFalse(target.is_absolute())
+            self.assertTrue((python.parent / target).resolve().is_relative_to(root))
+
+    @unittest.skipIf(
+        os.name == "nt",
+        "the container surface runs a Linux runtime",
+    )
+    def test_a_mounted_runtime_runs_with_the_host_interpreter_gone(self) -> None:
+        # The host interpreter uv fetched is deleted once the tree has its own
+        # copy, which is exactly the situation inside a container. Copying the
+        # tree to another path first and hiding the original is how that gets
+        # proven rather than assumed: any surviving reference to the original
+        # turns into a failure here.
+        contract = resolve_runtime(self.runtime_root)
+        root = Path(contract["runtime_root"])
+        copy = Path(self._temporary.name) / "mounted" / root.name
+        shutil.copytree(root, copy, symlinks=True)
+        hidden = Path(self._temporary.name) / "hidden"
+        root.rename(hidden)
+        try:
+            python = copy / runtime_python_relative()
+            completed = subprocess.run(
+                [str(python), "-s", "-c", "import sys;print(sys.prefix);print(sys.base_prefix)"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120,
+                cwd=str(copy.parent),
+                env=child_environment(),
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            prefix, base_prefix = completed.stdout.split()
+            self.assertEqual(Path(prefix).resolve(), copy.resolve())
+            self.assertEqual(Path(base_prefix).resolve(), (copy / BASE_PYTHON_NAME).resolve())
+        finally:
+            hidden.rename(root)
+
+    def test_the_base_python_hash_survives_the_copy(self) -> None:
+        # The hash is over the interpreter the tree now carries, so the copy has
+        # the same identity as the original and the gates' runtime_id still
+        # describes what runs.
+        contract = resolve_runtime(self.runtime_root)
+        copy = Path(self._temporary.name) / "copied"
+        shutil.copytree(Path(contract["runtime_root"]), copy, symlinks=True)
+        identity = bootstrap.probe_python(copy / runtime_python_relative(), error=HarnessRuntimeError)
+        self.assertEqual(identity["base_python_sha256"], contract["base_python_sha256"])
+
+    def test_a_materialized_windows_runtime_runs_on_its_own_tree(self) -> None:
+        # The entry-point byte-equality above proves the launcher stub was
+        # replaced, but not that the result runs. On Windows the trampoline stub
+        # and the junction alias are the two things the relocation exists to
+        # replace, so this is where actually starting the interpreter matters.
+        if os.name != "nt":
+            self.skipTest("the Windows launcher surface is Windows-only")
+        contract = resolve_runtime(self.runtime_root)
+        root = Path(contract["runtime_root"])
+        python = root / runtime_python_relative()
+        completed = subprocess.run(
+            [str(python), "-s", "-c", "import sys;print(sys.prefix);print(sys.base_prefix)"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=120,
+            cwd=str(root),
+            env=child_environment(),
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        prefix, base_prefix = completed.stdout.split()
+        self.assertEqual(Path(prefix).resolve(), root.resolve())
+        self.assertEqual(Path(base_prefix).resolve(), (root / BASE_PYTHON_NAME).resolve())
+
+    def test_a_runtime_that_reaches_outside_its_tree_is_refused(self) -> None:
+        # Verification is what stands between a tree that works here and a tree
+        # that works in a container, so a tree with one absolute link back to
+        # the host must not be reported as ready.
+        contract = resolve_runtime(self.runtime_root)
+        root = Path(contract["runtime_root"])
+        if os.name == "nt":
+            self.skipTest("a Windows runtime carries no symlinks to break")
+        link = root / "bin" / "escaped"
+        link.symlink_to(Path(sys.executable).resolve())
+        self.addCleanup(link.unlink)
+        spec, _lock_path, lock_sha256, runtime_id = _load_spec()
+        with self.assertRaisesRegex(HarnessRuntimeError, "not self-contained"):
+            bootstrap._verified_contract(root, spec, lock_sha256, runtime_id)
 
     def test_a_manifest_base_python_hash_is_checked_against_the_interpreter(self) -> None:
         # The hash was recorded and never read back, so a runtime whose base
