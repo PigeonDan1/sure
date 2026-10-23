@@ -343,6 +343,43 @@ class DeploymentBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(DeploymentBindingError, "mandatory deployment sidecar|mandatory core"):
             load_deployment_binding(self.model, "demo")
 
+    def test_sv_embedding_input_fixture_is_not_generated_audio(self) -> None:
+        for relative in COMMON_MANDATORY_SIDECARS:
+            if not (self.model / relative).is_file():
+                write_json(self.model / relative, {})
+        for relative in (
+            "Dockerfile",
+            "artifacts/docker_build_result.json",
+            "artifacts/docker_validation.json",
+            "artifacts/docker_registry_result.json",
+        ):
+            path = self.model / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("fixture")
+        fixture = self.model / "fixture" / "sv" / "sample.wav"
+        fixture.parent.mkdir(parents=True)
+        fixture.write_bytes(b"RIFFinput")
+        (fixture.parent / "gt.jsonl").write_text("{}\n")
+        package = {"docker": {
+            "build_result_path": "artifacts/docker_build_result.json",
+            "validation_result_path": "artifacts/docker_validation.json",
+            "registry_result_path": "artifacts/docker_registry_result.json",
+        }}
+        sample = self.artifacts / "sample_output.json"
+        write_json(sample, {"audio_path": "fixture/sv/sample.wav", "embedding": [0.1]})
+
+        required = _mandatory_integrity_paths(self.model, package, {}, "docker-registry", "external")
+        self.assertIn("fixture/sv/sample.wav", required)
+        self.assertNotIn("artifacts/outputs/sample.wav", required)
+
+        write_json(sample, {"audio_path": "fixture/sv/missing.wav", "embedding": [0.1]})
+        with self.assertRaisesRegex(DeploymentBindingError, "SV sample input audio must be a bundled fixture"):
+            _mandatory_integrity_paths(self.model, package, {}, "docker-registry", "external")
+
+        write_json(sample, {"audio_path": "fixture/sv/sample.wav", "embedding": []})
+        with self.assertRaisesRegex(DeploymentBindingError, "generated sample audio must be stored below artifacts/outputs"):
+            _mandatory_integrity_paths(self.model, package, {}, "docker-registry", "external")
+
     def _rewrite_marker(self, **fields: object) -> None:
         marker = json.loads((self.artifacts / "deployment_ready.json").read_text())
         marker.update(fields)

@@ -153,6 +153,26 @@ class FinishManifestTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "generated sample audio file is missing"):
             normalize_generated_samples(self.run_dir, model_dir)
 
+    def test_sv_embedding_input_fixture_is_not_generated_audio(self) -> None:
+        model_dir = Path(self._tmp.name) / "model"
+        fixture = model_dir / "fixture" / "sv" / "sample.wav"
+        fixture.parent.mkdir(parents=True)
+        fixture.write_bytes(b"RIFFinput")
+        sample = model_dir / "artifacts" / "sample_output.json"
+        sample.parent.mkdir()
+        sample.write_text(json.dumps({"audio_path": str(fixture), "embedding": [0.1]}))
+
+        normalize_generated_samples(self.run_dir, model_dir)
+        self.assertEqual(json.loads(sample.read_text())["audio_path"], "fixture/sv/sample.wav")
+
+        sample.write_text(json.dumps({"audio_path": "fixture/sv/missing.wav", "embedding": [0.1]}))
+        with self.assertRaisesRegex(ValueError, "SV sample input audio must be a bundled fixture"):
+            normalize_generated_samples(self.run_dir, model_dir)
+
+        sample.write_text(json.dumps({"audio_path": "fixture/sv/sample.wav", "embedding": []}))
+        with self.assertRaisesRegex(ValueError, "generated sample audio must be stored below artifacts/outputs"):
+            normalize_generated_samples(self.run_dir, model_dir)
+
 
 if __name__ == "__main__":
     unittest.main()
