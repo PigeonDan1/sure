@@ -6,7 +6,7 @@
     "speech_enhancement": "se"
   },
   "engine": {
-    "commit": "6083336bccd25bda8089198c08adcb2ce18c56ff",
+    "commit": "81f4ce9d6d1f5141d0db86f67c4276d9174becf3",
     "path": "sure/external/sure-evaluation"
   },
   "schema": "sure.engine_capabilities.v1",
@@ -745,7 +745,6 @@
       },
       "language_sensitive": false,
       "metrics": [
-        "accuracy",
         "macro_recall"
       ],
       "readiness_requirements": {
@@ -770,20 +769,9 @@
         {
           "input_contract": "sure_json",
           "language": "any",
-          "metric": "accuracy",
-          "optional_roles": [],
-          "pipeline_id": "kws.any.accuracy.conversion_kws_sure_json_to_samples_v1.wekws_det_v1",
-          "required_roles": [
-            "reference_jsonl",
-            "sample_output"
-          ]
-        },
-        {
-          "input_contract": "sure_json",
-          "language": "any",
           "metric": "macro_recall",
           "optional_roles": [],
-          "pipeline_id": "kws.any.macro_recall.conversion_kws_sure_json_to_samples_v1.wekws_det_v1",
+          "pipeline_id": "kws.any.macro_recall.conversion_kws_sure_json_to_samples_v2.wekws_det_v2",
           "required_roles": [
             "reference_jsonl",
             "sample_output"
@@ -792,21 +780,9 @@
         {
           "input_contract": "wekws_score_ctc",
           "language": "any",
-          "metric": "accuracy",
-          "optional_roles": [],
-          "pipeline_id": "kws.any.accuracy.conversion_kws_wekws_score_ctc_to_samples_v1.wekws_det_v1",
-          "required_roles": [
-            "wekws_label_file",
-            "wekws_score_file",
-            "keyword"
-          ]
-        },
-        {
-          "input_contract": "wekws_score_ctc",
-          "language": "any",
           "metric": "macro_recall",
           "optional_roles": [],
-          "pipeline_id": "kws.any.macro_recall.conversion_kws_wekws_score_ctc_to_samples_v1.wekws_det_v1",
+          "pipeline_id": "kws.any.macro_recall.conversion_kws_wekws_score_ctc_to_samples_v2.wekws_det_v2",
           "required_roles": [
             "wekws_label_file",
             "wekws_score_file",
@@ -816,21 +792,9 @@
         {
           "input_contract": "wekws_frame_score",
           "language": "any",
-          "metric": "accuracy",
-          "optional_roles": [],
-          "pipeline_id": "kws.any.accuracy.conversion_kws_wekws_frame_score_to_samples_v1.wekws_det_v1",
-          "required_roles": [
-            "wekws_label_file",
-            "wekws_frame_score_file",
-            "keyword"
-          ]
-        },
-        {
-          "input_contract": "wekws_frame_score",
-          "language": "any",
           "metric": "macro_recall",
           "optional_roles": [],
-          "pipeline_id": "kws.any.macro_recall.conversion_kws_wekws_frame_score_to_samples_v1.wekws_det_v1",
+          "pipeline_id": "kws.any.macro_recall.conversion_kws_wekws_frame_score_to_samples_v2.wekws_det_v2",
           "required_roles": [
             "wekws_label_file",
             "wekws_frame_score_file",
