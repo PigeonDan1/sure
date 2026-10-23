@@ -388,7 +388,7 @@ function scopeWithoutBasis(extra: Record<string, unknown> = {}): Record<string, 
 }
 
 // The product tree check_execution_result.py cross-checks for a succeeded run:
-// one non-empty prediction row per dataset, completed status and validation rows,
+// the expected prediction rows per dataset, completed status and validation rows,
 // protocol.yaml and the reference projection.
 function seedInferenceProduct(fx: Fixture, stem = DATASET): string {
 	const root = join(fx.runDir, "product");

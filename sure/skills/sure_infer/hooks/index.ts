@@ -119,6 +119,20 @@ function parseArgs(raw: string): Record<string, string> {
 	return out;
 }
 
+function parseStrictBooleanArg(args: Record<string, string>, name: string): { value?: boolean; error?: string } {
+	const raw = args[name];
+	if (raw === undefined) {
+		return { value: false };
+	}
+	if (raw === "true" || raw === "1") {
+		return { value: true };
+	}
+	if (raw === "false" || raw === "0") {
+		return { value: false };
+	}
+	return { error: `${name} must be true, false, 1, or 0; received ${JSON.stringify(raw)}.` };
+}
+
 // --- memory system glue -------------------------------------------------------
 // The shared orchestration lives in sure/runtime/memory/hooks.ts; this file only
 // decides WHEN to call it and where the results go (repair text, checkpoint,
@@ -170,6 +184,10 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	// Park agent bin at end of PATH so a docker shim there cannot shadow system docker.
 	demoteAgentBinDir(process.env, agentBinDir());
 	const args = parseArgs(ctx.args);
+	const requireNonempty = parseStrictBooleanArg(args, "require_nonempty_predictions");
+	if (requireNonempty.error) {
+		return failure(requireNonempty.error, "Invalid prediction validation policy.");
+	}
 	const missing: string[] = [];
 	if (!args.model) {
 		missing.push("model");
@@ -180,7 +198,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_infer parameters: ${missing.join(", ")}. Usage: /sure_infer model=<name> datasets=<source_path[@version][,source_path[@version]...]> [dataset_source_key=<key> (recorded only, does not select a root)] [datasets_root=<writable_projection_root>] [protocol=standard_system|strict_core] [execution=auto|local] [device=auto|cpu|cuda[:index]] [max_samples=...] [metrics=<metric[,metric...]>] [run_id=<id>] [output_dir=<abs_dir>] [config=<harness_config.yaml>]`,
+			`Missing required /sure_infer parameters: ${missing.join(", ")}. Usage: /sure_infer model=<name> datasets=<source_path[@version][,source_path[@version]...]> [dataset_source_key=<key> (recorded only, does not select a root)] [datasets_root=<writable_projection_root>] [protocol=standard_system|strict_core] [execution=auto|local] [device=auto|cpu|cuda[:index]] [max_samples=...] [metrics=<metric[,metric...]>] [require_nonempty_predictions=true|false] [run_id=<id>] [output_dir=<abs_dir>] [config=<harness_config.yaml>]`,
 			"Missing required parameters.",
 		);
 	}
@@ -270,6 +288,9 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (typeof args.datasets_root === "string") {
 		resolveArgs.push("--datasets-root", args.datasets_root);
+	}
+	if (requireNonempty.value) {
+		resolveArgs.push("--require-nonempty-predictions");
 	}
 	const resolvedInput = spawnSync(runtime.contract.python_executable, resolveArgs, {
 		cwd: ctx.packageDir,

@@ -64,6 +64,8 @@ import json, sys
 from pathlib import Path
 args = sys.argv[1:]
 datasets = args[args.index("--dataset") + 1 : args.index("--pred-dir")]
+with (Path(args[args.index("--output") + 1]).parent / "fake_validate_args.json").open("w", encoding="utf-8") as handle:
+    json.dump(args, handle)
 Path(args[args.index("--output") + 1]).write_text(
     json.dumps({"is_valid": True, "results": [{"dataset": name, "is_valid": True} for name in datasets]}), encoding="utf-8"
 )
@@ -277,8 +279,17 @@ class InferEntrypointTests(unittest.TestCase):
         }
         self.assertEqual(languages, {"ds_a__v1__asr": "zh", "ds_b__v1__asr": "en"})
 
-    def test_a_failing_smoke_stops_before_the_full_pass(self) -> None:
+    def test_empty_prediction_rows_are_allowed_by_default(self) -> None:
         completed = self.run_entrypoint(FAKE_EMPTY_PREDICTIONS="1")
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        validate_args = json.loads((self.run_dir / "fake_validate_args.json").read_text(encoding="utf-8"))
+        self.assertNotIn("--require-nonempty", validate_args)
+
+    def test_strict_nonempty_policy_rejects_empty_prediction_rows(self) -> None:
+        completed = self.run_entrypoint(
+            FAKE_EMPTY_PREDICTIONS="1",
+            SURE_EVAL_REQUIRE_NONEMPTY_PREDICTIONS="1",
+        )
         self.assertNotEqual(completed.returncode, 0)
         self.assertEqual(self.failed_stage(completed), "smoke")
         self.assertEqual(len(self.generate_calls()), 1)

@@ -175,6 +175,7 @@ def _task_contract_violations(
     structured: dict[str, dict[str, Any]],
     *,
     base_dir: Path | None = None,
+    require_nonempty: bool = False,
 ) -> list[str]:
     violations: list[str] = []
     sample_by_key = {str(sample.get("key", "")): sample for sample in samples}
@@ -188,7 +189,10 @@ def _task_contract_violations(
                 violations.append(key)
             continue
         try:
-            primary_field = str(task_profile(task)["io_contract"]["primary_field"])
+            contract = task_profile(task)["io_contract"]
+            primary_field = str(contract["primary_field"])
+            bridge = task_profile(task).get("evaluation_bridge")
+            empty_is_scoreable = bridge in {"text_pair", "text_pair_prompt"}
         except ValueError:
             violations.append(key)
             continue
@@ -203,7 +207,7 @@ def _task_contract_violations(
             audio_path = value or normalized
             if not audio_path or not _resolve_audio_path(audio_path, base_dir).exists():
                 violations.append(key)
-        elif value in (None, "", [], {}) and not normalized:
+        elif value in (None, "", [], {}) and not normalized and (require_nonempty or not empty_is_scoreable):
             violations.append(key)
     return sorted(set(violations))
 
@@ -221,11 +225,32 @@ def _structured_projection_mismatches(
     return mismatches
 
 
+def _text_prediction_contract_violations(
+    samples: list[dict[str, Any]],
+    predictions: dict[str, str],
+    *,
+    require_nonempty: bool,
+) -> list[str]:
+    violations: list[str] = []
+    for sample in samples:
+        key = str(sample.get("key", ""))
+        if key not in predictions or predictions[key].strip():
+            continue
+        try:
+            bridge = task_profile(str(sample.get("task") or "")).get("evaluation_bridge")
+        except ValueError:
+            violations.append(key)
+            continue
+        if require_nonempty or bridge not in {"text_pair", "text_pair_prompt"}:
+            violations.append(key)
+    return sorted(set(violations))
+
+
 def validate_prediction_file(
     dataset_manager: DatasetManager,
     dataset_name: str,
     prediction_path: Path,
-    require_nonempty: bool,
+    require_nonempty: bool = False,
     max_samples: int = 0,
 ) -> dict[str, Any]:
     canonical_name = dataset_manager.normalize_dataset_name(dataset_name)
@@ -254,19 +279,32 @@ def validate_prediction_file(
         sorted(expected_key_set - structured_key_set) if structured_path.exists() or structured_required else []
     )
     structured_extra_keys = sorted(structured_key_set - expected_key_set) if structured_path.exists() else []
-    contract_violation_keys = (
-        _task_contract_violations(samples, structured_predictions, base_dir=structured_path.parent)
-        if structured_path.exists()
-        else []
+    contract_violation_keys = _text_prediction_contract_violations(
+        samples,
+        predictions,
+        require_nonempty=require_nonempty,
     )
+    if structured_path.exists():
+        contract_violation_keys = sorted(
+            set(contract_violation_keys)
+            | set(
+                _task_contract_violations(
+                    samples,
+                    structured_predictions,
+                    base_dir=structured_path.parent,
+                    require_nonempty=require_nonempty,
+                )
+            )
+        )
     structured_projection_mismatch_keys = (
         _structured_projection_mismatches(predictions, structured_predictions, expected_key_set)
         if structured_path.exists()
         else []
     )
 
+    strict_nonempty = require_nonempty
     is_valid = not missing_keys and not extra_keys and not duplicate_keys
-    if require_nonempty and empty_prediction_keys:
+    if strict_nonempty and empty_prediction_keys:
         is_valid = False
     if (structured_path.exists() or structured_required) and (
         structured_missing_keys
@@ -298,7 +336,7 @@ def validate_prediction_file(
         "invalid_structured_rows": invalid_structured_rows,
         "structured_projection_mismatch_keys": structured_projection_mismatch_keys,
         "contract_violation_keys": contract_violation_keys,
-        "require_nonempty": require_nonempty,
+        "require_nonempty": strict_nonempty,
         "is_valid": is_valid,
     }
 

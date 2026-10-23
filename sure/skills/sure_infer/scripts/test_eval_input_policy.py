@@ -159,6 +159,16 @@ class OutputDirArgumentTests(unittest.TestCase):
         )
         self.assertEqual(args.output_dir, "/srv/jobs/job-1234")
 
+    def test_require_nonempty_predictions_defaults_to_false(self) -> None:
+        args = resolve_eval_input._build_parser().parse_args(["--model", "demo", "--datasets", "/x"])
+        self.assertFalse(args.require_nonempty_predictions)
+
+    def test_require_nonempty_predictions_flag_is_captured(self) -> None:
+        args = resolve_eval_input._build_parser().parse_args(
+            ["--model", "demo", "--datasets", "/x", "--require-nonempty-predictions"]
+        )
+        self.assertTrue(args.require_nonempty_predictions)
+
 
 class StagingPathTests(unittest.TestCase):
     def setUp(self) -> None:

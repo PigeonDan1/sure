@@ -15,7 +15,13 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import generate_predictions_via_server as gp  # noqa: E402
-from sure.runtime.evaluation.task_registry import canonical_tasks, capabilities, normalize_task  # noqa: E402
+from validate_prediction_files import validate_prediction_file  # noqa: E402
+from sure.runtime.evaluation.task_registry import (
+    allows_empty_prediction,
+    canonical_tasks,
+    capabilities,
+    normalize_task,
+)  # noqa: E402
 
 
 DOA_FRAME = {
@@ -82,6 +88,79 @@ class TaskProjectionContractTests(unittest.TestCase):
 
 
 class AsrPayloadNormalizationTests(unittest.TestCase):
+    def test_asr_allows_empty_prediction_but_other_tasks_do_not(self) -> None:
+        self.assertTrue(allows_empty_prediction("asr"))
+        self.assertFalse(allows_empty_prediction("classification"))
+
+    def test_asr_validation_accepts_empty_prediction_with_complete_coverage(self) -> None:
+        class Manager:
+            def normalize_dataset_name(self, name):
+                return name
+
+            def get_jsonl_path(self, name):
+                return reference_path
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            reference_path = root / "reference.jsonl"
+            reference_path.write_text(
+                '{"key":"empty","task":"ASR"}\n{"key":"text","task":"ASR"}\n',
+                encoding="utf-8",
+            )
+            prediction_path = root / "asr.txt"
+            prediction_path.write_text("empty\t\ntext\thello\n", encoding="utf-8")
+            (root / "asr.jsonl").write_text(
+                '{"key":"empty","task":"ASR","prediction":{},"normalized_prediction":""}\n'
+                '{"key":"text","task":"ASR","prediction":{"text":"hello"},"normalized_prediction":"hello"}\n',
+                encoding="utf-8",
+            )
+            result = validate_prediction_file(Manager(), "asr", prediction_path)
+            self.assertTrue(result["is_valid"])
+            self.assertEqual(result["empty_prediction_keys"], ["empty"])
+
+    def test_asr_strict_validation_rejects_empty_prediction(self) -> None:
+        class Manager:
+            def normalize_dataset_name(self, name):
+                return name
+
+            def get_jsonl_path(self, name):
+                return reference_path
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            reference_path = root / "reference.jsonl"
+            reference_path.write_text('{"key":"empty","task":"ASR"}\n', encoding="utf-8")
+            prediction_path = root / "asr.txt"
+            prediction_path.write_text("empty\t\n", encoding="utf-8")
+            (root / "asr.jsonl").write_text(
+                '{"key":"empty","task":"ASR","prediction":{"text":""},"normalized_prediction":""}\n',
+                encoding="utf-8",
+            )
+            result = validate_prediction_file(Manager(), "asr", prediction_path, require_nonempty=True)
+            self.assertFalse(result["is_valid"])
+            self.assertEqual(result["empty_prediction_keys"], ["empty"])
+
+    def test_text_pair_validation_allows_empty_prediction_by_default(self) -> None:
+        class Manager:
+            def normalize_dataset_name(self, name):
+                return name
+
+            def get_jsonl_path(self, name):
+                return reference_path
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            reference_path = root / "reference.jsonl"
+            reference_path.write_text('{"key":"empty","task":"classification"}\n', encoding="utf-8")
+            prediction_path = root / "classification.txt"
+            prediction_path.write_text("empty\t\n", encoding="utf-8")
+            (root / "classification.jsonl").write_text(
+                '{"key":"empty","task":"classification","prediction":{"label":""},"normalized_prediction":""}\n',
+                encoding="utf-8",
+            )
+            result = validate_prediction_file(Manager(), "classification", prediction_path)
+            self.assertTrue(result["is_valid"])
+            self.assertEqual(result["empty_prediction_keys"], ["empty"])
     def test_standard_text_fields_take_precedence_over_aliases(self) -> None:
         for task, field in (("S2TT", "translation"), ("SLU", "answer")):
             for nested in (False, True):
@@ -241,6 +320,17 @@ class AsrPayloadNormalizationTests(unittest.TestCase):
         prediction, normalized = gp._normalize_prediction_payload({"text": []}, task="ASR")
         self.assertEqual(prediction, "")
         self.assertEqual(normalized, {"text": ""})
+
+    def test_asr_requires_a_standard_prediction_field(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must provide text"):
+            gp._normalize_prediction_payload({"ok": True, "result": {"text": "Arabic"}}, task="ASR")
+
+    def test_asr_accepts_explicit_empty_text(self) -> None:
+        for payload in ({"text": ""}, {"prediction": {"text": ""}}):
+            with self.subTest(payload=payload):
+                prediction, normalized = gp._normalize_prediction_payload(payload, task="ASR")
+                self.assertEqual(prediction, "")
+                self.assertEqual(normalized, {"text": ""})
 
     def test_structured_task_payloads_keep_engine_fields(self) -> None:
         cases = [

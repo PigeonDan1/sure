@@ -830,6 +830,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "dataset_source_key": args.dataset_source_key,
             "user_goal": args.user_goal,
             "datasets_root": getattr(args, "datasets_root", None),
+            "require_nonempty_predictions": bool(getattr(args, "require_nonempty_predictions", False)),
         },
         "model": model,
         "datasets": datasets,
@@ -853,6 +854,9 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "deployment_binding": model["deployment_binding"],
             "harness_runtime": harness_runtime,
             "dataset_projection": dataset_projection,
+            "prediction_validation": {
+                "require_nonempty": bool(getattr(args, "require_nonempty_predictions", False)),
+            },
         },
         "evaluation": {
             "backend": args.evaluation_backend,
@@ -897,6 +901,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output")
     parser.add_argument("--output-dir", default="")
     parser.add_argument("--dataset-source-key", default="")
+    parser.add_argument("--require-nonempty-predictions", action="store_true")
     return parser
 
 

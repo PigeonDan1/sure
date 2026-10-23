@@ -428,8 +428,14 @@ def _nonempty_prediction_rows(path: Path) -> int:
     return sum(1 for value in _load_prediction_txt(path).values() if value.strip())
 
 
+def _prediction_rows(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    return sum(1 for line in path.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip())
+
+
 def _validate_infer_artifacts(root: Path) -> list[str]:
-    """The /sure_infer product: generated predictions, protocol.yaml and the reference projections."""
+    """The /sure_infer product: complete prediction rows, protocol and references."""
     status_path = root / "prediction_generation_status.json"
     if not status_path.is_file():
         return [f"missing required artifact: {status_path}"]
@@ -451,8 +457,12 @@ def _validate_infer_artifacts(root: Path) -> list[str]:
         if row.get("status") != "completed":
             errors.append(f"prediction_generation_status.json marks {dataset} as {row.get('status')!r}, not completed")
         prediction = root / "predictions" / f"{dataset}.txt"
-        if _nonempty_prediction_rows(prediction) < 1:
-            errors.append(f"missing or empty prediction file: {prediction}")
+        actual = _prediction_rows(prediction)
+        expected = row.get("num_expected_samples")
+        if not isinstance(expected, int) or expected < 0:
+            errors.append(f"prediction_generation_status.json must declare a non-negative num_expected_samples for {dataset}")
+        elif actual != expected:
+            errors.append(f"predictions/{dataset}.txt has {actual} rows but prediction_generation_status.json expects {expected}")
         reference = root / "references" / "sure_benchmark" / "jsonl" / f"{dataset}.jsonl"
         if not reference.is_file():
             errors.append(f"missing reference projection: {reference}")

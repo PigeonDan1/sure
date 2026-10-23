@@ -142,6 +142,20 @@ function parseArgs(raw: string): Record<string, string> {
 	return out;
 }
 
+function parseStrictBooleanArg(args: Record<string, string>, name: string): { value?: boolean; error?: string } {
+	const raw = args[name];
+	if (raw === undefined) {
+		return { value: false };
+	}
+	if (raw === "true" || raw === "1") {
+		return { value: true };
+	}
+	if (raw === "false" || raw === "0") {
+		return { value: false };
+	}
+	return { error: `${name} must be true, false, 1, or 0; received ${JSON.stringify(raw)}.` };
+}
+
 // --- memory system glue -------------------------------------------------------
 // The shared orchestration lives in sure/runtime/memory/hooks.ts; this file only
 // decides WHEN to call it and where the results go (repair text, checkpoint,
@@ -194,10 +208,14 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	// Park agent bin at end of PATH so a docker shim there cannot shadow system docker.
 	demoteAgentBinDir(process.env, agentBinDir());
 	const args = parseArgs(ctx.args);
+	const requireNonempty = parseStrictBooleanArg(args, "require_nonempty_predictions");
+	if (requireNonempty.error) {
+		return failure(requireNonempty.error, "Invalid prediction validation policy.");
+	}
 	const missing = ["model", "datasets"].filter((key) => !args[key]);
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_eval parameter(s): ${missing.join(", ")}. Usage: /sure_eval model=<exact-model-id> datasets=<dataset__version[,...]> [source=<run_id|abs_dir>] (pipeline_id=<exact-pipeline-id,...> | metrics=<metric,...>) [protocol=standard_system|strict_core] [device=cpu|cuda[:index]] [output_dir=<abs_dir>]`,
+			`Missing required /sure_eval parameter(s): ${missing.join(", ")}. Usage: /sure_eval model=<exact-model-id> datasets=<dataset__version[,...]> [source=<run_id|abs_dir>] (pipeline_id=<exact-pipeline-id,...> | metrics=<metric,...>) [require_nonempty_predictions=true|false] [protocol=standard_system|strict_core] [device=cpu|cuda[:index]] [output_dir=<abs_dir>]`,
 			"Missing required parameters.",
 		);
 	}

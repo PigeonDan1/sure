@@ -18,7 +18,7 @@ Environment (all injected by the launcher; the names are the templates'):
   SURE_EVAL_CONFIG, SURE_EVAL_DATASETS_ROOT, SURE_EVAL_APPROVED_MODEL_DIR,
   SURE_EVAL_APPROVED_RESULT_DIR, SURE_EVAL_PUBLISHED_RUN_DIR,
   SURE_EVAL_INPUT_RESOLVED, SURE_EVAL_FROM_STAGE, HARNESS_PYTHON_BIN,
-  MODEL_PYTHON
+  MODEL_PYTHON, SURE_EVAL_REQUIRE_NONEMPTY_PREDICTIONS
 """
 from __future__ import annotations
 
@@ -82,6 +82,7 @@ class Ctx:
     device: str
     metrics: str
     smoke_samples: int | None
+    require_nonempty_predictions: bool
     child_env: dict[str, str]
     tool_name: str = ""
     config_path: Path | None = None
@@ -123,6 +124,12 @@ def _nonempty_prediction_rows(path: Path) -> int:
         if len(parts) > 1 and parts[1].strip():
             count += 1
     return count
+
+
+def _prediction_rows(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    return sum(1 for line in path.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip())
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -193,6 +200,7 @@ def stage_guards() -> Ctx:
             smoke_samples = int(_env("SMOKE_TEST_SAMPLES"))
         except ValueError as exc:
             raise StageError("guards", f"SMOKE_TEST_SAMPLES must be an integer: {exc}") from exc
+    require_nonempty_predictions = _env("SURE_EVAL_REQUIRE_NONEMPTY_PREDICTIONS") == "1"
 
     child_env = dict(os.environ)
     scripts_dir = str(repo_root / "scripts")
@@ -223,6 +231,7 @@ def stage_guards() -> Ctx:
         device=device,
         metrics=_env("METRICS"),
         smoke_samples=smoke_samples,
+        require_nonempty_predictions=require_nonempty_predictions,
         child_env=child_env,
     )
     print("========================================")
@@ -426,14 +435,18 @@ def stage_smoke(ctx: Ctx) -> None:
         samples = ctx.max_samples if 0 < ctx.max_samples < DEFAULT_SMOKE_SAMPLES else DEFAULT_SMOKE_SAMPLES
     print(f"Smoke test on {dataset} ({samples} samples)", flush=True)
     _run(ctx, "smoke", "generate_predictions_via_server.py", *_generate_args(ctx, dataset, max_samples=samples))
-    valid = _nonempty_prediction_rows(ctx.run_dir / "predictions" / f"{dataset}.txt")
-    if valid < 1:
+    prediction_path = ctx.run_dir / "predictions" / f"{dataset}.txt"
+    valid = _nonempty_prediction_rows(prediction_path)
+    generated = _prediction_rows(prediction_path)
+    observed = valid if ctx.require_nonempty_predictions else generated
+    if observed < 1:
         raise StageError(
             "smoke",
-            f"smoke test produced no valid predictions in the first {samples} samples of {dataset}; "
+            f"smoke test produced no {'non-empty ' if ctx.require_nonempty_predictions else ''}prediction rows in the first {samples} samples of {dataset}; "
             f"see {ctx.run_dir / 'predictions' / 'logs'}",
         )
-    print(f"Smoke test passed ({valid} valid rows)", flush=True)
+    label = "non-empty rows" if ctx.require_nonempty_predictions else "prediction rows"
+    print(f"Smoke test passed ({observed} {label}; {valid} non-empty)", flush=True)
 
 
 def stage_generate(ctx: Ctx) -> None:
@@ -453,10 +466,11 @@ def stage_validate(ctx: Ctx) -> None:
         *ctx.datasets,
         "--pred-dir",
         str(ctx.run_dir / "predictions"),
-        "--require-nonempty",
         "--output",
         str(ctx.run_dir / "validation_payload.json"),
     ]
+    if ctx.require_nonempty_predictions:
+        args.append("--require-nonempty")
     if ctx.max_samples:
         args += ["--max-samples", str(ctx.max_samples)]
     _run(ctx, "validate", "validate_prediction_files.py", *args)

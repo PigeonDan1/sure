@@ -59,7 +59,8 @@ function writeArtifact(runDir: string, produces: string, value: unknown): void {
 
 // The product tree check_run_report.py --profile infer looks for under
 // execution_result.product_dir: completed status rows, protocol.yaml, one
-// non-empty prediction file and one reference projection per dataset.
+// the expected number of prediction rows (rows may contain empty text) and one
+// reference projection per dataset.
 function seedInferenceProduct(runDir: string): string {
 	const root = join(runDir, "model-infer-run");
 	mkdirSync(join(root, "predictions"), { recursive: true });
