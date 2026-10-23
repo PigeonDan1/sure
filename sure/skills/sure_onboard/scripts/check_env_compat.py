@@ -62,7 +62,7 @@ def host_cuda_available() -> bool:
             timeout=5,
             check=False,
         )
-    except (FileNotFoundError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError):
         return False
     return proc.returncode == 0 and bool((proc.stdout or "").strip())
 

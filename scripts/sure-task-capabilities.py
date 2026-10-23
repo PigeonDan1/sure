@@ -34,7 +34,7 @@ BRIDGE_REQUIRED_ROLES = {
     "sv_trials": {"sample_output", "trial_manifest"},
     "doa_jsonl": {"reference_jsonl", "sample_output"},
 }
-AUDIO_SAMPLE_ENGINE_TASKS = {"se", "tse", "tts", "vc"}
+AUDIO_SAMPLE_ENGINE_TASKS = {"rir", "se", "tse", "tts", "vc"}
 
 
 def normalize_task(value: str) -> str:

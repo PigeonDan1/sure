@@ -1,0 +1,45 @@
+{
+  "schema": "sure.fixture_provenance.v2",
+  "task": "rir",
+  "dataset": {
+    "repository": "Yj-Xiong/sure",
+    "revision": "synthetic RIR smoke fixture",
+    "configuration": "rir_smoke",
+    "split": "test",
+    "license": "MIT",
+    "license_url": "https://github.com/Yj-Xiong/sure/blob/harness-tui-agent/LICENSE",
+    "source_url": "https://github.com/Yj-Xiong/sure/tree/feat/rir-harness-integration-latest/fixtures/tasks/rir/rir_smoke",
+    "citation_url": "https://github.com/Yj-Xiong/sure/blob/feat/rir-harness-integration-latest/fixtures/tasks/rir/README.md",
+    "source_id": "sure_rir_smoke",
+    "metadata_sha256": "5e225d062e1909c75ab0844a295298671cafd5d0081c735b95f6315beb2bf44e",
+    "metadata_hash_basis": "canonical selected key/task/annotation projection"
+  },
+  "selection": {
+    "rule": "deterministic smoke subset with task-native labels and at most five inference samples",
+    "sample_ids": [
+      "rir_smoke_001"
+    ]
+  },
+  "annotations": {
+    "source": "dataset metadata or deterministic fixture transform",
+    "ground_truth_path": "gt.jsonl",
+    "ground_truth_sha256": "19cd352aae48276183e12188e0e7d92929461feb7a96c6b9320cee950e406706"
+  },
+  "transforms": [
+    {
+      "id": "source_media_copy",
+      "command": "copy source media bytes without modification; verify SHA-256"
+    }
+  ],
+  "files": [
+    {
+      "path": "gt.jsonl",
+      "roles": [
+        "ground_truth"
+      ],
+      "sha256": "19cd352aae48276183e12188e0e7d92929461feb7a96c6b9320cee950e406706",
+      "source_sha256": "19cd352aae48276183e12188e0e7d92929461feb7a96c6b9320cee950e406706",
+      "transform_id": "source_media_copy"
+    }
+  ]
+}
