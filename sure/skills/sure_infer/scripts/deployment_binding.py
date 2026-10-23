@@ -10,11 +10,14 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
+import yaml
+
 REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 
 from sure.runtime.bundle_content import is_excluded
 from sure.runtime.model.bootstrap import ModelRuntimeError, manifest_sha256, verify_runtime
+from sure.runtime.model_server.launch import declared_server_command, resolve_python_server_command
 from sure.site.loader import SitePolicyError, load_site_policy
 
 
@@ -173,13 +176,19 @@ def _load_python_binding(
     command = runtime.get("server_command")
     tools = runtime.get("tool_names")
     relative_python = str(runtime.get("python_executable") or "")
-    _require(
-        isinstance(command, list)
-        and bool(command)
-        and all(isinstance(item, str) and item for item in command)
-        and command[0] == relative_python,
-        "approved Python server_command is invalid",
-    )
+    try:
+        config = yaml.safe_load(_artifact_path(model_dir, "config.yaml").read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as exc:
+        raise DeploymentBindingError(f"approved config.yaml is invalid: {exc}") from exc
+    _require(isinstance(config, dict), "approved config.yaml must be a mapping")
+    if declared_server_command(config):
+        _require(
+            isinstance(command, list)
+            and bool(command)
+            and all(isinstance(item, str) and item for item in command)
+            and command[0] == relative_python,
+            "approved Python server_command is invalid",
+        )
     _require(isinstance(tools, list) and bool(tools) and all(isinstance(item, str) and item for item in tools), "approved Python tool_names are invalid")
     working_dir = (model_dir / str(runtime.get("working_dir") or ".")).resolve()
     _require(_is_relative_to(working_dir, model_dir) and working_dir.is_dir(), "approved Python working_dir is invalid")
@@ -205,7 +214,7 @@ def _load_python_binding(
             "lockfile_path": str(lock_path),
             "lock_sha256": manifest["lock_sha256"],
             "working_dir": str(working_dir),
-            "server_command": [python_executable, *command[1:]],
+            "server_command": resolve_python_server_command(model_dir, config, python_executable, command),
             "tool_names": tools,
             "required_imports": runtime.get("required_imports") or [],
             "gpu_required": runtime.get("gpu_required") is True,

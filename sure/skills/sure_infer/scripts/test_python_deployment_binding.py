@@ -16,6 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 
 from sure.runtime.model.bootstrap import materialize_runtime
+from sure.runtime.model_server.launch import resolve_python_server_command
 from sure.runtime.uvenv import runtime_python_relative
 
 
@@ -29,6 +30,24 @@ def sha256(path: Path) -> str:
 
 
 class PythonDeploymentBindingTests(unittest.TestCase):
+    def test_fallback_ignores_legacy_factory_command(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            model_dir = Path(directory)
+            command = resolve_python_server_command(
+                model_dir, {"task": "asr"}, sys.executable, ["bin/python", "server.py"]
+            )
+            self.assertEqual(command[0], sys.executable)
+            self.assertEqual(command[-2:], ["--model-dir", str(model_dir)])
+            self.assertEqual(Path(command[1]).name, "model_wrapper_mcp_server.py")
+
+    def test_declared_server_retains_its_command(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            command = resolve_python_server_command(
+                Path(directory), {"server": {"command": ["python", "server.py"]}},
+                sys.executable, ["bin/python", "server.py"],
+            )
+            self.assertEqual(command, [sys.executable, "server.py"])
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
@@ -175,6 +194,11 @@ class PythonDeploymentBindingTests(unittest.TestCase):
         self.assertEqual(
             binding["python"]["python_executable"],
             str(self.runtime_dir / runtime_python_relative()),
+        )
+        self.assertEqual(
+            binding["python"]["server_command"],
+            resolve_python_server_command(self.model, {"tools": [{"name": "predict"}]},
+                                          binding["python"]["python_executable"], ["bin/python", "server.py"]),
         )
         self.assertNotIn(str(self.runtime_dir), (self.artifacts / "model_runtime_manifest.json").read_text())
 

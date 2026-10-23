@@ -29,6 +29,7 @@ for _parent in Path(__file__).resolve().parents:
         break
 
 from sure.runtime.evaluation.task_registry import normalize_task, task_profile
+from sure.runtime.model_server.launch import declared_server_command, resolve_python_server_command
 from sure.runtime.prediction_payload import (
     extract_mcp_payload as _extract_response_payload,
     normalize_prediction_payload as _normalize_prediction_payload,
@@ -100,14 +101,13 @@ def _resolve_server_command(
     if policy.get("eval_runtime") == "python":
         if not isinstance(model_runtime, dict) or model_runtime.get("required") is not True:
             raise ValueError("approved Model Python runtime is missing")
-        command = model_runtime.get("server_command")
-        if not isinstance(command, list) or not command or not all(isinstance(item, str) and item for item in command):
-            raise ValueError("approved Model Python server_command is invalid")
         actual_python = os.environ.get("MODEL_PYTHON", "")
         runtime_id = os.environ.get("SURE_EVAL_MODEL_RUNTIME_ID", "")
         if not actual_python or runtime_id != model_runtime.get("runtime_id"):
             raise ValueError("active Model Python does not match the approved runtime identity")
-        return [actual_python, *command[1:]]
+        return resolve_python_server_command(
+            model_dir, _load_yaml(model_dir / "config.yaml"), actual_python, model_runtime.get("server_command")
+        )
     if policy.get("eval_runtime") != "container_only":
         raise ValueError("approved model has no supported Eval runtime")
     if not isinstance(container, dict):
@@ -852,8 +852,7 @@ def _load_existing_predictions(path: Path, *, exclude_keys: set[str] | None = No
                 continue
             if key in excluded:
                 continue
-            if value.strip():
-                predictions[key] = _single_line_text(value)
+            predictions[key] = _single_line_text(value)
     return predictions
 
 
@@ -884,8 +883,7 @@ def _resume_complete_keys(
     return {
         key
         for key, value in predictions.items()
-        if value.strip()
-        and isinstance(structured.get(key, {}).get("normalized_prediction"), str)
+        if isinstance(structured.get(key, {}).get("normalized_prediction"), str)
         and structured[key]["normalized_prediction"] == value
     }
 
@@ -922,6 +920,8 @@ def _write_prediction_snapshots(
     with open(prediction_tmp, "w", encoding="utf-8") as handle:
         for sample in samples:
             key = str(sample.get("key", ""))
+            if key not in prediction_map:
+                continue
             value = _prediction_projection(prediction_map.get(key, ""), task=sample_task)
             handle.write(f"{key}\t{value}\n")
     prediction_tmp.replace(prediction_path)
@@ -929,6 +929,8 @@ def _write_prediction_snapshots(
     with open(structured_tmp, "w", encoding="utf-8") as handle:
         for sample in samples:
             key = str(sample.get("key", ""))
+            if key not in prediction_map:
+                continue
             row = structured_map.get(
                 key,
                 {
@@ -1054,6 +1056,11 @@ def _write_prediction_manifests(
         "structured_num_rows": _count_nonempty_lines(structured_prediction_path) if jsonl_exists else 0,
         "source_samples": source_samples,
         "generated_samples": generated_samples,
+        "empty_prediction_count": sum(
+            1
+            for line in prediction_path.read_text(encoding="utf-8").splitlines()
+            if "\t" in line and not line.split("\t", 1)[1].strip()
+        ),
         "protocol_id": protocol_id,
     }
     conversion_row = {
@@ -1207,7 +1214,7 @@ def main() -> int:
     server_cfg = model_cfg.get("server", {})
     command = _resolve_server_command(model_dir, runtime_inventory_document)
     working_dir = _resolve_working_dir(model_dir, runtime_inventory_document)
-    server_protocol = resolve_server_protocol(server_cfg)
+    server_protocol = resolve_server_protocol(server_cfg) if declared_server_command(model_cfg) else MCP_SERVER_PROTOCOL
     env = model_child_env()
     server_env_config: dict[str, str] = {}
     writable_cache_keys = {
@@ -1365,6 +1372,8 @@ def main() -> int:
         "status": "running",
         "num_expected_samples": len(samples),
         "num_generated_samples": len(prediction_map),
+        "empty_prediction_count": sum(1 for value in prediction_map.values() if not value.strip()),
+        "empty_prediction_keys": sorted(key for key, value in prediction_map.items() if not value.strip()),
         "log_path": str(log_path),
         "result_log_path": str(result_log_path),
         "error": None,
@@ -1481,6 +1490,9 @@ def main() -> int:
                     result_log_handle.flush()
 
                     current_dataset_status["num_generated_samples"] = len(prediction_map)
+                    empty_keys = {key for key, value in prediction_map.items() if not value.strip()}
+                    current_dataset_status["empty_prediction_count"] = len(empty_keys)
+                    current_dataset_status["empty_prediction_keys"] = sorted(empty_keys)
                     status_payload["updated_at"] = _utc_now()
                     _update_generation_observations(
                         status_payload,
@@ -1546,6 +1558,12 @@ def main() -> int:
 
             current_dataset_status["status"] = "completed"
             current_dataset_status["num_generated_samples"] = len(samples)
+            current_dataset_status["empty_prediction_count"] = sum(
+                1 for value in prediction_map.values() if not value.strip()
+            )
+            current_dataset_status["empty_prediction_keys"] = sorted(
+                key for key, value in prediction_map.items() if not value.strip()
+            )
             current_dataset_status["prediction_manifest"] = str(manifest_path)
             current_dataset_status["conversion_manifest"] = str(conversion_manifest_path)
             status_payload["updated_at"] = _utc_now()
