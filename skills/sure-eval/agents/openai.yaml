@@ -1,0 +1,4 @@
+interface:
+  display_name: SURE-EVAL
+  short_description: Evaluate audio tools reproducibly
+  default_prompt: Evaluate this audio model or tool with SURE-EVAL and return an auditable result.
