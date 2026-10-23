@@ -58,15 +58,42 @@ LOWER_IS_BETTER_METRICS = {
     "vc_wer",
     "vc_cer",
     "rir_nmse",
+    "rir_npm",
+    "rir_l1_mae",
+    "rt30_mae",
     "rt60_mae",
     "rir_drr_mae",
     "rir_c50_mae",
     "rir_c80_mae",
+    "rir_edc_mae",
     "rir_iacc_mae",
+    "rir_iacc_full_mae",
+    "rir_iacc_early_mae",
+    "rir_iacc_late_mae",
     "rir_itd_mae",
     "rir_ild_mae",
     "rir_ipd_mae",
     "rir_doa_mae",
+}
+RIR_METRIC_UNITS = {
+    "rir_nmse": "normalized",
+    "rir_npm": "dB",
+    "rir_l1_mae": "normalized",
+    "rir_corr": "coefficient",
+    "rt30_mae": "s",
+    "rt60_mae": "s",
+    "rir_drr_mae": "dB",
+    "rir_c50_mae": "dB",
+    "rir_c80_mae": "dB",
+    "rir_edc_mae": "dB",
+    "rir_iacc_mae": "coefficient",
+    "rir_iacc_full_mae": "coefficient",
+    "rir_iacc_early_mae": "coefficient",
+    "rir_iacc_late_mae": "coefficient",
+    "rir_itd_mae": "ms",
+    "rir_ild_mae": "dB",
+    "rir_ipd_mae": "rad",
+    "rir_doa_mae": "degrees",
 }
 
 
@@ -1564,6 +1591,8 @@ def _is_lower_better_metric(metric: str) -> bool:
 
 def _metric_unit(metric: str) -> str:
     metric_name = str(metric or "").lower()
+    if metric_name in RIR_METRIC_UNITS:
+        return RIR_METRIC_UNITS[metric_name]
     if _is_lower_better_metric(metric_name):
         return "fraction"
     if metric_name in {"accuracy", "acc"}:
@@ -1578,6 +1607,9 @@ def _metric_unit(metric: str) -> str:
 def _metric_display(metric: str, score: Any) -> str:
     if not isinstance(score, (int, float)) or not math.isfinite(float(score)):
         return "N/A"
+    metric_name = str(metric or "").lower()
+    if metric_name in RIR_METRIC_UNITS:
+        return f"{float(score):.6f} {RIR_METRIC_UNITS[metric_name]}"
     if _is_lower_better_metric(metric):
         return f"{float(score) * 100:.2f}%"
     return f"{float(score):.6f}"

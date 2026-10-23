@@ -16,11 +16,12 @@ evaluation bridge writes one `samples_jsonl` row per sample:
 ```
 
 Use the single-channel chain for Rec-RIR outputs. It validates one channel and
-supports `rir_nmse`, `rir_corr`, `rt60_mae`, `rir_drr_mae`, `rir_c50_mae`, and
-`rir_c80_mae`. Use the multi-channel chain for NeuBIRE-MINT outputs. Its
-channel-wise metrics accept two or more channels, while IACC, ITD, ILD, and IPD
-require exactly two channels labelled `binaural_lr`. Add
-`metadata.microphone_spacing_m` only when `rir_doa_mae` is selected.
+supports `rir_npm`, `rt30_mae`, `rt60_mae`, `rir_drr_mae`, `rir_c50_mae`,
+`rir_c80_mae`, and `rir_edc_mae`. Use the multi-channel chain for NeuBIRE
+outputs. Binaural outputs also support IACC full/early/late, ITD, ILD, IPD,
+and DOA. IACC requires exactly two channels; the other spatial metrics accept
+two or more channels and average each channel's error relative to channel 0.
+Add `metadata.microphone_spacing_m` when `rir_doa_mae` is selected.
 
 When a single-channel model is used on a binaural input, invoke it separately
 for channel 0 and channel 1, then merge the two mono `rir_path` files as L/R

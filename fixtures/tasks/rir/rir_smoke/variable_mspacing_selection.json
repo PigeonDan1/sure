@@ -9,6 +9,6 @@
   "sample_rate": 16000,
   "models": {
     "single_channel": "Rec-RIR",
-    "multi_channel": "NeuBIRE-MINT"
+    "multi_channel": "NeuBIRE"
   }
 }

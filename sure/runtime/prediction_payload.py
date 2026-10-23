@@ -75,6 +75,24 @@ def normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict[
                 value = ""
             normalized_value = single_line_text(value)
             return normalized_value, {field: normalized_value, "text": normalized_value}
+        if task_name == "RIR":
+            value = (
+                prediction.get("rir_path")
+                or prediction.get("prediction_rir")
+                or prediction.get("audio_path")
+                or prediction.get("path")
+                or payload.get("rir_path")
+                or payload.get("prediction_rir")
+                or payload.get("audio_path")
+                or payload.get("path")
+                or ""
+            )
+            normalized_value = path_text(value, field="rir_path")
+            normalized = {"rir_path": normalized_value, "prediction_rir": normalized_value}
+            for key in ("sample_rate", "channel_layout", "microphone_spacing_m", "sound_speed_mps"):
+                if prediction.get(key) is not None:
+                    normalized[key] = prediction[key]
+            return normalized_value, normalized
         if task_name in {"TTS", "VC", "SE", "TSE", "TTA"}:
             value = (
                 prediction.get("audio_path")
@@ -199,6 +217,9 @@ def normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict[
     if task_name in {"SV", "DOA"}:
         field = str(task_profile(task)["io_contract"]["primary_field"])
         raise ValueError(f"{task_name} prediction must be a JSON object with {field}")
+    if task_name == "RIR":
+        value = path_text(payload, field="rir_path")
+        return value, {"rir_path": value, "prediction_rir": value}
     if task_name in {"TTS", "VC", "SE", "TSE", "TTA"}:
         value = path_text(payload, field="audio_path")
     elif task_name in {"SD", "SA_ASR"}:

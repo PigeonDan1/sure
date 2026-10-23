@@ -1085,6 +1085,9 @@
         "rir_doa_mae",
         "rir_drr_mae",
         "rir_edc_mae",
+        "rir_iacc_early_mae",
+        "rir_iacc_full_mae",
+        "rir_iacc_late_mae",
         "rir_iacc_mae",
         "rir_ild_mae",
         "rir_ipd_mae",
@@ -1207,6 +1210,45 @@
             "metadata"
           ],
           "pipeline_id": "rir.any.rir_iacc_mae.rir_iacc_mae_v1",
+          "required_roles": [
+            "prediction_rir",
+            "reference_rir"
+          ]
+        },
+        {
+          "input_contract": "scoring/rir_iacc_full_mae",
+          "language": "any",
+          "metric": "rir_iacc_full_mae",
+          "optional_roles": [
+            "metadata"
+          ],
+          "pipeline_id": "rir.any.rir_iacc_full_mae.rir_iacc_full_mae_v1",
+          "required_roles": [
+            "prediction_rir",
+            "reference_rir"
+          ]
+        },
+        {
+          "input_contract": "scoring/rir_iacc_early_mae",
+          "language": "any",
+          "metric": "rir_iacc_early_mae",
+          "optional_roles": [
+            "metadata"
+          ],
+          "pipeline_id": "rir.any.rir_iacc_early_mae.rir_iacc_early_mae_v1",
+          "required_roles": [
+            "prediction_rir",
+            "reference_rir"
+          ]
+        },
+        {
+          "input_contract": "scoring/rir_iacc_late_mae",
+          "language": "any",
+          "metric": "rir_iacc_late_mae",
+          "optional_roles": [
+            "metadata"
+          ],
+          "pipeline_id": "rir.any.rir_iacc_late_mae.rir_iacc_late_mae_v1",
           "required_roles": [
             "prediction_rir",
             "reference_rir"
