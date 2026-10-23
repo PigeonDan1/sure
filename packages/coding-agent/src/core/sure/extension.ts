@@ -667,6 +667,48 @@ function clearActiveRun(
 	setActiveRun(undefined);
 }
 
+function hasTerminalFinishPending(active: ActiveRun, runManager: SureRunManager): boolean {
+	const state = runManager.readState(active.record);
+	const checkpoint = state?.checkpoint;
+	const data = checkpoint?.data;
+	if (
+		!checkpoint ||
+		checkpoint.resumable !== false ||
+		state?.phase?.status !== "running" ||
+		!isRecord(data) ||
+		typeof data.currentUnit !== "string" ||
+		!Array.isArray(data.completedUnits) ||
+		!data.completedUnits.includes(data.currentUnit)
+	) {
+		return false;
+	}
+	return true;
+}
+
+function reopenTerminalFinishCheckpoint(pi: ExtensionAPI, ctx: ExtensionContext, active: ActiveRun): void {
+	const runManager = new SureRunManager(active.record.cwd);
+	const state = runManager.readState(active.record);
+	const checkpoint = state?.checkpoint;
+	if (!checkpoint) {
+		return;
+	}
+	applyStatePatch(
+		pi,
+		ctx,
+		active,
+		{
+			phase: { ...(state?.phase ?? {}), status: "running" },
+			message: `The run completed its work and is waiting for ${FINISH_TOOL_NAME}.`,
+			checkpoint: {
+				...checkpoint,
+				resumable: true,
+				resume_hint: `The terminal unit is complete; call ${FINISH_TOOL_NAME} without rerunning the completed work.`,
+			},
+		},
+		"finish_pending_state",
+	);
+}
+
 /**
  * After a successful /sure_init, switch the current session onto the model it just configured
  * instead of leaving the user on whatever model they started with. Returns the success line for
@@ -1151,13 +1193,16 @@ export function createSureExtension(): ExtensionFactory {
 			}
 			const runManager = new SureRunManager(active.record.cwd);
 			// A run abandoned by the agent (turn ended, no sure_finish) failed;
-			// "cancelled" is reserved for runs interrupted mid-work.
+			// "cancelled" is reserved for runs interrupted mid-work. If all skill
+			// units already completed, keep the terminal checkpoint resumable so the
+			// next session can call sure_finish without rerunning the work.
 			active.record = runManager.setStatus(
 				active.record,
 				active.finishMissing ? "failed" : "cancelled",
 				"session_shutdown",
 			);
 			pi.appendEntry("sure.run", active.record);
+			const finishPending = active.finishMissing && hasTerminalFinishPending(active, runManager);
 			const onError = await active.hooks.run("on_error", {
 				run: active.record,
 				skill: active.skillPackage.manifest,
@@ -1168,6 +1213,9 @@ export function createSureExtension(): ExtensionFactory {
 				event: { reason: "session_shutdown" },
 			});
 			applyStatePatch(pi, ctx, active, onError.state_patch, "on_error_state");
+			if (finishPending) {
+				reopenTerminalFinishCheckpoint(pi, ctx, active);
+			}
 			ctx.ui.setStatus(STATUS_KEY, undefined);
 			clearActiveRun(pi, active, setActiveRun);
 		});

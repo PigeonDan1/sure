@@ -948,6 +948,56 @@ describe("Sure extension", () => {
 		expect(getUserTexts(harness).some((text) => text.includes("Start at unit two."))).toBe(true);
 	});
 
+	it("keeps a completed run resumable when only sure_finish is missing", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+
+		harness.setResponses([fauxAssistantMessage("all work is complete")]);
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const runDir = join(harness.tempDir, ".sure", "runs", runId);
+		writeJson(join(runDir, "state.json"), {
+			phase: { id: "run_report", label: "Run report", status: "running" },
+			checkpoint: {
+				id: "main_flow",
+				resumable: false,
+				resume_hint: "State machine reached the terminal unit.",
+				data: { currentUnit: "run_report", completedUnits: ["run_report"] },
+			},
+		});
+		await emitSessionShutdownEvent(harness.session.extensionRunner, { type: "session_shutdown", reason: "quit" });
+
+		const state = readRunState(harness.tempDir, runId) as {
+			checkpoint?: { resumable?: boolean; resume_hint?: string };
+			phase?: { status?: string };
+		};
+		expect(state.checkpoint?.resumable).toBe(true);
+		expect(state.checkpoint?.resume_hint).toContain("sure_finish");
+		expect(state.phase?.status).toBe("running");
+
+		harness.setResponses([
+			() => {
+				writeValidManifest(harness.tempDir, runId);
+				return fauxAssistantMessage(
+					fauxToolCall("sure_finish", {
+						status: "success",
+						manifest_path: `.sure/runs/${runId}/manifest.json`,
+						summary: "done",
+					}),
+				);
+			},
+		]);
+		await harness.session.prompt(`/sure_resume ${runId}`);
+		await harness.session.agent.waitForIdle();
+
+		const run = JSON.parse(readFileSync(join(runDir, "run.json"), "utf-8"));
+		expect(run.status).toBe("success");
+		expect(readdirSync(join(harness.tempDir, ".sure", "runs")).length).toBe(1);
+	});
+
 	it("refuses to resume a run whose checkpoint is not resumable", async () => {
 		const notifications: Array<{ message: string; type: string | undefined }> = [];
 		const harness = await createSureHarness({
