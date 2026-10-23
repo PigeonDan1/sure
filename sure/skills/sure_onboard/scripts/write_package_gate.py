@@ -22,7 +22,7 @@ from deployment_contract import (
     validate_image_and_digest,
     validate_runtime_roles,
 )
-from write_runtime_inventory import load_config
+from write_runtime_inventory import core_files_for, load_config
 
 
 STAGE_RESULTS = {
@@ -37,7 +37,6 @@ LOCAL_EVIDENCE_CHECKS = (
     *STAGE_RESULTS,
     "sample_output.json",
 )
-CORE_FILES = ("model.spec.yaml", "model.py", "server.py", "__init__.py", "validate.py", "config.yaml")
 GENERATED_TERMINAL_PATHS = {
     "artifacts/package_gate.json",
     "artifacts/runtime_inventory.json",
@@ -182,7 +181,7 @@ def validate_local_container(build: dict[str, Any], validation: dict[str, Any]) 
 def build_package_gate(run_dir: Path, model_dir: Path) -> dict[str, Any]:
     resolved = read_json(run_dir / "artifacts" / "model_input_resolved.json")
     manifest = model_manifest(model_dir)
-    missing_core = [name for name in CORE_FILES if not (model_dir / name).is_file()]
+    missing_core = [name for name in core_files_for(model_dir) if not (model_dir / name).is_file()]
     if missing_core:
         raise ValueError("model bundle is missing core files: " + ", ".join(missing_core))
     local_ready = local_readiness(validate_local_evidence(run_dir, model_dir))

@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Expose a model-local ModelWrapper/create_model object as a minimal MCP server."""
+"""Expose a model-local ModelWrapper/create_model object as a minimal MCP server.
+
+The onboard gate installs a copy of this file into model bundles whose
+config.yaml declares no `server.command`, so it must run standalone: the only
+import below that reaches outside the file is `yaml`, and every task-registry
+use is a fallback for a config that does not declare its tools' contracts.
+"""
 
 from __future__ import annotations
 
@@ -13,12 +19,22 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-for _parent in Path(__file__).resolve().parents:
-    if (_parent / "sure" / "runtime" / "evaluation" / "task_registry.py").is_file():
-        sys.path.insert(0, str(_parent))
-        break
 
-from sure.runtime.evaluation.task_registry import normalize_task, task_profile
+def _task_registry():
+    """The harness task registry, loaded only when the config under-specifies tools.
+
+    A bundle copy of this adapter has no `sure` package next to it; that is fine
+    because a config with named tools and input schemas never needs the
+    fallback naming or schema derivation this provides.
+    """
+    for _parent in Path(__file__).resolve().parents:
+        if (_parent / "sure" / "runtime" / "evaluation" / "task_registry.py").is_file():
+            if str(_parent) not in sys.path:
+                sys.path.insert(0, str(_parent))
+            from sure.runtime.evaluation.task_registry import normalize_task, task_profile
+
+            return normalize_task, task_profile
+    return None, None
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -103,6 +119,9 @@ def _tool_names(config: dict[str, Any]) -> list[str]:
             names.append(str(tool["name"]))
     if names:
         return names
+    normalize_task, task_profile = _task_registry() or (None, None)
+    if normalize_task is None or task_profile is None:
+        return ["predict"]
     task = normalize_task(_model_task(config))
     if task == "speech_understanding":
         return ["speech_understanding"]
@@ -125,6 +144,9 @@ def _respond(payload: dict[str, Any]) -> None:
 
 
 def _tool_schema(task: str) -> dict[str, Any]:
+    normalize_task, _ = _task_registry() or (None, None)
+    if normalize_task is None:
+        return {"type": "object", "properties": {"audio_path": {"type": "string"}}, "required": ["audio_path"]}
     normalized = normalize_task(task)
     if normalized == "vc":
         required = ["source_audio_path", "reference_audio_path"]

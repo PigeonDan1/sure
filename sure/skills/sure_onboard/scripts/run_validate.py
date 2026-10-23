@@ -603,18 +603,41 @@ def server_declaration(model_dir: Path, run_dir: Path) -> dict | None:
     """What VALIDATE_INFER must drive, or None when the harness owns the wrapper.
 
     A `server:` block without `command` is served by the harness fallback
-    wrapper, which is MCP by construction, so there is nothing model-local to
-    start. A declared `command` must also declare the framing it speaks --
-    `declared_server_protocol` refuses the silent default -- and must declare a
-    tool a client can call: `tool_contracts` refuses a `tools[]` entry with no
-    `input_schema.properties` here, rather than letting inference discover it.
-    The response the smoke gets is checked against the framing resolved here,
-    from the same resolver the infer client uses.
+    wrapper (`model_wrapper_mcp_server.py`), which is MCP by construction. The
+    adapter still gets driven: it wraps the model's own `create_model()` /
+    `ModelWrapper`, so a model that cannot load or answer a tool call fails
+    here rather than after approval. A declared `command` must also declare
+    the framing it speaks -- `declared_server_protocol` refuses the silent
+    default -- and must declare a tool a client can call: `tool_contracts`
+    refuses a `tools[]` entry with no `input_schema.properties` here, rather
+    than letting inference discover it. The response the smoke gets is checked
+    against the framing resolved here, from the same resolver the infer client
+    uses.
     """
     config = load_model_config(model_dir)
     declared = declared_server_protocol(config, model_dir)
+    adapter_command: list[str] | None = None
     if declared is None:
-        return None
+        # No declared command: the harness adapter serves MCP for this model.
+        # The model must expose something callable for it to wrap; otherwise
+        # there is nothing to drive and the inventory writer would refuse the
+        # bundle anyway, so say so here with the same terms.
+        import re
+
+        has_create_model = (model_dir / "server.py").is_file() and bool(
+            re.search(r"^\s*def\s+create_model\s*\(", (model_dir / "server.py").read_text(encoding="utf-8"))
+        )
+        has_wrapper = (model_dir / "model.py").is_file() and bool(
+            re.search(r"^\s*class\s+ModelWrapper\b", (model_dir / "model.py").read_text(encoding="utf-8"))
+        )
+        if not has_create_model and not has_wrapper:
+            return None
+        adapter = model_dir / "model_wrapper_mcp_server.py"
+        if not adapter.is_file():
+            from write_runtime_inventory import install_fallback_adapter
+
+            install_fallback_adapter(model_dir, "python")
+        adapter_command = ["python", "model_wrapper_mcp_server.py", "--model-dir", "."]
     # A declared command owns a callable tool contract, and the infer client
     # filters the arguments it sends against `input_schema.properties`. A config
     # that declares `tools: [{name: vad}]` and stops there describes a tool that
@@ -630,6 +653,20 @@ def server_declaration(model_dir: Path, run_dir: Path) -> dict | None:
         model.get("task") or config.get("task") or config.get("task_type")
         or classification.get("task_type") or "ASR"
     ).upper()
+    if adapter_command is not None:
+        command = [str(item) for item in maybe_use_model_local_python(adapter_command, shell=False, cwd=model_dir)]
+        startup = 0.0
+        return {
+            "command": command,
+            "protocol": "mcp",
+            "tool": contract.name,
+            "task": task,
+            "input_schema": contract.input_schema,
+            "arguments": smoke_arguments(run_dir, contract.input_schema),
+            "env": declared_server_env(server),
+            "cwd": model_dir,
+            "timeout": 300.0,
+        }
     command = [str(item) for item in server.get("command", [])]
     # `command[0]` is the shorthand the model was built with (`.venv/bin/python`),
     # not a path that resolves here: the infer client and the runtime inventory
@@ -664,14 +701,15 @@ def server_declaration(model_dir: Path, run_dir: Path) -> dict | None:
 def drive_declared_server(data: dict, run_dir: Path, model_dir: Path, validation_device: str | None) -> tuple[str, str]:
     """Run the protocol smoke for this model. Returns (status, detail).
 
-    Returns ("skipped", reason) when the harness fallback wrapper serves the
-    model, ("passed", evidence path) when the declared server answered in the
-    declared framing, and raises ValueError with the evidence's own account
-    when it did not.
+    Returns ("skipped", reason) when the model ships no callable surface at all
+    and nothing can be driven, ("passed", evidence path) when the declared
+    server -- or the harness adapter standing in for a commandless config --
+    answered in the declared framing, and raises ValueError with the evidence's
+    own account when it did not.
     """
     declaration = server_declaration(model_dir, run_dir)
     if declaration is None:
-        return "skipped", "config.yaml omits server.command: the harness fallback wrapper serves MCP"
+        return "skipped", "model exposes no callable server surface: nothing to drive"
     produces = run_dir / "artifacts" / "server_smoke.json"
     timeout = float(declaration["timeout"])
     # The model's declared env, then whatever the artifact declared over it: the

@@ -176,8 +176,40 @@ class DeclarationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "no server.protocol"):
             run_validate.server_declaration(self._model_dir(declared=""), self.run_dir)
 
-    def test_no_declared_command_leaves_the_server_to_the_harness_wrapper(self) -> None:
+    def test_no_declared_command_with_no_model_surface_is_undrivable(self) -> None:
+        # A config that omits server.command and a model directory with neither
+        # create_model() nor ModelWrapper leave the adapter nothing to wrap:
+        # there is no server to drive, and the inventory writer refuses the
+        # bundle on the same terms.
         self.assertIsNone(run_validate.server_declaration(self._model_dir(declared="", command=""), self.run_dir))
+
+    def test_no_declared_command_drives_the_harness_adapter(self) -> None:
+        # The scope exemption wrapper_contract.md states: a commandless config
+        # is served by model_wrapper_mcp_server.py. The gate drives it like any
+        # declared server instead of skipping -- a model that cannot load or
+        # answer a tool call fails here, not after approval.
+        model_dir = self._model_dir(declared="", command="")
+        (model_dir / "model.py").write_text(
+            "class ModelWrapper:\n    def predict(self, arguments):\n        return arguments\n",
+            encoding="utf-8",
+        )
+        declaration = run_validate.server_declaration(model_dir, self.run_dir)
+        assert declaration is not None
+        self.assertEqual(declaration["protocol"], "mcp")
+        self.assertIn("model_wrapper_mcp_server.py", declaration["command"][1])
+        self.assertEqual(declaration["tool"], "enhance_speech")
+        self.assertTrue((model_dir / "model_wrapper_mcp_server.py").is_file())
+
+    def test_no_declared_command_with_create_model_also_drives_the_adapter(self) -> None:
+        model_dir = self._model_dir(declared="", command="")
+        (model_dir / "server.py").write_text(
+            "def create_model(config=None):\n    class M:\n        def predict(self, arguments):\n"
+            "            return arguments\n    return M()\n",
+            encoding="utf-8",
+        )
+        declaration = run_validate.server_declaration(model_dir, self.run_dir)
+        assert declaration is not None
+        self.assertIn("model_wrapper_mcp_server.py", declaration["command"][1])
 
     def test_the_fixture_input_is_the_argument_the_declared_field_names(self) -> None:
         model_dir = self._model_dir()
@@ -402,6 +434,50 @@ class GateTests(unittest.TestCase):
             # The gate refused before the server was ever driven, so no evidence
             # was written claiming otherwise.
             self.assertFalse((run_dir / "artifacts" / "server_smoke.json").is_file())
+
+
+    def test_the_gate_drives_the_adapter_for_a_commandless_model(self) -> None:
+        # The full scope exemption, end to end: no server.command, a bare
+        # ModelWrapper, and the gate still proves the model answers a tool
+        # call -- through model_wrapper_mcp_server.py, not by skipping.
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp)
+            model_dir, run_dir, produces = stage_infer_gate(scratch, "")
+            config = model_dir / "config.yaml"
+            # The fixture model.py above is a bare `class ModelWrapper` with no
+            # predict; give it one the adapter can call, and drop the declared
+            # command entirely.
+            (model_dir / "model.py").write_text(
+                "class ModelWrapper:\n"
+                "    def predict(self, arguments):\n"
+                "        return {\"audio_path\": arguments.get(\"audio_path\", \"\")}\n",
+                encoding="utf-8",
+            )
+            config.write_text(
+                "name: demo\n"
+                "model:\n"
+                "  id: demo/model\n"
+                "  task: SE\n"
+                "server: {}\n"
+                "tools:\n"
+                "  - name: enhance_speech\n"
+                "    input_schema:\n"
+                "      type: object\n"
+                "      required: [audio_path]\n"
+                "      properties:\n"
+                "        audio_path:\n"
+                "          type: string\n",
+                encoding="utf-8",
+            )
+            result = run_gate(run_dir, produces)
+
+            self.assertEqual(result.returncode, 0, result.stderr + result.stdout)
+            self.assertIn("server_smoke=passed", result.stdout)
+            evidence = json.loads((run_dir / "artifacts" / "server_smoke.json").read_text(encoding="utf-8"))
+            self.assertEqual(evidence["status"], "passed")
+            self.assertEqual(evidence["protocol"], "mcp")
+            self.assertTrue((model_dir / "model_wrapper_mcp_server.py").is_file())
+            self.assertTrue(evidence["steps"]["tools_call"]["output_nonempty"])
 
 
 if __name__ == "__main__":

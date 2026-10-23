@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from write_runtime_inventory import core_files_for
+
 CORE_FILES = ["model.spec.yaml", "model.py", "server.py", "__init__.py", "validate.py", "config.yaml"]
 
 
@@ -44,7 +46,7 @@ def infer_model_dir(data: dict[str, Any], manifest_path: Path) -> Path | None:
         return Path(str(raw)).expanduser()
     if manifest_path.parent.name == "artifacts":
         candidate = manifest_path.parent.parent
-        if all((candidate / name).exists() for name in CORE_FILES):
+        if all((candidate / name).exists() for name in core_files_for(candidate)):
             return candidate
     return None
 
@@ -103,7 +105,7 @@ def main() -> int:
         print(f"SAVE_ARTIFACTS gate: model_dir does not exist or is not a directory: {model_dir}", file=sys.stderr)
         return 1
 
-    missing_core = [name for name in CORE_FILES if not (model_dir / name).exists()]
+    missing_core = [name for name in core_files_for(model_dir) if not (model_dir / name).exists()]
     if missing_core:
         print(
             "SAVE_ARTIFACTS gate: model_dir is missing core local deployment files: "

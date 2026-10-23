@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from write_runtime_inventory import core_files_for
+
 CORE_FILES = ["model.spec.yaml", "model.py", "server.py", "__init__.py", "validate.py", "config.yaml"]
 REQUIRED_RUN_ARTIFACTS = [
     "model_input_resolved.json",
@@ -113,12 +115,17 @@ def build_manifest(
     required: dict[str, Any] = {
         "spec": artifact_entry("model.spec.yaml", "Model specification."),
         "model_py": artifact_entry("model.py", "SURE ModelWrapper implementation."),
-        "server_py": artifact_entry("server.py", "Local serving surface."),
         "package_init": artifact_entry("__init__.py", "Import package marker."),
         "validate_py": artifact_entry("validate.py", "Model-local validation runner."),
         "config": artifact_entry("config.yaml", "Model-local runtime/server config."),
         "manifest": artifact_entry("artifacts/artifact_manifest.json", "This model artifact manifest."),
     }
+    # The serving surface is server.py or, for a commandless ModelWrapper model,
+    # the harness fallback adapter the inventory installed into the bundle.
+    if (model_dir / "model_wrapper_mcp_server.py").is_file():
+        required["fallback_adapter"] = artifact_entry("model_wrapper_mcp_server.py", "Harness fallback serving surface.")
+    else:
+        required["server_py"] = artifact_entry("server.py", "Local serving surface.")
     for name in copied_required:
         key = name.replace(".", "_").replace("-", "_")
         required[key] = artifact_entry(f"artifacts/{name}", f"Required /sure_onboard run artifact: {name}.")
@@ -172,7 +179,7 @@ def main_with_args(argv: list[str] | None = None) -> int:
         return 1
 
     model_artifacts = model_dir / "artifacts"
-    missing_core = [name for name in CORE_FILES if not (model_dir / name).exists()]
+    missing_core = [name for name in core_files_for(model_dir) if not (model_dir / name).exists()]
     if missing_core:
         print(
             "stage_model_artifacts failed: model_dir is missing core local deployment files: "
