@@ -7,7 +7,7 @@ examples:
     tool: estimate_rir
     prediction_field: rir_path
     channel_layout: mono
-    metrics: [rir_nmse, rir_corr, rt60_mae, rir_drr_mae, rir_c50_mae, rir_c80_mae]
+    metrics: [rir_npm, rt30_mae, rt60_mae, rir_drr_mae, rir_c50_mae, rir_c80_mae, rir_edc_mae]
     note: "Use reference/prediction channel 0 for the single-channel chain."
   - model: Rec-RIR-separate
     branch: multi_channel
@@ -17,17 +17,17 @@ examples:
     prediction_field: rir_path
     channel_layout: binaural_lr
     inference: "Run the mono model independently on channel 0 and channel 1, then merge L/R outputs."
-    metrics: [rir_nmse, rir_corr, rt60_mae, rir_iacc_mae, rir_itd_mae, rir_ild_mae, rir_ipd_mae]
+    metrics: [rir_npm, rt30_mae, rt60_mae, rir_drr_mae, rir_c50_mae, rir_c80_mae, rir_edc_mae, rir_iacc_full_mae, rir_iacc_early_mae, rir_iacc_late_mae, rir_itd_mae, rir_ild_mae, rir_ipd_mae, rir_doa_mae]
     note: "The model remains single-channel; only the wrapper combines its two independent estimates."
-  - model: NeuBIRE-MINT
+  - model: NeuBIRE
     branch: multi_channel
-    input_channels: 1
+    input_channels: 2
     output_channels: 2
     tool: estimate_rir
     prediction_field: rir_path
     channel_layout: binaural_lr
-    metrics: [rir_nmse, rir_corr, rt60_mae, rir_iacc_mae, rir_itd_mae, rir_ild_mae, rir_ipd_mae]
-    note: "Two-channel BIR estimate; spatial metrics require the MINT two-channel output."
+    metrics: [rir_npm, rt30_mae, rt60_mae, rir_drr_mae, rir_c50_mae, rir_c80_mae, rir_edc_mae, rir_iacc_full_mae, rir_iacc_early_mae, rir_iacc_late_mae, rir_itd_mae, rir_ild_mae, rir_ipd_mae, rir_doa_mae]
+    note: "Score the native two-channel RIR estimate directly."
   - model: NeuBIRE-single
     branch: single_channel
     input_channels: 2
@@ -37,5 +37,15 @@ examples:
     tool: estimate_rir
     prediction_field: rir_path
     channel_layout: mono
-    metrics: [rir_nmse, rir_corr, rt60_mae, rir_drr_mae, rir_c50_mae, rir_c80_mae]
+    metrics: [rir_npm, rt30_mae, rt60_mae, rir_drr_mae, rir_c50_mae, rir_c80_mae, rir_edc_mae]
     note: "NeuBIRE receives channel 0 copied to both input channels; score output channel 0 only."
+  - model: NeuBIRE-four-channel
+    branch: multi_channel
+    input_channels: 4
+    output_channels: 4
+    tool: estimate_rir
+    prediction_field: rir_path
+    channel_layout: multi_channel
+    inference: "Run the two-channel model on channels 0/1 and 2/3; merge outputs in channel order with a shared crop anchor."
+    metrics: [rir_npm, rt30_mae, rt60_mae, rir_drr_mae, rir_c50_mae, rir_c80_mae, rir_edc_mae, rir_itd_mae, rir_ild_mae, rir_ipd_mae, rir_doa_mae]
+    note: "ITD, ILD, IPD, and DOA average the errors for channels 1-3 relative to channel 0; IACC is not defined."

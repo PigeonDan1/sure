@@ -81,6 +81,29 @@ class TaskProjectionContractTests(unittest.TestCase):
             with self.subTest(task=task):
                 self._assert_case(task, "hello\nworld", "hello world", {field: "hello world", "text": "hello world"})
 
+    def test_rir_projection_preserves_channel_metadata(self) -> None:
+        payload = {"prediction": {
+            "rir_path": "estimate.wav",
+            "sample_rate": 16000,
+            "channel_layout": "multi_channel",
+            "microphone_spacing_m": 0.04,
+            "sound_speed_mps": 343,
+        }}
+        self._assert_case(payload=payload, task="RIR", expected_projection="estimate.wav", expected_prediction={
+            "rir_path": "estimate.wav",
+            "prediction_rir": "estimate.wav",
+            "sample_rate": 16000,
+            "channel_layout": "multi_channel",
+            "microphone_spacing_m": 0.04,
+            "sound_speed_mps": 343,
+        })
+
+    def test_rir_projection_rejects_multiline_path(self) -> None:
+        for payload in ({"rir_path": "estimate.wav\nother.wav"}, "estimate.wav\nother.wav"):
+            with self.subTest(payload=payload):
+                with self.assertRaisesRegex(ValueError, "rir_path cannot contain newline"):
+                    gp._normalize_prediction_payload(payload, task="RIR")
+
 
 class AsrPayloadNormalizationTests(unittest.TestCase):
     def test_standard_text_fields_take_precedence_over_aliases(self) -> None:

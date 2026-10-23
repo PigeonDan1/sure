@@ -1,17 +1,18 @@
 # RIR Fixture Index
 
 The RIR task consumes predicted and reference room impulse responses. The
-fixture exercises two evaluation branches:
+fixture documents three evaluation branches:
 
-- single-channel RIRs use waveform, correlation, RT60, DRR, C50, and C80;
-- multi-channel RIRs use the same channel-wise metrics, while the binaural
-  two-channel subset additionally supports IACC, ITD, ILD, and IPD.
+- monaural RIRs use NPM, RT30, RT60, DRR, C50, C80, and EDC;
+- binaural RIRs add IACC full/early/late, ITD, ILD, IPD, and DOA;
+- RIRs with more than two channels add ITD, ILD, IPD, and DOA for every
+  channel relative to channel 0, then average the pair errors.
 
 Each fixture row must provide `reference_rir`; a model prediction is supplied
 as `prediction.rir_path`, `prediction.prediction_rir`, or
 `prediction.audio_path`. Set `channel_layout` to `mono`, `multi_channel`, or
-`binaural_lr` when the layout is known. Spatial metrics reject arrays with
-anything other than exactly two channels.
+`binaural_lr` when the layout is known. IACC requires exactly two channels;
+ITD, ILD, IPD, and DOA accept two or more channels.
 
 The smoke fixture is metadata-only for capability registration. End-to-end
 audio tests create temporary deterministic WAV pairs so model checkpoints,
@@ -25,7 +26,7 @@ row shape is:
 
 The model-to-branch examples are recorded in
 `rir_smoke/model_examples.yaml`: Rec-RIR is the single-channel example and
-NeuBIRE-MINT is the two-channel example. Neither model checkpoint is part of
+NeuBIRE is the two-channel model example. Neither model checkpoint is part of
 the fixture.
 
 For the optional 20-row VariableMSpacingTest selection, run
@@ -34,8 +35,8 @@ prediction root. Use `--branch single_channel` plus
 `--reference-channel-root` for channel-0 scoring. Rec-RIR runs the mono model
 independently on each original input channel. NeuBIRE single-channel runs use
 `--input-mode duplicate_channel0` so both model inputs are copies of channel 0;
-only output channel 0 is scored. To score a binaural
-estimate from Rec-RIR, run the mono model independently on the left and right
-input channels and merge the two output roots with
-`rir_smoke/combine_single_channel_rirs.py`. NeuBIRE-MINT can write its two
+only output channel 0 is scored. To score a binaural estimate from Rec-RIR,
+run the mono model independently on the left and right input channels and merge
+the two output roots with
+`rir_smoke/combine_single_channel_rirs.py`. NeuBIRE can write its two
 channels directly to the multi-channel prediction root.
