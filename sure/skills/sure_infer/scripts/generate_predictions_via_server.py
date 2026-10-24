@@ -1144,7 +1144,7 @@ def main() -> int:
     parser.add_argument("--argument-name", default="audio_path", help="Argument name for the audio path")
     parser.add_argument("--language", help="Optional language argument passed through to the tool")
     parser.add_argument("--max-samples", type=int, default=0, help="Optional limit for quick tests")
-    parser.add_argument("--resume", action="store_true", help="Resume and skip keys already present in the prediction file")
+    parser.add_argument("--resume", action="store_true", help="Resume keys with matching text and structured predictions")
     parser.add_argument(
         "--resume-exclude-keys-file",
         help="Optional newline-delimited keys to ignore while loading existing resume predictions.",
@@ -1290,9 +1290,10 @@ def main() -> int:
     if args.resume:
         existing_predictions.update(_load_existing_predictions(result_log_path, exclude_keys=resume_exclude_keys))
     existing_structured = _load_existing_structured_predictions(structured_prediction_path) if args.resume else {}
-    prediction_map = dict(existing_predictions)
-    structured_map = dict(existing_structured)
-    resume_complete_keys = _resume_complete_keys(prediction_map, structured_map)
+    sample_keys = {str(sample.get("key", "")) for sample in samples}
+    resume_complete_keys = _resume_complete_keys(existing_predictions, existing_structured) & sample_keys
+    prediction_map = {key: existing_predictions[key] for key in resume_complete_keys}
+    structured_map = {key: existing_structured[key] for key in resume_complete_keys}
 
     default_status_payload: dict[str, Any] = {
         "schema": "sure.eval.prediction_generation_status.v2",
@@ -1394,8 +1395,8 @@ def main() -> int:
     _write_status_file(status_path, status_payload)
 
     with open(log_path, "w", encoding="utf-8") as log_handle, open(result_log_path, "w", encoding="utf-8") as result_log_handle:
-        if args.resume and existing_predictions:
-            _write_existing_result_log_entries(result_log_handle, samples, existing_predictions)
+        if args.resume and prediction_map:
+            _write_existing_result_log_entries(result_log_handle, samples, prediction_map)
             result_log_handle.flush()
 
         process = _start_model_server(
@@ -1508,6 +1509,7 @@ def main() -> int:
                         # one. Counting lines in the prediction file does not help:
                         # the snapshot materializes every row up front.
                         generated = len(prediction_map)
+                        processed = generated - len(resume_complete_keys)
                         elapsed = max(monotonic() - generation_started, 1e-9)
                         remaining = max(len(samples) - generated, 0)
                         logger.info(
@@ -1516,8 +1518,8 @@ def main() -> int:
                             generated=generated,
                             expected=len(samples),
                             elapsed_seconds=round(elapsed, 1),
-                            seconds_per_sample=round(elapsed / generated, 3),
-                            eta_seconds=round(remaining * elapsed / generated, 1),
+                            seconds_per_sample=round(elapsed / processed, 3),
+                            eta_seconds=round(remaining * elapsed / processed, 1),
                         )
                         _write_prediction_snapshots(
                             samples=samples,

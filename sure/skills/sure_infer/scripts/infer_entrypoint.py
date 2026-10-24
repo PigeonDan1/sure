@@ -27,8 +27,10 @@ import os
 import shutil
 import subprocess
 import sys
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 for _parent in Path(__file__).resolve().parents:
@@ -391,12 +393,21 @@ def stage_prepare(ctx: Ctx) -> None:
             ctx.languages.setdefault(dataset, fallback_language)
 
 def stage_materialize(ctx: Ctx) -> None:
+    predictions_dir = ctx.run_dir / "predictions"
+    pending = [
+        dataset for dataset in ctx.datasets
+        if ctx.no_resume
+        or not (predictions_dir / f"{dataset}.txt").is_file()
+        or not (predictions_dir / f"{dataset}.jsonl").is_file()
+    ]
+    if not pending:
+        return
     _run(
         ctx,
         "materialize",
         "materialize_predictions_template.py",
         "--dataset",
-        *ctx.datasets,
+        *pending,
         "--output-dir",
         str(ctx.run_dir / "predictions"),
         "--manifest-name",
@@ -405,14 +416,14 @@ def stage_materialize(ctx: Ctx) -> None:
     )
 
 
-def _generate_args(ctx: Ctx, dataset: str, *, max_samples: int | None) -> list[str]:
+def _generate_args(ctx: Ctx, dataset: str, *, max_samples: int | None, run_dir: Path | None = None) -> list[str]:
     args = [
         "--model-dir",
         str(ctx.model_dir),
         "--dataset",
         dataset,
         "--run-dir",
-        str(ctx.run_dir),
+        str(run_dir or ctx.run_dir),
         "--tool-name",
         ctx.tool_name,
     ]
@@ -434,19 +445,35 @@ def stage_smoke(ctx: Ctx) -> None:
     if samples is None:
         samples = ctx.max_samples if 0 < ctx.max_samples < DEFAULT_SMOKE_SAMPLES else DEFAULT_SMOKE_SAMPLES
     print(f"Smoke test on {dataset} ({samples} samples)", flush=True)
-    _run(ctx, "smoke", "generate_predictions_via_server.py", *_generate_args(ctx, dataset, max_samples=samples))
-    prediction_path = ctx.run_dir / "predictions" / f"{dataset}.txt"
-    valid = _nonempty_prediction_rows(prediction_path)
-    generated = _prediction_rows(prediction_path)
-    observed = valid if ctx.require_nonempty_predictions else generated
-    if observed < 1:
-        raise StageError(
-            "smoke",
-            f"smoke test produced no {'non-empty ' if ctx.require_nonempty_predictions else ''}prediction rows in the first {samples} samples of {dataset}; "
-            f"see {ctx.run_dir / 'predictions' / 'logs'}",
-        )
-    label = "non-empty rows" if ctx.require_nonempty_predictions else "prediction rows"
-    print(f"Smoke test passed ({observed} {label}; {valid} non-empty)", flush=True)
+    existing_snapshot = not ctx.no_resume and (ctx.run_dir / "predictions" / f"{dataset}.jsonl").is_file()
+    workspace = TemporaryDirectory(prefix="sure-smoke-", dir=ctx.run_dir) if existing_snapshot else nullcontext(ctx.run_dir)
+    with workspace as smoke_dir:
+        smoke_root = Path(smoke_dir)
+        try:
+            _run(
+                ctx, "smoke", "generate_predictions_via_server.py",
+                *_generate_args(ctx, dataset, max_samples=samples, run_dir=smoke_root),
+            )
+            prediction_path = smoke_root / "predictions" / f"{dataset}.txt"
+            valid = _nonempty_prediction_rows(prediction_path)
+            generated = _prediction_rows(prediction_path)
+            observed = valid if ctx.require_nonempty_predictions else generated
+            if observed < 1:
+                raise StageError(
+                    "smoke",
+                    f"smoke test produced no {'non-empty ' if ctx.require_nonempty_predictions else ''}prediction rows in the first {samples} samples of {dataset}; "
+                    f"see {smoke_root / 'predictions' / 'logs'}",
+                )
+        except StageError as exc:
+            if existing_snapshot:
+                logs_dir = smoke_root / "predictions" / "logs"
+                if logs_dir.is_dir():
+                    preserved_logs = ctx.run_dir / "predictions" / "logs" / "resume-smoke"
+                    shutil.copytree(logs_dir, preserved_logs, dirs_exist_ok=True)
+                    raise StageError("smoke", f"{exc}; smoke logs: {preserved_logs}", exc.exit_code) from exc
+            raise
+        label = "non-empty rows" if ctx.require_nonempty_predictions else "prediction rows"
+        print(f"Smoke test passed ({observed} {label}; {valid} non-empty)", flush=True)
 
 
 def stage_generate(ctx: Ctx) -> None:

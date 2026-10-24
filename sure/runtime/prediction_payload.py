@@ -69,8 +69,8 @@ def normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict[
             value = next((source[key] for source, key in candidates if key in source), None)
             if value is None and not any(key in source for source, key in candidates):
                 raise ValueError(f"{task_name} prediction must provide {field}")
-            if isinstance(value, (list, tuple)) and len(value) == 1:
-                value = value[0]
+            if isinstance(value, (list, tuple)) and len(value) <= 1:
+                value = value[0] if value else ""
             if value is None:
                 value = ""
             normalized_value = single_line_text(value)
