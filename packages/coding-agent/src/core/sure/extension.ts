@@ -1,5 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
-import { basename, isAbsolute, relative, resolve } from "node:path";
+import { randomUUID } from "node:crypto";
+import { existsSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import {
@@ -92,19 +93,42 @@ interface ActiveRun {
 	previousActiveTools: string[];
 	/** Set when an agent turn ended without sure_finish (excluding user aborts). */
 	finishMissing?: boolean;
-	/** Headless continuation prompts sent for this run. */
+	/** Automatic continuation prompts sent for this run. */
 	finishNudges?: number;
+	lastCheckpointProgress?: string;
+	repeatedStateReads?: number;
+	lastStateReadCheckpoint?: string;
+	pendingBashCalls?: Map<string, string>;
+	lastFailedBashCall?: string;
+	repeatedBashFailures?: number;
 	/** Messages from the latest agent_end, read once the run settles. */
 	lastAgentMessages?: AgentEndEvent["messages"];
 }
 
-/** Cap on automatic continuation prompts for headless (print/json) runs. */
+/** Cap on automatic continuation prompts for unfinished runs. */
 const MAX_FINISH_NUDGES = 3;
+const MAX_UNCHANGED_STATE_READS = 12;
+const MAX_IDENTICAL_BASH_FAILURES = 6;
 
-function buildFinishNudge(run: SureRunRecord): string {
+function unfinishedUnit(state: SureDisplayState | undefined): string | undefined {
+	const data = state?.checkpoint?.data;
+	return isStringRecord(data) &&
+		typeof data.currentUnit === "string" &&
+		Array.isArray(data.completedUnits) &&
+		!data.completedUnits.includes(data.currentUnit)
+		? data.currentUnit
+		: undefined;
+}
+
+function buildFinishNudge(run: SureRunRecord, state: SureDisplayState | undefined): string {
+	const unit = unfinishedUnit(state);
 	return [
 		`Sure run ${run.runId} is still active, but the last turn ended without calling ${FINISH_TOOL_NAME}.`,
-		`Continue the run now: complete the remaining work, then call ${FINISH_TOOL_NAME} with the final manifest.`,
+		`Resume from: ${state?.checkpoint?.resume_hint ?? "inspect the run directory for unfinished work"}.`,
+		"Do not repeat completed units. Actually use tools to produce missing artifacts; describing a command or claiming a file was written is not enough.",
+		unit
+			? `Unit "${unit}" is not complete. Produce its required artifact and advance the checkpoint before calling ${FINISH_TOOL_NAME}.`
+			: `Then call ${FINISH_TOOL_NAME} with the final manifest as a standalone tool call.`,
 		`If the run cannot proceed, call ${FINISH_TOOL_NAME} with status "failed" and summarize the blocker.`,
 	].join(" ");
 }
@@ -269,6 +293,17 @@ function possibleArtifactPaths(runManager: SureRunManager, run: SureRunRecord, p
 	const projectOrAbsolutePath = runManager.resolveRunPath(run, pathValue);
 	if (projectOrAbsolutePath) {
 		paths.push(projectOrAbsolutePath);
+	}
+	if (isAbsolute(pathValue) && run.outputDir) {
+		try {
+			const outputRoot = realpathSync(run.outputDir);
+			const artifact = realpathSync(pathValue);
+			if (isPathInside(outputRoot, artifact)) {
+				paths.push(artifact);
+			}
+		} catch {
+			return paths;
+		}
 	}
 	if (!isAbsolute(pathValue)) {
 		const runRelativePath = resolve(run.runDir, pathValue);
@@ -509,16 +544,13 @@ async function startRun(
 	});
 	applyStatePatch(pi, ctx, active, preStart.state_patch, "pre_start_state");
 	if (!preStart.ok) {
-		active.record = runManager.updateRun(
-			active.record,
-			{ status: "failed", finishedAt: new Date().toISOString(), lastRepair: preStart.repair ?? preStart.message },
-			"pre_start_repair",
-			preStart,
+		await finishSystemFailure(
+			pi,
+			ctx,
+			active,
+			setActiveRun,
+			preStart.repair ?? preStart.message ?? "Sure pre-start gate rejected the run.",
 		);
-		ctx.ui.notify(preStart.repair ?? preStart.message ?? "Sure pre-start gate rejected the run.", "error");
-		pi.appendEntry("sure.run", active.record);
-		pi.setActiveTools(active.previousActiveTools);
-		setActiveRun(undefined);
 		return;
 	}
 
@@ -530,44 +562,38 @@ async function startRun(
 		await pi.sendUserMessage(buildInvocationPrompt(skillPackage, active.record));
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		active.record = runManager.updateRun(
-			active.record,
-			{
-				status: "failed",
-				finishedAt: new Date().toISOString(),
-				lastRepair: `Sure run failed to start or continue: ${message}`,
-			},
-			"agent_error",
-			{ message },
-		);
-		const onError = await active.hooks.run("on_error", {
-			run: active.record,
-			skill: skillPackage.manifest,
-			cwd: ctx.cwd,
-			packageDir: skillPackage.packageDir,
-			runDir: active.record.runDir,
-			args,
-			event: { reason: "agent_error", message },
-		});
-		applyStatePatch(pi, ctx, active, onError.state_patch, "on_error_state");
-		ctx.ui.setStatus(STATUS_KEY, undefined);
-		pi.appendEntry("sure.run", active.record);
-		clearActiveRun(pi, active, setActiveRun);
-		throw error;
+		await finishSystemFailure(pi, ctx, active, setActiveRun, `Sure run failed to start or continue: ${message}`);
 	}
 }
 
-/** A run the agent may pick back up: same project, not stopped on purpose, checkpoint says so. */
-function isResumable(record: SureRunRecord, state: SureDisplayState | undefined, cwd: string): boolean {
-	if (record.cwd !== cwd) {
+/** Only an explicitly named cancelled run with a rejected finish may be recovered. */
+function isResumable(record: SureRunRecord, state: SureDisplayState | undefined, cwd: string, runId?: string): boolean {
+	if (record.cwd !== cwd || state?.checkpoint?.resumable !== true) {
 		return false;
 	}
-	// "cancelled" is a deliberate interrupt, and the other terminal statuses mean
-	// the skill itself decided the run was over.
-	if (record.status !== "running" && record.status !== "failed") {
+	if (record.status === "running" || record.status === "failed") {
+		return true;
+	}
+	if (record.status !== "cancelled" || runId !== record.runId) {
 		return false;
 	}
-	return state?.checkpoint?.resumable === true;
+	try {
+		return readFileSync(resolve(record.runDir, "events.jsonl"), "utf-8")
+			.split("\n")
+			.some((line) => {
+				if (!line) {
+					return false;
+				}
+				try {
+					const event: unknown = JSON.parse(line);
+					return isRecord(event) && event.type === "finish_repair";
+				} catch {
+					return false;
+				}
+			});
+	} catch {
+		return false;
+	}
 }
 
 async function resumeRun(
@@ -594,7 +620,7 @@ async function resumeRun(
 			continue;
 		}
 		const state = runManager.readState(record);
-		if (isResumable(record, state, ctx.cwd)) {
+		if (isResumable(record, state, ctx.cwd, runId)) {
 			resumed = { record, state };
 			break;
 		}
@@ -630,26 +656,41 @@ async function resumeRun(
 	// checkpoint to the first unit, which is the progress a resume is protecting.
 	active.record = runManager.updateRun(active.record, { status: "running", finishedAt: undefined }, "resumed");
 	pi.setActiveTools(activeToolNames(active));
-	setRunStatusText(ctx, active.record, resumed.state);
+	const unit = unfinishedUnit(resumed.state);
+	if (unit) {
+		applyStatePatch(
+			pi,
+			ctx,
+			active,
+			{
+				phase: { id: unit, label: unit, status: "running" },
+				message: `Resumed at unit "${unit}". Produce its required artifact and advance the checkpoint before calling ${FINISH_TOOL_NAME}.`,
+			},
+			"resume_state",
+		);
+	}
+	const onResume = await active.hooks.run("on_resume", {
+		run: active.record,
+		skill: skillPackage.manifest,
+		cwd: ctx.cwd,
+		packageDir: skillPackage.packageDir,
+		runDir: active.record.runDir,
+		args: active.record.args,
+	});
+	applyStatePatch(pi, ctx, active, onResume.state_patch, "on_resume_state");
+	if (!onResume.ok) {
+		const repair = onResume.repair ?? onResume.message ?? "The Sure resume hook rejected the run.";
+		await finishSystemFailure(pi, ctx, active, setActiveRun, repair);
+		return;
+	}
+	const resumedState = runManager.readState(active.record);
+	setRunStatusText(ctx, active.record, resumedState);
 	pi.appendEntry("sure.run", active.record);
 	try {
-		await pi.sendUserMessage(buildResumePrompt(skillPackage, active.record, resumed.state));
+		await pi.sendUserMessage(buildResumePrompt(skillPackage, active.record, resumedState));
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		active.record = runManager.updateRun(
-			active.record,
-			{
-				status: "failed",
-				finishedAt: new Date().toISOString(),
-				lastRepair: `Sure run failed to resume: ${message}`,
-			},
-			"agent_error",
-			{ message },
-		);
-		ctx.ui.setStatus(STATUS_KEY, undefined);
-		pi.appendEntry("sure.run", active.record);
-		clearActiveRun(pi, active, setActiveRun);
-		throw error;
+		await finishSystemFailure(pi, ctx, active, setActiveRun, `Sure run failed to resume: ${message}`);
 	}
 }
 
@@ -667,46 +708,76 @@ function clearActiveRun(
 	setActiveRun(undefined);
 }
 
-function hasTerminalFinishPending(active: ActiveRun, runManager: SureRunManager): boolean {
-	const state = runManager.readState(active.record);
-	const checkpoint = state?.checkpoint;
-	const data = checkpoint?.data;
-	if (
-		!checkpoint ||
-		checkpoint.resumable !== false ||
-		state?.phase?.status !== "running" ||
-		!isRecord(data) ||
-		typeof data.currentUnit !== "string" ||
-		!Array.isArray(data.completedUnits) ||
-		!data.completedUnits.includes(data.currentUnit)
-	) {
-		return false;
-	}
-	return true;
-}
-
-function reopenTerminalFinishCheckpoint(pi: ExtensionAPI, ctx: ExtensionContext, active: ActiveRun): void {
+async function finishSystemFailure(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	active: ActiveRun,
+	setActiveRun: (run: ActiveRun | undefined) => void,
+	reason: string,
+): Promise<void> {
 	const runManager = new SureRunManager(active.record.cwd);
-	const state = runManager.readState(active.record);
-	const checkpoint = state?.checkpoint;
-	if (!checkpoint) {
-		return;
-	}
+	const manifestPath = join(active.record.runDir, "system_failure_manifest.json");
+	const manifest: SureManifestEnvelope = {
+		schema_version: "sure.eval.manifest.v1",
+		run_id: active.record.runId,
+		skill_name: active.record.skillName,
+		status: "failed",
+		created_at: active.record.startedAt,
+		inputs: { command: active.record.command },
+		outputs: {},
+		validation: { gate: "system_failure", status: "failed", reason },
+	};
+	const temporaryPath = `${manifestPath}.${randomUUID()}.tmp`;
+	writeFileSync(temporaryPath, `${JSON.stringify(manifest, null, 2)}\n`, { encoding: "utf-8", flag: "wx" });
+	renameSync(temporaryPath, manifestPath);
+	active.record = runManager.updateRun(
+		active.record,
+		{
+			status: "failed",
+			finishedAt: new Date().toISOString(),
+			manifestPath,
+			summary: "Sure run stopped without an accepted sure_finish call.",
+			errorSummary: reason,
+			lastRepair: reason,
+			staleSince: undefined,
+		},
+		"finished",
+		{ source: "system_failure", reason, manifestPath },
+	);
+	const onError = await active.hooks.run("on_error", {
+		run: active.record,
+		skill: active.skillPackage.manifest,
+		cwd: ctx.cwd,
+		packageDir: active.skillPackage.packageDir,
+		runDir: active.record.runDir,
+		args: active.record.args,
+		event: { reason: "system_failure", message: reason },
+	});
+	applyStatePatch(pi, ctx, active, onError.state_patch, "on_error_state");
+	const previous = runManager.readState(active.record);
 	applyStatePatch(
 		pi,
 		ctx,
 		active,
 		{
-			phase: { ...(state?.phase ?? {}), status: "running" },
-			message: `The run completed its work and is waiting for ${FINISH_TOOL_NAME}.`,
-			checkpoint: {
-				...checkpoint,
-				resumable: true,
-				resume_hint: `The terminal unit is complete; call ${FINISH_TOOL_NAME} without rerunning the completed work.`,
-			},
+			phase: { id: "finish", label: "Sure system failure", status: "failed" },
+			message: reason,
+			artifacts: [
+				...(previous?.artifacts ?? []).filter((artifact) => artifact.type !== "system_failure_manifest"),
+				{
+					type: "system_failure_manifest",
+					path: manifestPath,
+					status: "ready",
+				},
+			],
+			...(previous?.checkpoint ? { checkpoint: { ...previous.checkpoint, resumable: false } } : {}),
 		},
-		"finish_pending_state",
+		"system_failure_state",
 	);
+	ctx.ui.notify(`Sure run ${active.record.runId} failed: ${reason}`, "error");
+	ctx.ui.setStatus(STATUS_KEY, undefined);
+	pi.appendEntry("sure.run", active.record);
+	clearActiveRun(pi, active, setActiveRun);
 }
 
 /**
@@ -1044,6 +1115,44 @@ export function createSureExtension(): ExtensionFactory {
 				return undefined;
 			}
 			const runManager = new SureRunManager(active.record.cwd);
+			const input: unknown = event.input;
+			if (event.toolName === "bash" && isStringRecord(input) && typeof input.command === "string") {
+				const checkpointData = runManager.readState(active.record)?.checkpoint?.data;
+				if (isStringRecord(checkpointData) && Array.isArray(checkpointData.completedUnits)) {
+					const signature = JSON.stringify({
+						command: input.command,
+						currentUnit: checkpointData.currentUnit,
+						completedUnits: checkpointData.completedUnits,
+					});
+					active.pendingBashCalls ??= new Map();
+					active.pendingBashCalls.set(event.toolCallId, signature);
+				}
+			}
+			const pathValue = isStringRecord(input) ? input.path : undefined;
+			const readPath = typeof pathValue === "string" ? pathValue : undefined;
+			const readsRunState =
+				event.toolName === "read" &&
+				readPath !== undefined &&
+				resolve(active.record.cwd, readPath) === join(active.record.runDir, "state.json");
+			const checkpoint = readsRunState ? runManager.readState(active.record)?.checkpoint : undefined;
+			if (checkpoint?.resumable && isStringRecord(checkpoint.data)) {
+				const progress = JSON.stringify({
+					currentUnit: checkpoint.data.currentUnit,
+					completedUnits: checkpoint.data.completedUnits,
+				});
+				active.repeatedStateReads =
+					active.lastStateReadCheckpoint === progress ? (active.repeatedStateReads ?? 0) + 1 : 1;
+				active.lastStateReadCheckpoint = progress;
+				if (active.repeatedStateReads >= MAX_UNCHANGED_STATE_READS) {
+					const reason = `Agent read the unchanged Sure state ${MAX_UNCHANGED_STATE_READS} times without advancing the checkpoint.`;
+					await finishSystemFailure(pi, ctx, active, setActiveRun, reason);
+					ctx.abort();
+					return { block: true, reason };
+				}
+			} else {
+				active.repeatedStateReads = 0;
+				active.lastStateReadCheckpoint = undefined;
+			}
 			active.record = runManager.updateRun(active.record, { staleSince: undefined }, "tool_call", {
 				toolName: event.toolName,
 				toolCallId: event.toolCallId,
@@ -1077,6 +1186,22 @@ export function createSureExtension(): ExtensionFactory {
 			}
 			if (!active) {
 				return undefined;
+			}
+			const bashSignature = active.pendingBashCalls?.get(event.toolCallId);
+			active.pendingBashCalls?.delete(event.toolCallId);
+			if (event.isError && bashSignature) {
+				active.repeatedBashFailures =
+					active.lastFailedBashCall === bashSignature ? (active.repeatedBashFailures ?? 0) + 1 : 1;
+				active.lastFailedBashCall = bashSignature;
+				if (active.repeatedBashFailures >= MAX_IDENTICAL_BASH_FAILURES) {
+					const reason = `The same bash command failed ${MAX_IDENTICAL_BASH_FAILURES} times without checkpoint progress.`;
+					await finishSystemFailure(pi, ctx, active, setActiveRun, reason);
+					ctx.abort();
+					return { content: toolText(reason), isError: true };
+				}
+			} else {
+				active.repeatedBashFailures = 0;
+				active.lastFailedBashCall = undefined;
 			}
 			const runManager = new SureRunManager(active.record.cwd);
 			active.record = runManager.updateRun(active.record, {}, "tool_result", {
@@ -1137,19 +1262,34 @@ export function createSureExtension(): ExtensionFactory {
 			const lastAssistant = [...messages].reverse().find((message) => message.role === "assistant");
 			// A provider that gave up leaves its reason only on the assistant message.
 			// Recording the reminder over it makes the run read as agent negligence.
-			const providerError =
-				lastAssistant !== undefined && "stopReason" in lastAssistant && lastAssistant.stopReason === "error"
-					? lastAssistant.errorMessage
-					: undefined;
+			const providerFailed =
+				lastAssistant !== undefined && "stopReason" in lastAssistant && lastAssistant.stopReason === "error";
+			const providerError = providerFailed
+				? (lastAssistant?.errorMessage ?? "Provider ended the run with an error.")
+				: undefined;
 			// Without the state snapshot the event cannot tell "every unit done, only
 			// sure_finish missing" from "stalled on the third unit" after the fact.
 			const stalledState = runManager.readState(active.record);
+			const unit = unfinishedUnit(stalledState);
+			const checkpointData = stalledState?.checkpoint?.data;
+			if (isStringRecord(checkpointData) && Array.isArray(checkpointData.completedUnits)) {
+				const progress = JSON.stringify({
+					currentUnit: checkpointData.currentUnit,
+					completedUnits: checkpointData.completedUnits,
+				});
+				if (active.lastCheckpointProgress !== progress) {
+					active.lastCheckpointProgress = progress;
+					active.finishNudges = 0;
+				}
+			}
 			active.record = runManager.updateRun(
 				active.record,
 				{
 					lastRepair:
 						providerError ??
-						`The Sure run is still active. Call ${FINISH_TOOL_NAME} after producing the required manifest.`,
+						(unit
+							? `The Sure run stopped at unit "${unit}". Produce its required artifact and advance the checkpoint before calling ${FINISH_TOOL_NAME}.`
+							: `The Sure run is still active. Call ${FINISH_TOOL_NAME} after producing the required manifest.`),
 					// "running" on its own is a lie once the agent has stopped. Stamp the
 					// first stall so a reader can age the record without a live session.
 					staleSince: active.record.staleSince ?? new Date().toISOString(),
@@ -1163,16 +1303,13 @@ export function createSureExtension(): ExtensionFactory {
 					checkpoint: stalledState?.checkpoint,
 				},
 			);
-			const headless = ctx.mode === "print" || ctx.mode === "json";
-			// Headless gets a continuation prompt below. An interactive operator gets
-			// only this line, and until it named the command there was nothing to act
-			// on: one run sat at "running" for 58 hours with every unit already done.
-			ctx.ui.notify(
-				headless
-					? `Sure run ${active.record.runId} is still waiting for ${FINISH_TOOL_NAME}.`
-					: `Sure run ${active.record.runId} is still waiting for ${FINISH_TOOL_NAME}. Run /sure_resume to continue it.`,
-				"warning",
-			);
+			const willNudge = !providerFailed && (active.finishNudges ?? 0) < MAX_FINISH_NUDGES;
+			const warning = unit
+				? `Sure run ${active.record.runId} stopped at unit "${unit}".`
+				: `Sure run ${active.record.runId} is still waiting for ${FINISH_TOOL_NAME}.`;
+			if (willNudge) {
+				ctx.ui.notify(`${warning} continuing automatically.`, "warning");
+			}
 			const aborted =
 				lastAssistant !== undefined && "stopReason" in lastAssistant && lastAssistant.stopReason === "aborted";
 			if (aborted) {
@@ -1180,10 +1317,28 @@ export function createSureExtension(): ExtensionFactory {
 				return;
 			}
 			active.finishMissing = true;
-			if (headless && (active.finishNudges ?? 0) < MAX_FINISH_NUDGES) {
+			if (willNudge) {
 				active.finishNudges = (active.finishNudges ?? 0) + 1;
-				await pi.sendUserMessage(buildFinishNudge(active.record));
+				try {
+					await pi.sendUserMessage(buildFinishNudge(active.record, stalledState));
+				} catch (error) {
+					await finishSystemFailure(
+						pi,
+						ctx,
+						active,
+						setActiveRun,
+						`Could not continue the Sure run: ${error instanceof Error ? error.message : String(error)}`,
+					);
+				}
+				return;
 			}
+			await finishSystemFailure(
+				pi,
+				ctx,
+				active,
+				setActiveRun,
+				providerError ?? `The agent did not call ${FINISH_TOOL_NAME} after ${MAX_FINISH_NUDGES} continuations.`,
+			);
 		});
 
 		pi.on("session_shutdown", async (_event, ctx) => {
@@ -1191,18 +1346,19 @@ export function createSureExtension(): ExtensionFactory {
 			if (!active) {
 				return;
 			}
+			if (active.finishMissing) {
+				await finishSystemFailure(
+					pi,
+					ctx,
+					active,
+					setActiveRun,
+					active.record.lastRepair ?? "Sure run stopped without an accepted sure_finish call.",
+				);
+				return;
+			}
 			const runManager = new SureRunManager(active.record.cwd);
-			// A run abandoned by the agent (turn ended, no sure_finish) failed;
-			// "cancelled" is reserved for runs interrupted mid-work. If all skill
-			// units already completed, keep the terminal checkpoint resumable so the
-			// next session can call sure_finish without rerunning the work.
-			active.record = runManager.setStatus(
-				active.record,
-				active.finishMissing ? "failed" : "cancelled",
-				"session_shutdown",
-			);
+			active.record = runManager.setStatus(active.record, "cancelled", "session_shutdown");
 			pi.appendEntry("sure.run", active.record);
-			const finishPending = active.finishMissing && hasTerminalFinishPending(active, runManager);
 			const onError = await active.hooks.run("on_error", {
 				run: active.record,
 				skill: active.skillPackage.manifest,
@@ -1213,9 +1369,6 @@ export function createSureExtension(): ExtensionFactory {
 				event: { reason: "session_shutdown" },
 			});
 			applyStatePatch(pi, ctx, active, onError.state_patch, "on_error_state");
-			if (finishPending) {
-				reopenTerminalFinishCheckpoint(pi, ctx, active);
-			}
 			ctx.ui.setStatus(STATUS_KEY, undefined);
 			clearActiveRun(pi, active, setActiveRun);
 		});

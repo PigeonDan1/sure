@@ -1,4 +1,14 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai/compat";
 import { Type } from "typebox";
@@ -271,7 +281,7 @@ describe("Sure extension", () => {
 		}
 	});
 
-	it("starts a skill run from a slash command and activates sure_finish only for that run", async () => {
+	it("starts a skill run and closes it when the agent does not finish", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
 		setupSkillPackage(harness.tempDir);
@@ -285,9 +295,14 @@ describe("Sure extension", () => {
 
 		expect(getUserTexts(harness)[0]).toContain("<sure_invocation");
 		expect(getUserTexts(harness)[0]).toContain("graph neural networks");
-		expect(harness.session.getActiveToolNames()).toContain("sure_finish");
-		expect(harness.session.getActiveToolNames()).toContain("sure_update_state");
+		expect(harness.session.getActiveToolNames()).not.toContain("sure_finish");
+		expect(harness.session.getActiveToolNames()).not.toContain("sure_update_state");
 		expect(existsSync(join(harness.tempDir, ".sure", "runs"))).toBe(true);
+		expect(
+			existsSync(
+				join(harness.tempDir, ".sure", "runs", getOnlyRunId(harness.tempDir), "system_failure_manifest.json"),
+			),
+		).toBe(true);
 	});
 
 	it("starts the real /sure_onboard repository skill and applies MODEL_INPUT pre-start state", async () => {
@@ -312,9 +327,9 @@ describe("Sure extension", () => {
 		expect(getUserTexts(harness)[0]).toContain("<sure_invocation");
 		expect(getUserTexts(harness)[0]).toContain('skill="sure_onboard" command="/sure_onboard"');
 		expect(getUserTexts(harness)[0]).toContain("# /sure_onboard");
-		expect(harness.session.getActiveToolNames()).toContain("sure_finish");
+		expect(harness.session.getActiveToolNames()).not.toContain("sure_finish");
 		expect(readRunState(harness.tempDir, runId)).toMatchObject({
-			phase: { id: "load_model_input", status: "running" },
+			phase: { id: "finish", status: "failed" },
 			checkpoint: {
 				id: "main_flow",
 				data: {
@@ -349,6 +364,10 @@ describe("Sure extension", () => {
 		expect(run.command).toBe("sure_eval");
 		expect(run.status).toBe("failed");
 		expect(run.lastRepair).toContain("exactly one of pipeline_id");
+		expect(JSON.parse(readFileSync(run.manifestPath, "utf-8"))).toMatchObject({
+			status: "failed",
+			validation: { gate: "system_failure", status: "failed" },
+		});
 		expect(notifications.some((entry) => entry.type === "error" && entry.message.includes("exactly one of"))).toBe(
 			true,
 		);
@@ -433,12 +452,11 @@ describe("Sure extension", () => {
 		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
 
 		const runId = getOnlyRunId(harness.tempDir);
-		expect(readRunState(harness.tempDir, runId)).toMatchObject({
-			phase: { id: "scan", label: "Scanning candidates", status: "running", progress: 0.4 },
-			message: "Collected 12 candidates.",
-			counters: { candidates: 12, target: 50 },
-			next_actions: ["Continue metadata collection"],
-		});
+		expect(
+			readRunEvents(harness.tempDir, runId).some((event) =>
+				JSON.stringify(event.data).includes("Collected 12 candidates."),
+			),
+		).toBe(true);
 		expect(
 			harness.sessionManager
 				.getEntries()
@@ -467,7 +485,11 @@ describe("Sure extension", () => {
 		const runId = getOnlyRunId(harness.tempDir);
 		const toolResult = harness.session.messages.find((message) => message.role === "toolResult");
 		expect(toolResult && "isError" in toolResult ? toolResult.isError : false).toBe(true);
-		expect(existsSync(join(harness.tempDir, ".sure", "runs", runId, "state.json"))).toBe(false);
+		expect(
+			readRunEvents(harness.tempDir, runId).some((event) =>
+				JSON.stringify(event.data).includes('"candidates":"twelve"'),
+			),
+		).toBe(false);
 	});
 
 	it("rejects checkpoint updates from sure_update_state", async () => {
@@ -498,7 +520,7 @@ describe("Sure extension", () => {
 		expect(toolResult && "content" in toolResult ? JSON.stringify(toolResult.content) : "").toContain(
 			"cannot update checkpoints",
 		);
-		expect(existsSync(join(harness.tempDir, ".sure", "runs", runId, "state.json"))).toBe(false);
+		expect(readRunState(harness.tempDir, runId)).toMatchObject({ phase: { status: "failed" } });
 	});
 
 	it("rejects terminal progress updates from sure_update_state during checkpoint-controlled runs", async () => {
@@ -535,7 +557,7 @@ describe("Sure extension", () => {
 			"cannot set terminal phase status",
 		);
 		expect(readRunState(harness.tempDir, runId)).toMatchObject({
-			phase: { id: "load_model_input", status: "running" },
+			phase: { id: "finish", status: "failed" },
 			checkpoint: {
 				id: "main_flow",
 				data: {
@@ -585,10 +607,9 @@ describe("Sure extension", () => {
 		const runId = getOnlyRunId(harness.tempDir);
 		const toolResult = harness.session.messages.find((message) => message.role === "toolResult");
 		expect(toolResult && "isError" in toolResult ? toolResult.isError : false).toBe(false);
-		expect(readRunState(harness.tempDir, runId)).toMatchObject({
-			message: "Output copied.",
-			artifacts: [{ type: "output_dir", path: outputDir, status: "ready" }],
-		});
+		expect(
+			readRunEvents(harness.tempDir, runId).some((event) => JSON.stringify(event.data).includes("Output copied.")),
+		).toBe(true);
 	});
 
 	it("persists display state patches returned by hooks", async () => {
@@ -618,13 +639,13 @@ describe("Sure extension", () => {
 		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
 
 		const runId = getOnlyRunId(harness.tempDir);
+		expect(
+			readRunEvents(harness.tempDir, runId).some((event) =>
+				JSON.stringify(event.data).includes("Evidence below target."),
+			),
+		).toBe(true);
 		expect(readRunState(harness.tempDir, runId)).toMatchObject({
-			phase: { id: "validate", label: "Validating output", status: "blocked" },
-			counters: { collected: 3, target: 10 },
-			diagnostics: [
-				{ severity: "warning", message: "Evidence below target.", repair: "Collect additional evidence." },
-			],
-			checkpoint: { id: "hook_gate", label: "Hook-owned checkpoint", data: { currentUnit: "validate" } },
+			checkpoint: { id: "hook_gate", resumable: false, data: { currentUnit: "validate" } },
 		});
 	});
 
@@ -669,7 +690,9 @@ describe("Sure extension", () => {
 		expect(toolResult && "content" in toolResult ? JSON.stringify(toolResult.content) : "").toContain(
 			"Create the final manifest",
 		);
-		expect(harness.session.getActiveToolNames()).toContain("sure_finish");
+		expect(
+			readRunEvents(harness.tempDir, getOnlyRunId(harness.tempDir)).some((event) => event.type === "finish_repair"),
+		).toBe(true);
 	});
 
 	it("finishes a run after manifest validation and restores previous active tools", async () => {
@@ -797,7 +820,7 @@ describe("Sure extension", () => {
 		expect(run.lastRepair).toContain("sure_finish");
 	});
 
-	it("records the provider error that ended the turn instead of the finish reminder", async () => {
+	it("finishes with a system failure manifest when the provider ends the turn", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
 		setupSkillPackage(harness.tempDir);
@@ -814,7 +837,14 @@ describe("Sure extension", () => {
 
 		const runId = getOnlyRunId(harness.tempDir);
 		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
+		expect(run.status).toBe("failed");
 		expect(run.lastRepair).toContain("unsupported tool schema");
+		expect(run.manifestPath).toContain("system_failure_manifest.json");
+		expect(JSON.parse(readFileSync(run.manifestPath, "utf-8"))).toMatchObject({
+			status: "failed",
+			validation: { gate: "system_failure", status: "failed" },
+		});
+		expect(readRunState(harness.tempDir, runId)).toMatchObject({ phase: { id: "finish", status: "failed" } });
 	});
 
 	it("leaves the run record alone when the failed turn will be retried", async () => {
@@ -824,7 +854,17 @@ describe("Sure extension", () => {
 
 		harness.setResponses([
 			fauxAssistantMessage("", { stopReason: "error", errorMessage: "503 service unavailable" }),
-			fauxAssistantMessage("back after the retry"),
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				writeValidManifest(harness.tempDir, runId);
+				return fauxAssistantMessage(
+					fauxToolCall("sure_finish", {
+						status: "success",
+						manifest_path: `.sure/runs/${runId}/manifest.json`,
+						summary: "done after retry",
+					}),
+				);
+			},
 		]);
 
 		await harness.session.prompt("/sure_feed topic");
@@ -833,10 +873,10 @@ describe("Sure extension", () => {
 		const runId = getOnlyRunId(harness.tempDir);
 		const events = readRunEvents(harness.tempDir, runId);
 
-		expect(events.filter((event) => event.type === "finish_missing").length).toBe(1);
+		expect(events.filter((event) => event.type === "finish_missing")).toHaveLength(0);
 	});
 
-	it("points an interactive operator at /sure_resume when a turn ends without sure_finish", async () => {
+	it("automatically continues an interactive run from its checkpoint instead of requiring /sure_resume", async () => {
 		const notifications: Array<{ message: string; type: string | undefined }> = [];
 		const harness = await createSureHarness({
 			uiContext: createNotifyCapturingUiContext((message, type) => notifications.push({ message, type })),
@@ -844,16 +884,114 @@ describe("Sure extension", () => {
 		cleanups.push(harness.cleanup);
 		setupSkillPackage(harness.tempDir);
 
-		harness.setResponses([fauxAssistantMessage("stopping short of the manifest")]);
+		harness.setResponses([
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				writeJson(join(harness.tempDir, ".sure", "runs", runId, "state.json"), {
+					checkpoint: { resumable: true, resume_hint: 'Start at unit "run_report".' },
+				});
+				return fauxAssistantMessage("I will write the report next");
+			},
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				writeValidManifest(harness.tempDir, runId);
+				return fauxAssistantMessage(
+					fauxToolCall("sure_finish", {
+						status: "success",
+						manifest_path: `.sure/runs/${runId}/manifest.json`,
+						summary: "done",
+					}),
+				);
+			},
+		]);
 		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 
+		const runId = getOnlyRunId(harness.tempDir);
+		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
+		expect(run.status).toBe("success");
+		expect(getUserTexts(harness).some((text) => text.includes('Start at unit "run_report".'))).toBe(true);
+		expect(getUserTexts(harness).some((text) => text.includes("Do not repeat completed units"))).toBe(true);
 		const warning = notifications.find((entry) => entry.message.includes("sure_finish"));
 		expect(warning?.type).toBe("warning");
-		expect(warning?.message).toContain("/sure_resume");
+		expect(warning?.message).toContain("continuing automatically");
 	});
 
-	it("stamps a still-running record with the moment the agent stopped", async () => {
+	it("caps interactive continuation and records a system failure", async () => {
+		const notifications: Array<{ message: string; type: string | undefined }> = [];
+		const harness = await createSureHarness({
+			uiContext: createNotifyCapturingUiContext((message, type) => notifications.push({ message, type })),
+		});
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+		harness.setResponses([
+			fauxAssistantMessage("turn 1"),
+			fauxAssistantMessage("turn 2"),
+			fauxAssistantMessage("turn 3"),
+			fauxAssistantMessage("turn 4"),
+			fauxAssistantMessage("turn 5"),
+		]);
+
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+
+		const runId = getOnlyRunId(harness.tempDir);
+		expect(getUserTexts(harness)).toHaveLength(4);
+		expect(harness.getPendingResponseCount()).toBe(1);
+		expect(notifications.at(-1)?.message).toContain(`Sure run ${runId} failed`);
+		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
+		expect(run.status).toBe("failed");
+		expect(JSON.parse(readFileSync(run.manifestPath, "utf-8"))).toMatchObject({
+			status: "failed",
+			validation: { gate: "system_failure", status: "failed" },
+		});
+	});
+
+	it("resets the continuation budget when the checkpoint advances", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+		harness.setResponses([
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				writeJson(join(harness.tempDir, ".sure", "runs", runId, "state.json"), {
+					checkpoint: { resumable: true, data: { currentUnit: "first", completedUnits: [] } },
+				});
+				return fauxAssistantMessage("first unit");
+			},
+			fauxAssistantMessage("first unit still running"),
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				writeJson(join(harness.tempDir, ".sure", "runs", runId, "state.json"), {
+					checkpoint: { resumable: true, data: { currentUnit: "second", completedUnits: ["first"] } },
+				});
+				return fauxAssistantMessage("second unit");
+			},
+			fauxAssistantMessage("second unit still running"),
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				writeValidManifest(harness.tempDir, runId);
+				return fauxAssistantMessage(
+					fauxToolCall("sure_finish", {
+						status: "success",
+						manifest_path: `.sure/runs/${runId}/manifest.json`,
+						summary: "done after progress",
+					}),
+				);
+			},
+		]);
+
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
+		expect(run.status).toBe("success");
+		expect(readRunEvents(harness.tempDir, runId).filter((event) => event.type === "finish_missing")).toHaveLength(4);
+		expect(existsSync(join(run.runDir, "system_failure_manifest.json"))).toBe(false);
+	});
+
+	it("does not leave a stale running record after the agent stopped", async () => {
 		const harness = await createSureHarness({ mode: "print" });
 		cleanups.push(harness.cleanup);
 		setupSkillPackage(harness.tempDir);
@@ -871,8 +1009,9 @@ describe("Sure extension", () => {
 
 		const runId = getOnlyRunId(harness.tempDir);
 		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
-		expect(run.status).toBe("running");
-		expect(typeof run.staleSince).toBe("string");
+		expect(run.status).toBe("failed");
+		expect(run.staleSince).toBeUndefined();
+		expect(typeof run.finishedAt).toBe("string");
 	});
 
 	it("records where the run stalled on the finish_missing event", async () => {
@@ -915,14 +1054,76 @@ describe("Sure extension", () => {
 		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 
+		const runId = getOnlyRunId(harness.tempDir);
+		writeJson(join(harness.tempDir, ".sure", "runs", runId, "state.json"), {
+			checkpoint: { id: "main_flow", resumable: true },
+		});
 		await emitSessionShutdownEvent(harness.session.extensionRunner, { type: "session_shutdown", reason: "quit" });
 
-		const runId = getOnlyRunId(harness.tempDir);
+		await harness.session.prompt(`/sure_resume ${runId}`);
+		await harness.session.agent.waitForIdle();
+
 		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
 		expect(run.status).toBe("cancelled");
+		expect(readRunEvents(harness.tempDir, runId).some((event) => event.type === "resumed")).toBe(false);
 	});
 
-	it("resumes an abandoned run in place instead of starting a new one", async () => {
+	it("resumes an explicitly named cancelled run with a rejected finish without rerunning completed work", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+
+		harness.setResponses([
+			fauxAssistantMessage(
+				fauxToolCall("sure_finish", {
+					status: "success",
+					manifest_path: ".sure/runs/missing/manifest.json",
+					summary: "not yet",
+				}),
+			),
+			fauxAssistantMessage("will finish later"),
+			fauxAssistantMessage("will finish later"),
+			fauxAssistantMessage("will finish later"),
+			fauxAssistantMessage("will finish later"),
+		]);
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const runDir = join(harness.tempDir, ".sure", "runs", runId);
+		expect(readRunEvents(harness.tempDir, runId).some((event) => event.type === "finish_repair")).toBe(true);
+		writeJson(join(runDir, "state.json"), {
+			checkpoint: { id: "main_flow", resumable: true, resume_hint: "Continue at run_report." },
+		});
+		await emitSessionShutdownEvent(harness.session.extensionRunner, { type: "session_shutdown", reason: "quit" });
+		const previous = JSON.parse(readFileSync(join(runDir, "run.json"), "utf-8"));
+		writeJson(join(runDir, "run.json"), { ...previous, status: "cancelled" });
+
+		await harness.session.prompt("/sure_resume");
+		expect(JSON.parse(readFileSync(join(runDir, "run.json"), "utf-8")).status).toBe("cancelled");
+
+		harness.setResponses([
+			() => {
+				writeValidManifest(harness.tempDir, runId);
+				return fauxAssistantMessage(
+					fauxToolCall("sure_finish", {
+						status: "success",
+						manifest_path: `.sure/runs/${runId}/manifest.json`,
+						summary: "done",
+					}),
+				);
+			},
+		]);
+		await harness.session.prompt(`/sure_resume ${runId}`);
+		await harness.session.agent.waitForIdle();
+
+		const run = JSON.parse(readFileSync(join(runDir, "run.json"), "utf-8"));
+		expect(run.status).toBe("success");
+		expect(getUserTexts(harness).some((text) => text.includes("Continue at run_report."))).toBe(true);
+		expect(readdirSync(join(harness.tempDir, ".sure", "runs"))).toHaveLength(1);
+	});
+
+	it("resumes a legacy abandoned run in place without starting another run", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
 		setupSkillPackage(harness.tempDir);
@@ -943,58 +1144,46 @@ describe("Sure extension", () => {
 		await harness.session.agent.waitForIdle();
 
 		const run = JSON.parse(readFileSync(join(runDir, "run.json"), "utf-8"));
-		expect(run.status).toBe("running");
+		expect(run.status).toBe("failed");
 		expect(readdirSync(join(harness.tempDir, ".sure", "runs")).length).toBe(1);
-		expect(getUserTexts(harness).some((text) => text.includes("Start at unit two."))).toBe(true);
+		expect(readRunEvents(harness.tempDir, runId).some((event) => event.type === "resumed")).toBe(true);
 	});
 
-	it("keeps a completed run resumable when only sure_finish is missing", async () => {
+	it("does not reopen a system-failed run on shutdown", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
 		setupSkillPackage(harness.tempDir);
 
-		harness.setResponses([fauxAssistantMessage("all work is complete")]);
+		harness.setResponses([
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				writeJson(join(harness.tempDir, ".sure", "runs", runId, "state.json"), {
+					phase: { id: "run_report", label: "Run report", status: "running" },
+					checkpoint: {
+						id: "main_flow",
+						resumable: false,
+						resume_hint: "State machine reached the terminal unit.",
+						data: { currentUnit: "run_report", completedUnits: ["run_report"] },
+					},
+				});
+				return fauxAssistantMessage("all work is complete");
+			},
+		]);
 		await harness.session.prompt("/sure_feed topic");
 		await harness.session.agent.waitForIdle();
 
 		const runId = getOnlyRunId(harness.tempDir);
 		const runDir = join(harness.tempDir, ".sure", "runs", runId);
-		writeJson(join(runDir, "state.json"), {
-			phase: { id: "run_report", label: "Run report", status: "running" },
-			checkpoint: {
-				id: "main_flow",
-				resumable: false,
-				resume_hint: "State machine reached the terminal unit.",
-				data: { currentUnit: "run_report", completedUnits: ["run_report"] },
-			},
-		});
 		await emitSessionShutdownEvent(harness.session.extensionRunner, { type: "session_shutdown", reason: "quit" });
 
 		const state = readRunState(harness.tempDir, runId) as {
 			checkpoint?: { resumable?: boolean; resume_hint?: string };
 			phase?: { status?: string };
 		};
-		expect(state.checkpoint?.resumable).toBe(true);
-		expect(state.checkpoint?.resume_hint).toContain("sure_finish");
-		expect(state.phase?.status).toBe("running");
-
-		harness.setResponses([
-			() => {
-				writeValidManifest(harness.tempDir, runId);
-				return fauxAssistantMessage(
-					fauxToolCall("sure_finish", {
-						status: "success",
-						manifest_path: `.sure/runs/${runId}/manifest.json`,
-						summary: "done",
-					}),
-				);
-			},
-		]);
-		await harness.session.prompt(`/sure_resume ${runId}`);
-		await harness.session.agent.waitForIdle();
-
+		expect(state.checkpoint?.resumable).toBe(false);
+		expect(state.phase?.status).toBe("failed");
 		const run = JSON.parse(readFileSync(join(runDir, "run.json"), "utf-8"));
-		expect(run.status).toBe("success");
+		expect(run.status).toBe("failed");
 		expect(readdirSync(join(harness.tempDir, ".sure", "runs")).length).toBe(1);
 	});
 
@@ -1277,7 +1466,9 @@ describe("Sure extension", () => {
 		expect(toolResult && "content" in toolResult ? JSON.stringify(toolResult.content) : "").toContain(
 			"status must match sure_finish status",
 		);
-		expect(harness.session.getActiveToolNames()).toContain("sure_finish");
+		expect(
+			readRunEvents(harness.tempDir, getOnlyRunId(harness.tempDir)).some((event) => event.type === "finish_repair"),
+		).toBe(true);
 	});
 
 	it("rejects sure_finish when required artifacts are missing", async () => {
@@ -1344,6 +1535,129 @@ describe("Sure extension", () => {
 		);
 	});
 
+	it("accepts a manifest artifact inside the run output_dir through a symlink alias", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+		writeSitePolicy(harness.tempDir);
+		const outputDir = mkdtempSync(join(tmpdir(), "sure-artifact-output-"));
+		cleanups.push(() => rmSync(outputDir, { recursive: true, force: true }));
+		const outputAlias = join(harness.tempDir, "output-alias");
+		symlinkSync(outputDir, outputAlias, "dir");
+		const predictionPath = join(outputDir, "prediction.txt");
+		writeFileSync(predictionPath, "prediction\n");
+
+		harness.setResponses([
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				writeValidManifest(harness.tempDir, runId, {
+					artifacts: [{ type: "predictions", path: predictionPath }],
+				});
+				return fauxAssistantMessage(
+					fauxToolCall("sure_finish", {
+						status: "success",
+						manifest_path: `.sure/runs/${runId}/manifest.json`,
+						summary: "done",
+					}),
+				);
+			},
+		]);
+
+		await harness.session.prompt(`/sure_feed topic output_dir=${outputAlias}`);
+		await harness.session.agent.waitForIdle();
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
+		expect(run.outputDir).toBe(outputAlias);
+		expect(run.status).toBe("success");
+	});
+
+	it("rejects an existing external artifact outside the run output_dir", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+		writeSitePolicy(harness.tempDir);
+		const outputDir = mkdtempSync(join(tmpdir(), "sure-artifact-output-"));
+		const outsideDir = mkdtempSync(join(tmpdir(), "sure-artifact-outside-"));
+		cleanups.push(() => rmSync(outputDir, { recursive: true, force: true }));
+		cleanups.push(() => rmSync(outsideDir, { recursive: true, force: true }));
+		const outsidePath = join(outsideDir, "prediction.txt");
+		writeFileSync(outsidePath, "prediction\n");
+
+		harness.setResponses([
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				writeValidManifest(harness.tempDir, runId, {
+					artifacts: [{ type: "predictions", path: outsidePath }],
+				});
+				return fauxAssistantMessage(
+					fauxToolCall("sure_finish", {
+						status: "success",
+						manifest_path: `.sure/runs/${runId}/manifest.json`,
+						summary: "done",
+					}),
+				);
+			},
+			fauxAssistantMessage("waiting for repair"),
+		]);
+
+		await harness.session.prompt(`/sure_feed topic output_dir=${outputDir}`);
+		await harness.session.agent.waitForIdle();
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
+		expect(run.status).toBe("failed");
+		expect(
+			readRunEvents(harness.tempDir, runId).some(
+				(event) => event.type === "finish_repair" && JSON.stringify(event.data).includes(outsidePath),
+			),
+		).toBe(true);
+	});
+
+	it("rejects an output_dir artifact symlink that escapes its directory", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+		writeSitePolicy(harness.tempDir);
+		const outputDir = mkdtempSync(join(tmpdir(), "sure-artifact-output-"));
+		const outsideDir = mkdtempSync(join(tmpdir(), "sure-artifact-outside-"));
+		cleanups.push(() => rmSync(outputDir, { recursive: true, force: true }));
+		cleanups.push(() => rmSync(outsideDir, { recursive: true, force: true }));
+		const outsidePath = join(outsideDir, "prediction.txt");
+		writeFileSync(outsidePath, "prediction\n");
+		const symlinkPath = join(outputDir, "prediction.txt");
+		symlinkSync(outsidePath, symlinkPath);
+
+		harness.setResponses([
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				writeValidManifest(harness.tempDir, runId, {
+					artifacts: [{ type: "predictions", path: symlinkPath }],
+				});
+				return fauxAssistantMessage(
+					fauxToolCall("sure_finish", {
+						status: "success",
+						manifest_path: `.sure/runs/${runId}/manifest.json`,
+						summary: "done",
+					}),
+				);
+			},
+			fauxAssistantMessage("waiting for repair"),
+		]);
+
+		await harness.session.prompt(`/sure_feed topic output_dir=${outputDir}`);
+		await harness.session.agent.waitForIdle();
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
+		expect(run.status).toBe("failed");
+		expect(
+			readRunEvents(harness.tempDir, runId).some(
+				(event) => event.type === "finish_repair" && JSON.stringify(event.data).includes(symlinkPath),
+			),
+		).toBe(true);
+	});
+
 	it("rejects final manifest artifacts without paths", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);
@@ -1404,7 +1718,9 @@ describe("Sure extension", () => {
 		expect(toolResult && "content" in toolResult ? JSON.stringify(toolResult.content) : "").toContain(
 			"add required evidence",
 		);
-		expect(harness.session.getActiveToolNames()).toContain("sure_finish");
+		expect(
+			readRunEvents(harness.tempDir, getOnlyRunId(harness.tempDir)).some((event) => event.type === "finish_repair"),
+		).toBe(true);
 	});
 
 	it("skips duplicate and unknown skill commands during discovery", async () => {

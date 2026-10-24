@@ -120,6 +120,7 @@ Our pi is pi 0.85.1 plus the patches below. This list is the record; keep it cur
 - Azure default model `gpt-5.5`.
 - A `ModelRegistry.login()` facade over the SURE auth adapter `src/core/sure/auth.ts`.
 - SURE run settlement on `agent_settled` instead of `agent_end` / `willRetry`.
+- Bounded automatic continuation and a distinct system-failure manifest when an agent or provider stops without an accepted `sure_finish`; skill success gates remain unchanged.
 - `callContextHandlerAbortable` in `src/core/extensions/runner.ts`, so `context` event handlers abort with `ctx.signal` instead of running to completion after a cancelled run.
 
 `packages/ai`:
