@@ -432,6 +432,17 @@ def io_contract_for(task_type: str) -> dict:
             "nonempty_fields": ["embedding"],
             "json_serializable": True,
         }
+    if task_type == "s2tt":
+        return {
+            "input_type": "audio_path",
+            "output_type": "json",
+            "input": {"audio_path": "string"},
+            "output": {"text": "string"},
+            "primary_field": "text",
+            "required_fields": ["text"],
+            "nonempty_fields": ["text"],
+            "json_serializable": True,
+        }
     return {
         "input_type": "audio_path",
         "output_type": "json",
@@ -439,7 +450,8 @@ def io_contract_for(task_type: str) -> dict:
         "output": {"text": "string"},
         "primary_field": "text",
         "required_fields": ["text"],
-        "nonempty_fields": ["text"],
+        "nonempty_fields": [],
+        "allow_empty_prediction": True,
         "json_serializable": True,
     }
 

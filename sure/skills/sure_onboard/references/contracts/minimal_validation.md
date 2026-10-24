@@ -118,7 +118,7 @@ def test_contract():
 **通过标准**:
 - 输出类型正确
 - 必要字段存在（`io_contract.required_fields` 中列出的字段）
-- 必须非空的字段非空（`io_contract.nonempty_fields` 中列出的字段）
+- 必须非空的字段非空（`io_contract.nonempty_fields` 中列出的字段）；若 `io_contract.allow_empty_prediction=true`，主输出字段可以为空
 - 主字段有效（`io_contract.primary_field`）
 - 如要求，输出可 JSON 序列化（`io_contract.json_serializable`）
 

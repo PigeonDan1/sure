@@ -240,6 +240,12 @@ pip install sherpa-onnx
         self.assertTrue(model_input["entrypoints"]["load_test"].startswith("policy_resolved:"))
         self.assertTrue(model_input["entrypoints"]["infer_test"].startswith("policy_resolved:"))
         self.assertNotIn("python -m venv", model_input["entrypoints"]["infer_test"])
+        self.assertTrue(model_input["io_contract"]["allow_empty_prediction"])
+        self.assertNotIn("text", model_input["io_contract"]["nonempty_fields"])
+        self.assertEqual(
+            check_model_input_module.validate_model_input(model_input, model_input["model_id"], "item"),
+            [],
+        )
         covered = {item.get("model_input_field") for item in evidence}
         self.assertIn("runtime_strategy", covered)
         self.assertIn("entrypoints.import_test", covered)
@@ -258,6 +264,7 @@ pip install sherpa-onnx
         self.assertEqual(fixture["fixture_index"], "fixtures/tasks/asr/README.md")
         self.assertIn("fixtures/tasks/asr/qwen3_asr_smoke/asr_en/", fixture["audio"])
         self.assertEqual(io_contract["primary_field"], "text")
+        self.assertTrue(io_contract["allow_empty_prediction"])
         self.assertIn("fixture", {item.get("model_input_field") for item in evidence})
 
     def test_missing_official_fixture_is_a_resumable_resolution_request(self) -> None:

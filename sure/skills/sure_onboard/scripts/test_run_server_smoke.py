@@ -169,9 +169,16 @@ class ServerSmokeTests(unittest.TestCase):
         source = 'import json, sys\nsys.stdin.readline()\nprint(json.dumps(' + repr(nested) + '))\n'
         evidence = self._run(protocol="jsonl", command=self._fake(source), task="ASR")
         self.assertEqual(evidence["_returncode"], 1)
-        self.assertIn("prediction projection is empty", evidence["error"])
-        self.assertEqual(evidence["steps"]["single_request"]["prediction"], {"text": ""})
+        self.assertIn("must provide text", evidence["error"])
+        self.assertNotIn("prediction", evidence["steps"]["single_request"])
         self.assertIn("نص عربي", evidence["steps"]["single_request"]["primary_output"])
+
+    def test_jsonl_explicit_empty_asr_text_passes(self) -> None:
+        source = 'import json, sys\nsys.stdin.readline()\nprint(json.dumps({"text": ""}))\n'
+        evidence = self._run(protocol="jsonl", command=self._fake(source), task="ASR")
+        self.assertEqual(evidence["_returncode"], 0, evidence.get("error"))
+        self.assertEqual(evidence["steps"]["single_request"]["projection"], "")
+        self.assertEqual(evidence["steps"]["single_request"]["prediction"], {"text": ""})
 
     def test_jsonl_top_level_text_passes_asr_projection(self) -> None:
         source = 'import json, sys\nsys.stdin.readline()\nprint(json.dumps({"text": "نص عربي"}))\n'
@@ -183,6 +190,7 @@ class ServerSmokeTests(unittest.TestCase):
         audio = self.tmp / "generated.wav"
         audio.write_bytes(b"RIFF")
         cases = [
+            ("ASR", {"text": ""}, {"text": ""}),
             ("S2TT", {"translation": "translated text"}, {"translation": "translated text", "text": "translated text"}),
             ("SLU", {"answer": "activate_lights"}, {"answer": "activate_lights", "text": "activate_lights"}),
             ("S2TT", "translated text", {"translation": "translated text", "text": "translated text"}),
@@ -225,7 +233,7 @@ class ServerSmokeTests(unittest.TestCase):
             command=self._fake(MCP_FAKE, "enhance_speech", {"ok": True, "result": {"text": "نص عربي"}}),
         )
         self.assertEqual(evidence["_returncode"], 1)
-        self.assertIn("prediction projection is empty", evidence["error"])
+        self.assertIn("must provide text", evidence["error"])
 
     def test_a_declared_env_reaches_the_server_over_the_sanitized_child_env(self) -> None:
         # The infer client starts the model server from the sanitized child env

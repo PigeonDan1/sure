@@ -34,10 +34,11 @@ io_contract:
   primary_field: ""       # e.g. "text" for ASR, "label" for SER
   required_fields: []     # e.g. ["text", "confidence"] - 必须存在的字段
   nonempty_fields: []     # e.g. ["text"] - 必须非空的字段
+  allow_empty_prediction: false # ASR may set true for scored empty text output
   json_serializable: true # 输出是否必须可 JSON 序列化
 
 acceptance:
   must_import: true
   must_load: true
   must_infer: true
-  must_return_nonempty: true
+  must_return_nonempty: false
