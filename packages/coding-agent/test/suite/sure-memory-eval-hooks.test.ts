@@ -154,6 +154,7 @@ const COPIED_SCRIPTS = [
 	"execution_provenance.py",
 	"resolve_evaluation_engine.py",
 	"check_run_report.py",
+	"materialize_finish_manifest.py",
 ];
 
 const SAVED_ENV = {
