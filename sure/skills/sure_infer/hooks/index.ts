@@ -351,6 +351,29 @@ const UNIT_AGNOSTIC_SCRIPTS = new Set([
 	"scripts/run_infer.py",
 ]);
 
+function invokesRunInfer(command: string): boolean {
+	const readOnly = /^(?:cat|head|tail|less|more|grep|rg|sed|awk|wc|ls|stat|file|diff|md5sum|sha256sum|nl|od|xxd)$/;
+	return command
+		.replace(/\\/g, "/")
+		.split(/\|\||&&|[;&|\n]/)
+		.some((segment) => {
+			const head =
+				segment
+					.trim()
+					.split(/\s+/)[0]
+					?.replace(/^['"]|['"]$/g, "") ?? "";
+			return !readOnly.test(head) && /(?:^|[/\s])run_infer\.py\b/.test(segment);
+		});
+}
+
+function invalidToolTimeout(input: Record<string, unknown>): boolean {
+	if (!("timeout" in input)) {
+		return false;
+	}
+	const timeout = input.timeout;
+	return typeof timeout !== "number" || !Number.isFinite(timeout) || timeout <= 0;
+}
+
 export function preToolCall(ctx: SureHookContext): SureHookResult {
 	const event = isRecord(ctx.event) ? ctx.event : {};
 	const toolCall = isRecord(event.toolCall) ? event.toolCall : {};
@@ -364,6 +387,22 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	}
 	const input = isRecord(event.input) ? event.input : isRecord(toolCall.input) ? toolCall.input : {};
 	const command = typeof input.command === "string" ? input.command : "";
+	if (invalidToolTimeout(input)) {
+		return failure(
+			"Omit the optional shell timeout for no deadline, or set a positive finite number of seconds. The value 0 is invalid; it does not mean no timeout.",
+			"Blocked a shell call with an invalid timeout.",
+		);
+	}
+	if (invokesRunInfer(command)) {
+		const normalizedCommand = command.replace(/\\/g, "/");
+		const absoluteScript = join(ctx.packageDir, "scripts", "run_infer.py").replace(/\\/g, "/");
+		if (!normalizedCommand.includes(absoluteScript)) {
+			return failure(
+				`Invoke run_infer.py with its absolute path: ${absoluteScript} --run-dir <sure_run_dir>. A relative scripts/run_infer.py depends on the shell working directory and is not reliable across tool calls.`,
+				"Blocked an inference launch that does not use the bundled script path.",
+			);
+		}
+	}
 	const invokedScripts = invokedSkillScripts(command).filter((script) => !UNIT_AGNOSTIC_SCRIPTS.has(script));
 	if (invokedScripts.length === 0) {
 		return { ok: true };

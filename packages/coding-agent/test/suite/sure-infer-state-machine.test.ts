@@ -298,8 +298,39 @@ describe("sure_infer preToolCall script whitelist", () => {
 			`run-infer-${unitId}`,
 			unitId,
 			completed,
-			"python3 scripts/run_infer.py --run-dir .sure/runs/x",
+			`python3 ${join(PACKAGE_DIR, "scripts", "run_infer.py")} --run-dir .sure/runs/x`,
 		);
 		expect(preToolCall(ctx).ok).toBe(true);
+	});
+
+	it("rejects a relative run_infer.py path", () => {
+		const ctx = toolCtx(
+			"run-infer-relative-path",
+			"execute_inference",
+			["dataset_scope"],
+			"python3 scripts/run_infer.py --run-dir .sure/runs/x",
+		);
+		const result = preToolCall(ctx);
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("absolute path");
+	});
+
+	it("rejects an invalid zero shell timeout", () => {
+		const ctx = toolCtx(
+			"run-infer-zero-timeout",
+			"execute_inference",
+			["dataset_scope"],
+			`python3 ${join(PACKAGE_DIR, "scripts", "run_infer.py")} --run-dir .sure/runs/x`,
+		);
+		ctx.event = {
+			toolName: "bash",
+			input: {
+				command: `python3 ${join(PACKAGE_DIR, "scripts", "run_infer.py")} --run-dir .sure/runs/x`,
+				timeout: 0,
+			},
+		};
+		const result = preToolCall(ctx);
+		expect(result.ok).toBe(false);
+		expect(result.repair).toContain("positive finite number");
 	});
 });

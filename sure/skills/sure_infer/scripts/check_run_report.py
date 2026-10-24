@@ -22,8 +22,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from materialize_finish_manifest import SUCCESS_STATUSES, materialize_finish_manifest
 
-SUCCESS_STATUSES = {"success", "succeeded", "ok", "completed", "complete"}
+
 FAILURE_STATUSES = {"failed", "failure", "error"}
 
 
@@ -663,6 +664,14 @@ def main() -> int:
         if artifact_errors:
             print("RUN_REPORT_UNIT artifact gate failed:\n  - " + "\n  - ".join(artifact_errors), file=sys.stderr)
             return 1
+
+    if infer_profile and status in SUCCESS_STATUSES and (Path(args.run_dir) / "run.json").is_file():
+        try:
+            manifest_path = materialize_finish_manifest(Path(args.run_dir), Path(__file__).resolve().parent.parent, artifact_root)
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            print(f"RUN_REPORT_UNIT finish manifest failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"finish manifest written: {manifest_path}")
 
     print(f"run_report OK: execution_path_actual={execution_path_actual}")
     return 0
