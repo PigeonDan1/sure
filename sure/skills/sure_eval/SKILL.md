@@ -68,17 +68,17 @@ successful execution alone does not establish an improvement in speech quality.
 KWS wake-word example:
 
 ```text
-/sure_eval model=<approved-kws-model> datasets=<wake-dataset>__<version> source=<sure_infer_run> metrics=accuracy
+/sure_eval model=<approved-kws-model> datasets=<wake-dataset>__<version> source=<sure_infer_run> metrics=macro_recall
 ```
 
-For KWS, `metrics=accuracy` or `metrics=macro_recall` selects the pinned
-`conversion/kws_sure_json_to_samples -> scoring/wekws_det` route. Its metric
-artifact also reports precision, recall, F1, false reject rate, false alarm
-rate, false alarms per hour, and the DET curve. The current SURE JSON route
-counts a sample positive only when `detected` is true and `score` reaches the
-scanned threshold; it cannot recover candidates suppressed by the model's
-internal threshold. Full WekWS-style DET/FAR requires threshold-independent
-candidate scores from the model wrapper.
+For KWS, `metrics=macro_recall` selects the pinned
+`kws.any.macro_recall.conversion_kws_sure_json_to_samples_v2.wekws_det_v2`
+route. KWS v2 reports per-keyword recall and macro recall at a fixed
+system-wide false-alarm budget (default 0.1 FA/hour), plus trigger latency at
+the same operating point; ROC curves and AUC are optional. Accuracy,
+precision, F1, FRR, FAR, and DET are no longer KWS metrics. The wrapper must
+emit raw candidate scores on every clip: the evaluator's threshold sweep
+cannot recover candidates the model's internal threshold already censored.
 
 If a requested metric has no route for a dataset language (for example a mixed
 language split), the backend stops before scoring and includes available catalog
