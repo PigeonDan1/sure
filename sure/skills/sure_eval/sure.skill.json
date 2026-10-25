@@ -5,6 +5,7 @@
 	"prompt": "SKILL.md",
 	"hooks": {
 		"pre_start": [{ "module": "hooks/index.ts", "handler": "preStart" }],
+		"on_resume": [{ "module": "hooks/index.ts", "handler": "onResume" }],
 		"pre_tool_call": [{ "module": "hooks/index.ts", "handler": "preToolCall" }],
 		"post_tool_result": [{ "module": "hooks/index.ts", "handler": "postToolResult" }],
 		"pre_finish": [{ "module": "hooks/index.ts", "handler": "preFinish" }],

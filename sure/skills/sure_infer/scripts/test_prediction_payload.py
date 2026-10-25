@@ -15,7 +15,13 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import generate_predictions_via_server as gp  # noqa: E402
-from sure.runtime.evaluation.task_registry import canonical_tasks, capabilities, normalize_task  # noqa: E402
+from validate_prediction_files import validate_prediction_file  # noqa: E402
+from sure.runtime.evaluation.task_registry import (
+    allows_empty_prediction,
+    canonical_tasks,
+    capabilities,
+    normalize_task,
+)  # noqa: E402
 
 
 DOA_FRAME = {
@@ -82,6 +88,81 @@ class TaskProjectionContractTests(unittest.TestCase):
 
 
 class AsrPayloadNormalizationTests(unittest.TestCase):
+    def test_asr_allows_empty_prediction_but_other_tasks_do_not(self) -> None:
+        self.assertTrue(allows_empty_prediction("asr"))
+        self.assertFalse(allows_empty_prediction("classification"))
+
+    def test_asr_validation_accepts_empty_prediction_with_complete_coverage(self) -> None:
+        class Manager:
+            def normalize_dataset_name(self, name):
+                return name
+
+            def get_jsonl_path(self, name):
+                return reference_path
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            reference_path = root / "reference.jsonl"
+            reference_path.write_text(
+                '{"key":"empty","task":"ASR"}\n{"key":"text","task":"ASR"}\n',
+                encoding="utf-8",
+            )
+            prediction_path = root / "asr.txt"
+            prediction_path.write_text("empty\t\ntext\thello\n", encoding="utf-8")
+            (root / "asr.jsonl").write_text(
+                '{"key":"empty","task":"ASR","prediction":{},"normalized_prediction":""}\n'
+                '{"key":"text","task":"ASR","prediction":{"text":"hello"},"normalized_prediction":"hello"}\n',
+                encoding="utf-8",
+            )
+            result = validate_prediction_file(Manager(), "asr", prediction_path)
+            self.assertTrue(result["is_valid"])
+            self.assertEqual(result["empty_prediction_keys"], ["empty"])
+
+    def test_asr_strict_validation_rejects_empty_prediction(self) -> None:
+        class Manager:
+            def normalize_dataset_name(self, name):
+                return name
+
+            def get_jsonl_path(self, name):
+                return reference_path
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            reference_path = root / "reference.jsonl"
+            reference_path.write_text('{"key":"empty","task":"ASR"}\n', encoding="utf-8")
+            prediction_path = root / "asr.txt"
+            prediction_path.write_text("empty\t\n", encoding="utf-8")
+            (root / "asr.jsonl").write_text(
+                '{"key":"empty","task":"ASR","prediction":{"text":""},"normalized_prediction":""}\n',
+                encoding="utf-8",
+            )
+            result = validate_prediction_file(Manager(), "asr", prediction_path, require_nonempty=True)
+            self.assertFalse(result["is_valid"])
+            self.assertEqual(result["empty_prediction_keys"], ["empty"])
+
+    def test_text_pair_validation_rejects_empty_prediction_unless_task_allows_it(self) -> None:
+        class Manager:
+            def normalize_dataset_name(self, name):
+                return name
+
+            def get_jsonl_path(self, name):
+                return reference_path
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            reference_path = root / "reference.jsonl"
+            reference_path.write_text('{"key":"empty","task":"classification"}\n', encoding="utf-8")
+            prediction_path = root / "classification.txt"
+            prediction_path.write_text("empty\t\n", encoding="utf-8")
+            (root / "classification.jsonl").write_text(
+                '{"key":"empty","task":"classification","prediction":{"label":""},"normalized_prediction":""}\n',
+                encoding="utf-8",
+            )
+            result = validate_prediction_file(Manager(), "classification", prediction_path)
+            self.assertFalse(result["is_valid"])
+            self.assertEqual(result["contract_violation_keys"], ["empty"])
+            self.assertEqual(result["empty_prediction_keys"], ["empty"])
+
     def test_standard_text_fields_take_precedence_over_aliases(self) -> None:
         for task, field in (("S2TT", "translation"), ("SLU", "answer")):
             for nested in (False, True):
@@ -241,6 +322,17 @@ class AsrPayloadNormalizationTests(unittest.TestCase):
         prediction, normalized = gp._normalize_prediction_payload({"text": []}, task="ASR")
         self.assertEqual(prediction, "")
         self.assertEqual(normalized, {"text": ""})
+
+    def test_asr_requires_a_standard_prediction_field(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must provide text"):
+            gp._normalize_prediction_payload({"ok": True, "result": {"text": "Arabic"}}, task="ASR")
+
+    def test_asr_accepts_explicit_empty_text(self) -> None:
+        for payload in ({"text": ""}, {"prediction": {"text": ""}}):
+            with self.subTest(payload=payload):
+                prediction, normalized = gp._normalize_prediction_payload(payload, task="ASR")
+                self.assertEqual(prediction, "")
+                self.assertEqual(normalized, {"text": ""})
 
     def test_structured_task_payloads_keep_engine_fields(self) -> None:
         cases = [
@@ -438,6 +530,130 @@ class GenerationStatusDurabilityTests(unittest.TestCase):
             "['finished-1', 'fin...'] and the returned payload keeps "
             f"{[row.get('dataset') for row in payload['datasets']]}"
         )
+
+
+class GenerationResumeTests(unittest.TestCase):
+    DATASET = "demo__v1__asr"
+
+    def setUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.model_dir = self.root / "model"
+        self.model_dir.mkdir()
+        (self.model_dir / "config.yaml").write_text(
+            "model:\n  name: demo\n  task: ASR\ntools:\n  - name: asr\n"
+            "    input_schema:\n      type: object\n      properties:\n"
+            "        audio_path:\n          type: string\n",
+            encoding="utf-8",
+        )
+        self.run_dir = self.root / "run"
+        self.run_dir.mkdir()
+        self.reference = self.root / "dataset.jsonl"
+        samples = []
+        for index in range(30):
+            audio = self.root / f"audio-{index}.wav"
+            audio.touch()
+            samples.append({"key": f"key-{index}", "path": str(audio), "task": "ASR", "language": "ar"})
+        self.reference.write_text(
+            "".join(json.dumps(sample) + "\n" for sample in samples), encoding="utf-8"
+        )
+        self.predictions_dir = self.run_dir / "predictions"
+        self.predictions_dir.mkdir()
+        self.prediction_path = self.predictions_dir / f"{self.DATASET}.txt"
+        self.structured_path = self.predictions_dir / f"{self.DATASET}.jsonl"
+        self.result_log = self.predictions_dir / "logs" / f"{self.DATASET}_results.log"
+        self.called: list[str] = []
+        self.snapshots: list[int] = []
+        self.status_counts: list[int] = []
+
+    def run_generation(self, *, max_samples: int = 0, interrupt_at: str | None = None) -> None:
+        manager = mock.Mock()
+        manager.expand_dataset_names.return_value = [self.DATASET]
+        manager.normalize_dataset_name.return_value = self.DATASET
+        manager.get_jsonl_path.return_value = self.reference
+        inventory = {"policy": {"eval_runtime": "python"}, "model_runtime": {"tool_names": ["asr"]}}
+        process = mock.Mock()
+        actual_snapshot = gp._write_prediction_snapshots
+        actual_status_write = gp._write_status_file
+
+        def respond(_process, request):
+            if request["method"] != "tools/call":
+                return {"result": {}}
+            audio = Path(request["params"]["arguments"]["audio_path"]).stem
+            self.called.append(audio)
+            if audio == interrupt_at:
+                raise KeyboardInterrupt()
+            return {"result": {"text": "" if audio == "audio-0" else f"text-{audio}"}}
+
+        def snapshot(**kwargs):
+            self.snapshots.append(len(kwargs["prediction_map"]))
+            actual_snapshot(**kwargs)
+
+        def write_status(path, payload):
+            self.status_counts.append(payload["datasets"][-1]["num_generated_samples"])
+            actual_status_write(path, payload)
+
+        argv = [
+            "generate_predictions_via_server.py", "--model-dir", str(self.model_dir),
+            "--dataset", self.DATASET, "--run-dir", str(self.run_dir), "--resume",
+        ]
+        if max_samples:
+            argv += ["--max-samples", str(max_samples)]
+        with (
+            mock.patch.object(sys, "argv", argv),
+            mock.patch.object(gp.Config, "from_env", return_value=object()),
+            mock.patch.object(gp, "DatasetManager", return_value=manager),
+            mock.patch.object(gp, "_load_runtime_inventory", return_value=inventory),
+            mock.patch.object(gp, "_resolve_server_command", return_value=[sys.executable, "server.py"]),
+            mock.patch.object(gp, "_resolve_working_dir", return_value=self.model_dir),
+            mock.patch.object(gp, "_resolve_protocol_parameters", return_value={"model_params": {}}),
+            mock.patch.object(gp, "model_child_env", return_value={}),
+            mock.patch.object(gp, "_start_model_server", return_value=process),
+            mock.patch.object(gp, "_send_request", side_effect=respond),
+            mock.patch.object(gp, "_extract_response_payload", side_effect=lambda response: response["result"]),
+            mock.patch.object(gp, "_write_prediction_snapshots", side_effect=snapshot),
+            mock.patch.object(gp, "_write_status_file", side_effect=write_status),
+        ):
+            gp.main()
+
+    def test_blank_template_is_not_counted_as_inference_or_written_to_result_log(self) -> None:
+        self.prediction_path.write_text(
+            "".join(f"key-{index}\t\n" for index in range(30)), encoding="utf-8"
+        )
+        self.run_generation(max_samples=3)
+        self.assertEqual(self.status_counts[0], 0)
+        self.assertEqual(self.result_log.read_text(encoding="utf-8").count("\n"), 3)
+        self.assertEqual(self.prediction_path.read_text(encoding="utf-8").count("\n"), 3)
+        self.assertEqual(json.loads(self.structured_path.read_text(encoding="utf-8").splitlines()[0])["normalized_prediction"], "")
+
+        self.status_counts.clear()
+        self.snapshots.clear()
+        self.run_generation()
+        self.assertEqual(self.status_counts[0], 3)
+        self.assertEqual(self.snapshots, [25, 30])
+        self.assertEqual(self.result_log.read_text(encoding="utf-8").count("\n"), 30)
+        self.assertEqual(len(self.called), 30)
+        self.assertEqual(self.status_counts[-1], 30)
+        self.assertEqual(self.prediction_path.read_text(encoding="utf-8").count("\n"), 30)
+
+    def test_interruption_resumes_from_matching_snapshot_including_empty_text(self) -> None:
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_generation(interrupt_at="audio-27")
+        self.assertEqual(self.snapshots, [25])
+        self.assertEqual(self.structured_path.read_text(encoding="utf-8").count("\n"), 25)
+        self.assertEqual(self.result_log.read_text(encoding="utf-8").count("\n"), 27)
+
+        self.snapshots.clear()
+        self.status_counts.clear()
+        self.run_generation()
+        self.assertEqual(self.status_counts[0], 25)
+        self.assertEqual(self.snapshots, [30])
+        self.assertEqual(self.called.count("audio-0"), 1)
+        self.assertEqual(self.called.count("audio-26"), 2)
+        self.assertEqual(self.result_log.read_text(encoding="utf-8").count("\n"), 30)
+        status = json.loads((self.run_dir / "prediction_generation_status.json").read_text(encoding="utf-8"))
+        self.assertEqual(status["datasets"][0]["empty_prediction_count"], 1)
 
 
 class ServerPipeEncodingTests(unittest.TestCase):

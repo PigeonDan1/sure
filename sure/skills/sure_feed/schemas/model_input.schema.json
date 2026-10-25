@@ -125,6 +125,7 @@
 				"primary_field": { "type": "string" },
 				"required_fields": { "type": "array", "items": { "type": "string" } },
 				"nonempty_fields": { "type": "array", "items": { "type": "string" } },
+				"allow_empty_prediction": { "type": "boolean" },
 				"json_serializable": { "type": "boolean" }
 			},
 			"additionalProperties": true

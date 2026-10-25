@@ -206,10 +206,14 @@ def validate_contract(sample: dict[str, Any], contract: dict[str, Any]) -> list[
     for field in string_list(contract.get("required_fields")):
         if field not in sample:
             violations.append(f"missing required field: {field}")
-    for field in string_list(contract.get("nonempty_fields")):
+    allow_empty_prediction = contract.get("allow_empty_prediction") is True
+    primary = contract.get("primary_field")
+    nonempty_fields = string_list(contract.get("nonempty_fields"))
+    if allow_empty_prediction and isinstance(primary, str):
+        nonempty_fields = [field for field in nonempty_fields if field != primary]
+    for field in nonempty_fields:
         if field in sample and not is_nonempty(sample.get(field)):
             violations.append(f"field must be non-empty: {field}")
-    primary = contract.get("primary_field")
     if primary == "embedding":
         embedding = sample.get(primary)
         if not isinstance(embedding, list) or not embedding:
@@ -221,7 +225,7 @@ def validate_contract(sample: dict[str, Any], contract: dict[str, Any]) -> list[
             for item in embedding
         ):
             violations.append("embedding must contain only finite numbers")
-    elif isinstance(primary, str) and not is_nonempty(sample.get(primary)):
+    elif isinstance(primary, str) and not allow_empty_prediction and not is_nonempty(sample.get(primary)):
         violations.append(f"primary output field must be non-empty: {primary}")
     if TASK_TYPE.lower() == "se" and primary == "audio_path":
         audio = sample.get(primary)

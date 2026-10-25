@@ -76,11 +76,23 @@ class ApprovalFlowTests(unittest.TestCase):
     ) -> None:
         for name, content in {
             "model.py": "VALUE = 1\n",
-            "server.py": "print('server')\n",
+            "server.py": MCP_FAKE.replace('"vad"', '"transcribe_audio"'),
             "validate.py": validate_content,
             "__init__.py": "\n",
             "model.spec.yaml": "task: asr\n",
-            "config.yaml": "task: asr\n",
+            "config.yaml": (
+                "task: asr\n"
+                "server:\n"
+                "  command: [python, server.py]\n"
+                "  protocol: mcp\n"
+                "tools:\n"
+                "  - name: transcribe_audio\n"
+                "    input_schema:\n"
+                "      type: object\n"
+                "      required: [audio_path]\n"
+                "      properties:\n"
+                "        audio_path: {type: string}\n"
+            ),
             "requirements.lock": "",
         }.items():
             (self.source / name).write_text(content, encoding="utf-8")
@@ -123,7 +135,7 @@ class ApprovalFlowTests(unittest.TestCase):
             "lock_sha256": lock_hash,
             "working_dir": ".",
             "server_command": [runtime_python_relative(), "server.py"],
-            "tool_names": ["transcribe"],
+            "tool_names": ["transcribe_audio"],
             "required_imports": [],
             "gpu_required": False,
         }
@@ -676,14 +688,37 @@ class ServerContractTests(unittest.TestCase):
         with self.assertRaisesRegex(approval_core.ApprovalError, "no input_schema mapping"):
             approval_core.verify_server_contract(self.candidate, "python")
 
-    def test_a_model_that_declares_no_server_is_left_to_the_harness_wrapper(self) -> None:
-        # The fallback wrapper is MCP by construction and carries its own
-        # schema, so a config with no server block has no tool contract to
-        # check -- refusing it would block every such model from approval.
-        self._config("task: asr\n")
-        evidence = approval_core.verify_server_contract(self.candidate, "python")
+    def test_a_model_that_declares_no_server_starts_the_harness_wrapper(self) -> None:
+        self._config(
+            "task: asr\ntools:\n  - name: asr\n    input_schema:\n      type: object\n"
+            "      required: [audio_path]\n      properties:\n        audio_path: {type: string}\n"
+            "        language: {type: string}\n"
+        )
+        (self.candidate / "server.py").write_text(
+            "from model import ModelWrapper\n\ndef create_model():\n    return ModelWrapper()\n", encoding="utf-8"
+        )
+        (self.candidate / "model.py").write_text(
+            "class ModelWrapper:\n    def predict(self, arguments):\n        return {'text': 'ok'}\n", encoding="utf-8"
+        )
+        binding = {"python": {"python_executable": sys.executable, "server_command": [sys.executable, "server.py"]}}
+        evidence = approval_core.verify_server_contract(self.candidate, "python", binding)
         self.assertEqual(evidence["status"], "passed")
-        self.assertNotIn("contracts", evidence)
+        self.assertTrue(evidence["advertised"]["ok"])
+        self.assertIn("language", evidence["advertised"]["advertised_contract"]["properties"])
+
+    def test_fallback_cannot_be_approved_without_a_verified_python_binding(self) -> None:
+        self._config("task: asr\n")
+        with self.assertRaisesRegex(approval_core.ApprovalError, "verified Model Python binding"):
+            approval_core.verify_server_contract(self.candidate, "python")
+
+    def test_fallback_rejects_an_unreachable_server(self) -> None:
+        self._config(
+            "task: asr\ntools:\n  - name: asr\n    input_schema:\n"
+            "      type: object\n      properties:\n        audio_path: {type: string}\n"
+        )
+        binding = {"python": {"python_executable": "/nonexistent/python", "server_command": []}}
+        with self.assertRaisesRegex(approval_core.ApprovalError, "does not advertise the tool contract"):
+            approval_core.verify_server_contract(self.candidate, "python", binding)
 
     def test_a_declared_command_with_no_declared_framing_is_refused(self) -> None:
         # The onboard gate refuses this. Approve resolved the same config through

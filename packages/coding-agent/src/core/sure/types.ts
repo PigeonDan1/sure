@@ -4,6 +4,7 @@ export type SureRunStatus = "pending" | "running" | "success" | "failed" | "inco
 
 export type SureHookPoint =
 	| "pre_start"
+	| "on_resume"
 	| "pre_tool_call"
 	| "post_tool_result"
 	| "pre_finish"

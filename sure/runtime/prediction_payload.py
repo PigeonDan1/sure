@@ -58,9 +58,21 @@ def normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict[
             prediction = dict(payload)
         if task_name in {"ASR", "S2TT"}:
             field = str(task_profile(task)["io_contract"]["primary_field"])
-            value = prediction.get(field) or prediction.get("text") or prediction.get("transcript") or payload.get(field) or payload.get("text") or ""
-            if isinstance(value, (list, tuple)) and len(value) == 1:
-                value = value[0]
+            candidates = (
+                (prediction, field),
+                (prediction, "text"),
+                (prediction, "transcript"),
+                (payload, field),
+                (payload, "text"),
+                (payload, "transcript"),
+            )
+            value = next((source[key] for source, key in candidates if key in source), None)
+            if value is None and not any(key in source for source, key in candidates):
+                raise ValueError(f"{task_name} prediction must provide {field}")
+            if isinstance(value, (list, tuple)) and len(value) <= 1:
+                value = value[0] if value else ""
+            if value is None:
+                value = ""
             normalized_value = single_line_text(value)
             return normalized_value, {field: normalized_value, "text": normalized_value}
         if task_name in {"TTS", "VC", "SE", "TSE"}:

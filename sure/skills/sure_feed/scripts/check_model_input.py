@@ -276,13 +276,16 @@ def validate_model_input(model_input: Any, envelope_model_id: str, prefix: str) 
         require_nonempty(model_input, "io_contract.primary_field", errors)
         require_string_list(model_input, "io_contract.required_fields", errors)
         require_string_list(model_input, "io_contract.nonempty_fields", errors)
+        if "allow_empty_prediction" in model_input["io_contract"]:
+            require_bool(model_input, "io_contract.allow_empty_prediction", errors)
         require_bool(model_input, "io_contract.json_serializable", errors)
         primary = dotted_get(model_input, "io_contract.primary_field")
         required = as_list(dotted_get(model_input, "io_contract.required_fields"))
         nonempty = as_list(dotted_get(model_input, "io_contract.nonempty_fields"))
+        allow_empty_prediction = dotted_get(model_input, "io_contract.allow_empty_prediction") is True
         if nonempty_string(primary) and primary not in required:
             errors.append(f"{prefix}.model_input.io_contract.primary_field must be in required_fields")
-        if nonempty_string(primary) and primary not in nonempty:
+        if nonempty_string(primary) and primary not in nonempty and not allow_empty_prediction:
             errors.append(f"{prefix}.model_input.io_contract.primary_field must be in nonempty_fields")
 
     return errors

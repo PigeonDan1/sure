@@ -44,7 +44,8 @@ _DEFAULTS: dict[str, dict[str, Any]] = {
             "output_type": "json",
             "primary_field": "text",
             "required_fields": ["text"],
-            "nonempty_fields": ["text"],
+            "nonempty_fields": [],
+            "allow_empty_prediction": True,
             "json_serializable": True,
         },
     },
@@ -168,6 +169,8 @@ def validate_io_contract(contract: object) -> list[str]:
         value = contract.get(key)
         if not isinstance(value, list) or any(not isinstance(item, str) or not item for item in value):
             violations.append(f"io_contract.{key} must be an array of non-empty strings")
+    if "allow_empty_prediction" in contract and not isinstance(contract["allow_empty_prediction"], bool):
+        violations.append("io_contract.allow_empty_prediction must be a boolean")
     if isinstance(primary, str) and isinstance(contract.get("required_fields"), list):
         if primary not in contract["required_fields"]:
             violations.append("io_contract.primary_field must be required")

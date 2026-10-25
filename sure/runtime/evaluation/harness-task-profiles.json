@@ -13,7 +13,11 @@
 			"fixture_root": "fixtures/tasks/asr/qwen3_asr_smoke/asr_en",
 			"evaluation_bridge": "text_pair",
 			"tool_name": "transcribe_audio",
-			"io_contract": { "input_type": "audio_path", "primary_field": "text" }
+			"io_contract": {
+				"input_type": "audio_path",
+				"primary_field": "text",
+				"allow_empty_prediction": true
+			}
 		},
   "classification": {
 			"engine_task": "classification",

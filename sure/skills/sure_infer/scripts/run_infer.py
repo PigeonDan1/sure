@@ -258,6 +258,8 @@ def _build_surface(
     protocol_id = str(runtime.get("protocol_id") or user_input.get("protocol") or "standard_system")
     run_id = str(runtime.get("run_id") or "")
     model_name = str(user_input.get("model") or model.get("model_name") or "")
+    prediction_validation = runtime.get("prediction_validation") if isinstance(runtime.get("prediction_validation"), dict) else {}
+    require_nonempty = prediction_validation.get("require_nonempty") is True
     env: dict[str, str] = {
         "DATASETS": " ".join(entries),
         "MODEL_NAME": model_name,
@@ -267,6 +269,7 @@ def _build_surface(
         "PROTOCOL_ID": protocol_id,
         "METRICS": " ".join(metrics),
         "SURE_EVAL_INPUT_RESOLVED": str(input_resolved_path),
+        "SURE_EVAL_REQUIRE_NONEMPTY_PREDICTIONS": "1" if require_nonempty else "0",
     }
     projection = runtime.get("dataset_projection") if isinstance(runtime.get("dataset_projection"), dict) else {}
     if projection.get("host_root"):
@@ -319,6 +322,7 @@ def _build_surface(
             "device": device_request,
             "tool_name": tool_name,
             "from_stage": from_stage or "",
+            "require_nonempty_predictions": require_nonempty,
         },
         "expected_outputs": {
             "prepare_summary": f"{product_dir}/prepare_summary.json",
@@ -355,6 +359,12 @@ def _nonempty_prediction_rows(path: Path) -> int:
     return count
 
 
+def _prediction_rows(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    return sum(1 for line in path.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip())
+
+
 def _dataset_rows(product_dir: Path, names: list[str], stems: dict[str, str]) -> list[dict[str, Any]]:
     status_rows = {
         str(row.get("dataset")): row
@@ -376,9 +386,11 @@ def _dataset_rows(product_dir: Path, names: list[str], stems: dict[str, str]) ->
         expected = status.get("num_expected_samples")
         if not isinstance(expected, int):
             expected = validation.get("expected_samples") if isinstance(validation.get("expected_samples"), int) else 0
-        generated = _nonempty_prediction_rows(product_dir / "predictions" / f"{stem}.txt")
+        generated = _prediction_rows(product_dir / "predictions" / f"{stem}.txt")
         provided = validation.get("provided_predictions") if isinstance(validation.get("provided_predictions"), int) else generated
-        invalid = len(validation.get("empty_prediction_keys") or []) + len(validation.get("contract_violation_keys") or [])
+        invalid = len(validation.get("contract_violation_keys") or [])
+        if validation.get("require_nonempty") is True:
+            invalid += len(validation.get("empty_prediction_keys") or [])
         rows.append(
             {
                 "dataset": name,

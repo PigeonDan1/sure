@@ -179,6 +179,43 @@ class RunInferTests(unittest.TestCase):
         surface = json.loads((self.artifacts / "execution_surface.json").read_text(encoding="utf-8"))
         self.assertEqual(surface["resolved_inputs"]["from_stage"], "validate")
 
+    def test_prediction_validation_policy_is_recorded_and_exported(self) -> None:
+        self.write_inputs(self.container_binding)
+        input_path = self.artifacts / "eval_input_resolved.json"
+        payload = json.loads(input_path.read_text(encoding="utf-8"))
+        payload["runtime"]["prediction_validation"] = {"require_nonempty": True}
+        input_path.write_text(json.dumps(payload), encoding="utf-8")
+        captured: dict[str, object] = {}
+
+        def build_command(**kwargs: object) -> tuple[list[str], dict[str, str]]:
+            captured.update(kwargs)
+            return [sys.executable, "-c", "pass"], {"image_ref": IMAGE_REF}
+
+        with (
+            patch.object(sys, "argv", ["run_infer.py", "--run-dir", str(self.run_dir)]),
+            patch.object(run_infer, "build_local_container_command", side_effect=build_command),
+        ):
+            self.assertEqual(run_infer.main(), 0)
+        surface = json.loads((self.artifacts / "execution_surface.json").read_text(encoding="utf-8"))
+        self.assertEqual(surface["env"]["SURE_EVAL_REQUIRE_NONEMPTY_PREDICTIONS"], "1")
+        self.assertTrue(surface["resolved_inputs"]["require_nonempty_predictions"])
+
+    def test_empty_prediction_rows_count_as_generated_rows(self) -> None:
+        predictions = self.product_dir / "predictions"
+        predictions.mkdir(parents=True, exist_ok=True)
+        (predictions / "demo_ds__v1.0.2.txt").write_text("k0\t\nk1\tp1\n", encoding="utf-8")
+        (self.product_dir / "prediction_generation_status.json").write_text(
+            json.dumps({"datasets": [{"dataset": "demo_ds__v1.0.2", "status": "completed", "num_expected_samples": 2}]}),
+            encoding="utf-8",
+        )
+        (self.product_dir / "validation_payload.json").write_text(
+            json.dumps({"results": [{"dataset": "demo_ds__v1.0.2", "provided_predictions": 2, "require_nonempty": False}]}),
+            encoding="utf-8",
+        )
+        rows = run_infer._dataset_rows(self.product_dir, ["demo_ds__v1.0.2"], {})
+        self.assertEqual(rows[0]["generated"], 2)
+        self.assertEqual(rows[0]["valid"], 2)
+
     def test_the_container_repo_root_is_passed_in_the_container_spelling(self) -> None:
         # model_child_env.py reads this one inside the container to decide which
         # PYTHONPATH entries live in the repository, so a host spelling never

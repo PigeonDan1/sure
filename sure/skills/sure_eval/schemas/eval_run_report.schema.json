@@ -14,6 +14,7 @@
 		"pipeline_ids": { "type": "array", "items": { "type": "string" } },
 		"evaluation_only": { "type": "boolean" },
 		"old_evaluation_reused": { "type": "boolean" },
+		"require_nonempty_predictions": { "type": "boolean" },
 		"artifacts": { "type": "object", "additionalProperties": { "type": "string" } },
 		"summary": { "type": "object", "additionalProperties": true },
 		"source_identity": {

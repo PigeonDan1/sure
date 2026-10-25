@@ -327,8 +327,8 @@ class GateTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             evidence = json.loads((run_dir / "artifacts" / "server_smoke.json").read_text(encoding="utf-8"))
             self.assertEqual(evidence["task"], "ASR")
-            self.assertIn("prediction projection is empty", evidence["error"])
-            self.assertEqual(evidence["steps"]["single_request"]["prediction"], {"text": ""})
+            self.assertIn("must provide text", evidence["error"])
+            self.assertNotIn("prediction", evidence["steps"]["single_request"])
 
     def test_the_gate_passes_when_the_declared_server_answers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

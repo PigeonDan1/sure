@@ -291,9 +291,12 @@ def validate_output_contract(sample_output: dict, contract: dict) -> list[str]:
     required_fields = string_list(contract.get("required_fields"))
     nonempty_fields = string_list(contract.get("nonempty_fields"))
     primary_field = contract.get("primary_field")
+    allow_empty_prediction = contract.get("allow_empty_prediction") is True
     if isinstance(primary_field, str) and primary_field and primary_field not in required_fields:
         required_fields.append(primary_field)
-    if isinstance(primary_field, str) and primary_field and primary_field not in nonempty_fields:
+    if allow_empty_prediction and isinstance(primary_field, str):
+        nonempty_fields = [field for field in nonempty_fields if field != primary_field]
+    elif isinstance(primary_field, str) and primary_field and primary_field not in nonempty_fields:
         nonempty_fields.append(primary_field)
 
     for field in required_fields:

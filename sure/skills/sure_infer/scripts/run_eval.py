@@ -979,6 +979,7 @@ def run_eval(
 ) -> dict[str, Any]:
     pipeline_ids = _split_values(args.pipeline_id)
     metrics = _split_values(getattr(args, "metric", None))
+    require_nonempty = getattr(args, "require_nonempty_predictions", False) is True
     if bool(pipeline_ids) == bool(metrics):
         raise ValueError("/sure_eval requires exactly one of --pipeline-id or --metric")
     if approved_models_root is None or approved_results_root is None:
@@ -1051,12 +1052,13 @@ def run_eval(
         *datasets,
         "--pred-dir",
         str(run_dir / "predictions"),
-        "--require-nonempty",
         "--config",
         str(config_path),
         "--output",
         str(run_dir / "validation_payload.json"),
     ]
+    if require_nonempty:
+        validate_cmd.append("--require-nonempty")
     _run(validate_cmd)
 
     if metrics:
@@ -1136,6 +1138,7 @@ def run_eval(
         "selected_datasets": datasets,
         "evaluation_only": True,
         "old_evaluation_reused": False,
+        "require_nonempty_predictions": require_nonempty,
         "source_prediction": {
             "source": source_payload.get("source_results_dir"),
             "source_kind": source_payload.get("source_kind"),
@@ -1181,6 +1184,7 @@ def run_eval(
         "execution_path_actual": "local_bash",
         "execution_path_requested": "local",
         "evaluation_only": True,
+        "require_nonempty_predictions": require_nonempty,
         "run_dir": str(run_dir),
         "evaluation_run_dir": str(run_dir),
         "artifact_root": str(run_dir),
@@ -1289,6 +1293,7 @@ def _write_incomplete_report(args: argparse.Namespace, error: Exception) -> Path
         "datasets": [str(item) for item in source.get("datasets") or _split_values(args.datasets)],
         "pipeline_ids": _split_values(args.pipeline_id),
         "evaluation_only": True,
+        "require_nonempty_predictions": getattr(args, "require_nonempty_predictions", False) is True,
         "inference_executed": False,
         "old_evaluation_reused": False,
         "append_attempted": False,
@@ -1319,6 +1324,7 @@ def main() -> int:
     parser.add_argument("--protocol-id", choices=("standard_system", "strict_core"), default="standard_system")
     parser.add_argument("--invocation-run-dir", required=True)
     parser.add_argument("--run-id")
+    parser.add_argument("--require-nonempty-predictions", action="store_true")
     args = parser.parse_args()
     try:
         run_eval(args)

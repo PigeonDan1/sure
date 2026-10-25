@@ -41,6 +41,7 @@
       "evaluation_bridge": "text_pair",
       "fixture_root": "fixtures/tasks/asr/qwen3_asr_smoke/asr_en",
       "io_contract": {
+        "allow_empty_prediction": true,
         "input_type": "audio_path",
         "primary_field": "text"
       },

@@ -119,6 +119,20 @@ function parseArgs(raw: string): Record<string, string> {
 	return out;
 }
 
+function parseStrictBooleanArg(args: Record<string, string>, name: string): { value?: boolean; error?: string } {
+	const raw = args[name];
+	if (raw === undefined) {
+		return { value: false };
+	}
+	if (raw === "true" || raw === "1") {
+		return { value: true };
+	}
+	if (raw === "false" || raw === "0") {
+		return { value: false };
+	}
+	return { error: `${name} must be true, false, 1, or 0; received ${JSON.stringify(raw)}.` };
+}
+
 // --- memory system glue -------------------------------------------------------
 // The shared orchestration lives in sure/runtime/memory/hooks.ts; this file only
 // decides WHEN to call it and where the results go (repair text, checkpoint,
@@ -170,6 +184,10 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	// Park agent bin at end of PATH so a docker shim there cannot shadow system docker.
 	demoteAgentBinDir(process.env, agentBinDir());
 	const args = parseArgs(ctx.args);
+	const requireNonempty = parseStrictBooleanArg(args, "require_nonempty_predictions");
+	if (requireNonempty.error) {
+		return failure(requireNonempty.error, "Invalid prediction validation policy.");
+	}
 	const missing: string[] = [];
 	if (!args.model) {
 		missing.push("model");
@@ -180,7 +198,7 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	}
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_infer parameters: ${missing.join(", ")}. Usage: /sure_infer model=<name> datasets=<source_path[@version][,source_path[@version]...]> [dataset_source_key=<key> (recorded only, does not select a root)] [datasets_root=<writable_projection_root>] [protocol=standard_system|strict_core] [execution=auto|local] [device=auto|cpu|cuda[:index]] [max_samples=...] [metrics=<metric[,metric...]>] [run_id=<id>] [output_dir=<abs_dir>] [config=<harness_config.yaml>]`,
+			`Missing required /sure_infer parameters: ${missing.join(", ")}. Usage: /sure_infer model=<name> datasets=<source_path[@version][,source_path[@version]...]> [dataset_source_key=<key> (recorded only, does not select a root)] [datasets_root=<writable_projection_root>] [protocol=standard_system|strict_core] [execution=auto|local] [device=auto|cpu|cuda[:index]] [max_samples=...] [metrics=<metric[,metric...]>] [require_nonempty_predictions=true|false] [run_id=<id>] [output_dir=<abs_dir>] [config=<harness_config.yaml>]`,
 			"Missing required parameters.",
 		);
 	}
@@ -271,6 +289,9 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	if (typeof args.datasets_root === "string") {
 		resolveArgs.push("--datasets-root", args.datasets_root);
 	}
+	if (requireNonempty.value) {
+		resolveArgs.push("--require-nonempty-predictions");
+	}
 	const resolvedInput = spawnSync(runtime.contract.python_executable, resolveArgs, {
 		cwd: ctx.packageDir,
 		encoding: "utf-8",
@@ -330,6 +351,29 @@ const UNIT_AGNOSTIC_SCRIPTS = new Set([
 	"scripts/run_infer.py",
 ]);
 
+function invokesRunInfer(command: string): boolean {
+	const readOnly = /^(?:cat|head|tail|less|more|grep|rg|sed|awk|wc|ls|stat|file|diff|md5sum|sha256sum|nl|od|xxd)$/;
+	return command
+		.replace(/\\/g, "/")
+		.split(/\|\||&&|[;&|\n]/)
+		.some((segment) => {
+			const head =
+				segment
+					.trim()
+					.split(/\s+/)[0]
+					?.replace(/^['"]|['"]$/g, "") ?? "";
+			return !readOnly.test(head) && /(?:^|[/\s])run_infer\.py\b/.test(segment);
+		});
+}
+
+function invalidToolTimeout(input: Record<string, unknown>): boolean {
+	if (!("timeout" in input)) {
+		return false;
+	}
+	const timeout = input.timeout;
+	return typeof timeout !== "number" || !Number.isFinite(timeout) || timeout <= 0;
+}
+
 export function preToolCall(ctx: SureHookContext): SureHookResult {
 	const event = isRecord(ctx.event) ? ctx.event : {};
 	const toolCall = isRecord(event.toolCall) ? event.toolCall : {};
@@ -343,6 +387,22 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	}
 	const input = isRecord(event.input) ? event.input : isRecord(toolCall.input) ? toolCall.input : {};
 	const command = typeof input.command === "string" ? input.command : "";
+	if (invalidToolTimeout(input)) {
+		return failure(
+			"Omit the optional shell timeout for no deadline, or set a positive finite number of seconds. The value 0 is invalid; it does not mean no timeout.",
+			"Blocked a shell call with an invalid timeout.",
+		);
+	}
+	if (invokesRunInfer(command)) {
+		const normalizedCommand = command.replace(/\\/g, "/");
+		const absoluteScript = join(ctx.packageDir, "scripts", "run_infer.py").replace(/\\/g, "/");
+		if (!normalizedCommand.includes(absoluteScript)) {
+			return failure(
+				`Invoke run_infer.py with its absolute path: ${absoluteScript} --run-dir <sure_run_dir>. A relative scripts/run_infer.py depends on the shell working directory and is not reliable across tool calls.`,
+				"Blocked an inference launch that does not use the bundled script path.",
+			);
+		}
+	}
 	const invokedScripts = invokedSkillScripts(command).filter((script) => !UNIT_AGNOSTIC_SCRIPTS.has(script));
 	if (invokedScripts.length === 0) {
 		return { ok: true };

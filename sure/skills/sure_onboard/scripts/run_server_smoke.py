@@ -48,6 +48,7 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "runtime" / "harness"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 from model_child_env import model_child_env
+from sure.runtime.evaluation.task_registry import allows_empty_prediction
 from sure.runtime.prediction_payload import extract_mcp_payload, normalize_prediction_payload
 
 SCHEMA = "sure.onboard.server_smoke.v1"
@@ -96,7 +97,7 @@ def check_output(output: Any, task: str) -> tuple[bool, str, dict[str, Any]]:
         try:
             projection, normalized = normalize_prediction_payload(output, task=task)
             evidence.update({"projection": projection, "prediction": normalized})
-            if not projection.strip() or not normalized:
+            if (not allows_empty_prediction(task) and not projection.strip()) or not normalized:
                 violation = violation or f"{task} prediction projection is empty"
             violation = violation or _path_fields_exist(normalized)
         except (TypeError, ValueError) as exc:
