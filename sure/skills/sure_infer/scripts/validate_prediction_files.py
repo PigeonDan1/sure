@@ -30,7 +30,7 @@ for _parent in Path(__file__).resolve().parents:
         sys.path.insert(0, str(_parent))
         break
 
-from sure.runtime.evaluation.task_registry import normalize_task, task_profile
+from sure.runtime.evaluation.task_registry import allows_empty_prediction, normalize_task, task_profile
 
 configure_logging(level="INFO")
 logger = get_logger(__name__)
@@ -191,8 +191,7 @@ def _task_contract_violations(
         try:
             contract = task_profile(task)["io_contract"]
             primary_field = str(contract["primary_field"])
-            bridge = task_profile(task).get("evaluation_bridge")
-            empty_is_scoreable = bridge in {"text_pair", "text_pair_prompt"}
+            empty_is_scoreable = allows_empty_prediction(task)
         except ValueError:
             violations.append(key)
             continue
@@ -237,11 +236,11 @@ def _text_prediction_contract_violations(
         if key not in predictions or predictions[key].strip():
             continue
         try:
-            bridge = task_profile(str(sample.get("task") or "")).get("evaluation_bridge")
+            empty_is_scoreable = allows_empty_prediction(str(sample.get("task") or ""))
         except ValueError:
             violations.append(key)
             continue
-        if require_nonempty or bridge not in {"text_pair", "text_pair_prompt"}:
+        if require_nonempty or not empty_is_scoreable:
             violations.append(key)
     return sorted(set(violations))
 
@@ -302,9 +301,8 @@ def validate_prediction_file(
         else []
     )
 
-    strict_nonempty = require_nonempty
     is_valid = not missing_keys and not extra_keys and not duplicate_keys
-    if strict_nonempty and empty_prediction_keys:
+    if require_nonempty and empty_prediction_keys:
         is_valid = False
     if (structured_path.exists() or structured_required) and (
         structured_missing_keys
@@ -336,7 +334,7 @@ def validate_prediction_file(
         "invalid_structured_rows": invalid_structured_rows,
         "structured_projection_mismatch_keys": structured_projection_mismatch_keys,
         "contract_violation_keys": contract_violation_keys,
-        "require_nonempty": strict_nonempty,
+        "require_nonempty": require_nonempty,
         "is_valid": is_valid,
     }
 

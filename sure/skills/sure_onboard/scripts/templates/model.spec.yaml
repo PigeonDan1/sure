@@ -41,4 +41,4 @@ acceptance:
   must_import: true
   must_load: true
   must_infer: true
-  must_return_nonempty: false
+  must_return_nonempty: true

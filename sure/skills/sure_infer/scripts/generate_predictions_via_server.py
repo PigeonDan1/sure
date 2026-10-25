@@ -1507,7 +1507,8 @@ def main() -> int:
                         # The only line this script logged used to be its last one,
                         # so a five-hour generation pass looked identical to a hung
                         # one. Counting lines in the prediction file does not help:
-                        # the snapshot materializes every row up front.
+                        # snapshots are only rewritten on this interval and skip
+                        # rows without a prediction yet.
                         generated = len(prediction_map)
                         processed = generated - len(resume_complete_keys)
                         elapsed = max(monotonic() - generation_started, 1e-9)
