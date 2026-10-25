@@ -50,16 +50,16 @@ Formal `/sure_eval` scoring uses the pinned evaluation engine's canonical KWS
 routes:
 
 ```text
-kws.any.accuracy.conversion_kws_sure_json_to_samples_v1.wekws_det_v1
-kws.any.macro_recall.conversion_kws_sure_json_to_samples_v1.wekws_det_v1
+kws.any.macro_recall.conversion_kws_sure_json_to_samples_v2.wekws_det_v2
 ```
 
-The report includes accuracy, precision, recall, F1, macro recall, false reject
-rate, false alarm rate, false alarms per hour, and a DET threshold curve. The
-current SURE JSON route evaluates each threshold as
-`detected AND score >= threshold`; it does not recover candidates that a model
-has already suppressed internally. A production DET claim therefore requires
-the model wrapper to expose threshold-independent candidate scores.
+The report scores macro recall across keywords at a fixed 0.1 false alarms
+per hour budget, with per-keyword recall, trigger latency, and the operating
+curve; ROC/AUC details are optional. The current SURE JSON route evaluates
+each threshold as `detected AND score >= threshold`; it does not recover
+candidates that a model has already suppressed internally. A production DET
+claim therefore requires the model wrapper to expose threshold-independent
+candidate scores.
 
 An inference dataset source must declare `task: KWS` in its `sample.jsonl` or
 `ds.jsonl`. Each row must carry `key` or `sample_id`, an audio path, `keywords`,
