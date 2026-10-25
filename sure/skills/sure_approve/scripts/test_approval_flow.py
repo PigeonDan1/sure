@@ -76,11 +76,23 @@ class ApprovalFlowTests(unittest.TestCase):
     ) -> None:
         for name, content in {
             "model.py": "VALUE = 1\n",
-            "server.py": "print('server')\n",
+            "server.py": MCP_FAKE.replace('"vad"', '"transcribe_audio"'),
             "validate.py": validate_content,
             "__init__.py": "\n",
             "model.spec.yaml": "task: asr\n",
-            "config.yaml": "task: asr\n",
+            "config.yaml": (
+                "task: asr\n"
+                "server:\n"
+                "  command: [python, server.py]\n"
+                "  protocol: mcp\n"
+                "tools:\n"
+                "  - name: transcribe_audio\n"
+                "    input_schema:\n"
+                "      type: object\n"
+                "      required: [audio_path]\n"
+                "      properties:\n"
+                "        audio_path: {type: string}\n"
+            ),
             "requirements.lock": "",
         }.items():
             (self.source / name).write_text(content, encoding="utf-8")
@@ -123,7 +135,7 @@ class ApprovalFlowTests(unittest.TestCase):
             "lock_sha256": lock_hash,
             "working_dir": ".",
             "server_command": [runtime_python_relative(), "server.py"],
-            "tool_names": ["transcribe"],
+            "tool_names": ["transcribe_audio"],
             "required_imports": [],
             "gpu_required": False,
         }
