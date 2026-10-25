@@ -538,6 +538,16 @@ def _build_runtime(
         path.mkdir(parents=True, exist_ok=True)
     max_attempts = max(1, min(2, int(spec.get("max_prepare_attempts") or 2)))
     errors: list[str] = []
+    # The venv request names only the spec's minor version, which lets uv pick
+    # the newest patch release at build time. The image build pins the exact
+    # interpreter the host manifest records through this override, because the
+    # UV_PYTHON_INSTALL_DIR override below hides the interpreter it pre-installed.
+    spec_python = str(spec["python"])
+    python_request = os.environ.get("SURE_HARNESS_PYTHON_VERSION", "").strip() or spec_python
+    if python_request != spec_python and not python_request.startswith(f"{spec_python}."):
+        raise HarnessRuntimeError(
+            f"SURE_HARNESS_PYTHON_VERSION '{python_request}' is not a {spec_python} release"
+        )
 
     for attempt in range(1, max_attempts + 1):
         staging = Path(tempfile.mkdtemp(prefix=f".{runtime_id}.attempt-{attempt}-", dir=runtime_root))
@@ -578,7 +588,7 @@ def _build_runtime(
                     venv_command(
                         uv,
                         staging,
-                        python=str(spec["python"]),
+                        python=python_request,
                         allow_python_downloads=True,
                         python_preference="only-managed",
                     ),

@@ -167,7 +167,10 @@ class DockerfileTest(unittest.TestCase):
     def test_the_interpreter_is_pinned_to_the_one_the_host_manifest_records(self) -> None:
         """"3.11" would let two builds of one lock ship different interpreter bytes."""
         self.assertIn('uv python install "${PYTHON_FULL_VERSION}"', self.text)
-        # The bootstrap asks uv for "3.11"; without this it could fetch a newer patch.
+        # bootstrap's UV_PYTHON_INSTALL_DIR override hides this pre-installed
+        # interpreter from uv, so the venv request must be pinned by name or it
+        # fetches the newest patch release at build time.
+        self.assertIn('SURE_HARNESS_PYTHON_VERSION="${PYTHON_FULL_VERSION}"', self.text)
         self.assertIn("uv python find \"${PYTHON_FULL_VERSION}\"", self.text)
         self.assertIn('[ "$built" = "${PYTHON_FULL_VERSION}" ]', self.text)
 

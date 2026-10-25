@@ -23,7 +23,11 @@ ARG PYTHON_FULL_VERSION
 # managed interpreter under UV_PYTHON_INSTALL_DIR, builds the venv with copy
 # links, moves that interpreter into the tree, and refuses a tree that still
 # reaches outside itself. UV_LINK_MODE=copy keeps every wheel inside the tree
-# so the scratch layer below is a plain copy with nothing dangling.
+# so the scratch layer below is a plain copy with nothing dangling. bootstrap's
+# own UV_PYTHON_INSTALL_DIR override hides the interpreter pre-installed here,
+# so SURE_HARNESS_PYTHON_VERSION pins the venv request to the exact interpreter
+# the host manifest records; without it uv would fetch the newest patch release
+# at build time and the identity check at the end would fail on timing alone.
 ENV UV_PYTHON_INSTALL_DIR=/opt/harness-base-python
 ENV UV_LINK_MODE=copy
 COPY --from=harness_runtime_spec uvenv.py /opt/sure-build/sure/runtime/uvenv.py
@@ -36,7 +40,7 @@ RUN set -eu; \
     uv python install "${PYTHON_FULL_VERSION}"; \
     base="$(uv python find "${PYTHON_FULL_VERSION}")"; \
     [ -x "$base" ] || { echo "uv did not install ${PYTHON_FULL_VERSION}" >&2; exit 1; }; \
-    "$base" "$bootstrap" --runtime-root /opt/sure-harness \
+    SURE_HARNESS_PYTHON_VERSION="${PYTHON_FULL_VERSION}" "$base" "$bootstrap" --runtime-root /opt/sure-harness \
         || { cat /opt/sure-harness/logs/*.log >&2; exit 1; }; \
     [ -n "${RUNTIME_ID}" ] && [ -d "$dest" ] \
         || { echo "built runtime is not '${RUNTIME_ID}': $(ls /opt/sure-harness)" >&2; exit 1; }; \
