@@ -411,5 +411,73 @@ class HarnessRuntimeImportProbeTests(unittest.TestCase):
             _probe(Path(sys.executable), ["leaked_module"])
 
 
+class HarnessRuntimePythonPinTests(unittest.TestCase):
+    """SURE_HARNESS_PYTHON_VERSION pins the venv request to an exact interpreter.
+
+    The image build pre-installs the interpreter the host manifest records, but
+    bootstrap's UV_PYTHON_INSTALL_DIR override hides it from uv, so a bare
+    "3.11" request would fetch the newest patch release at build time and the
+    image identity check would fail on timing alone.
+    """
+
+    def setUp(self) -> None:
+        self._temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self._temporary.cleanup)
+        self.runtime_root = Path(self._temporary.name) / "harness"
+        self.runtime_dir = self.runtime_root / "sure-harness-v1-py311-abc123"
+        self.spec = {
+            "schema": "sure.harness.runtime.spec.v1",
+            "harness_version": "v1",
+            "python": "3.11",
+            "lock_file": "requirements.lock.txt",
+            "materialization_version": 4,
+        }
+
+    def _build(self) -> list[list[str]]:
+        commands: list[list[str]] = []
+
+        def record(command, env, log, timeout=0):
+            commands.append(command)
+
+        with mock.patch.object(bootstrap, "uv_binary", return_value="uv"), \
+             mock.patch.object(bootstrap, "_run_logged", side_effect=record), \
+             mock.patch.object(bootstrap, "_python_path", return_value=Path("/venv/bin/python")), \
+             mock.patch.object(bootstrap, "_relocate_base_python"), \
+             mock.patch.object(bootstrap, "probe_python", return_value={"base_python_sha256": "0" * 64}), \
+             mock.patch.object(bootstrap, "_probe", return_value={"version": "3.11.13"}), \
+             mock.patch.object(bootstrap, "_retarget"), \
+             mock.patch.object(bootstrap, "publish"), \
+             mock.patch.object(bootstrap, "_verified_contract", return_value={"runtime_id": self.runtime_dir.name}):
+            bootstrap._build_runtime(
+                self.runtime_root, self.runtime_dir, self.spec,
+                Path(self._temporary.name) / "requirements.lock.txt",
+                "a" * 64, self.runtime_dir.name,
+            )
+        return commands
+
+    def test_the_pin_reaches_the_venv_request(self) -> None:
+        with mock.patch.dict(os.environ, {"SURE_HARNESS_PYTHON_VERSION": "3.11.13"}):
+            commands = self._build()
+        venv = commands[0]
+        self.assertEqual(venv[venv.index("--python") + 1], "3.11.13")
+
+    def test_without_the_pin_the_request_stays_at_the_spec_version(self) -> None:
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SURE_HARNESS_PYTHON_VERSION", None)
+            commands = self._build()
+        venv = commands[0]
+        self.assertEqual(venv[venv.index("--python") + 1], "3.11")
+
+    def test_a_pin_outside_the_spec_abi_is_refused(self) -> None:
+        with mock.patch.dict(os.environ, {"SURE_HARNESS_PYTHON_VERSION": "3.12.8"}), \
+             mock.patch.object(bootstrap, "uv_binary", return_value="uv"):
+            with self.assertRaisesRegex(HarnessRuntimeError, "SURE_HARNESS_PYTHON_VERSION"):
+                bootstrap._build_runtime(
+                    self.runtime_root, self.runtime_dir, self.spec,
+                    Path(self._temporary.name) / "requirements.lock.txt",
+                    "a" * 64, self.runtime_dir.name,
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

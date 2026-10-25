@@ -149,6 +149,54 @@ def write_versioned_s2tt_source(root: Path, name: str, versions: tuple[str, ...]
     return pool
 
 
+def se_stage_spec(working_dir: Path, model_dir: Path) -> dict:
+    return {
+        "id": "denoise",
+        "model": "se_model",
+        "mode": "mcp_tool",
+        "task": "SE",
+        "input_modality": "audio",
+        "output_modality": "audio",
+        "model_dir": str(model_dir),
+        "config_path": str(model_dir / "config.yaml"),
+        "verdict_path": str(model_dir / "verdict.json"),
+        "tool_names": ["enhance"],
+        "server_command": ["python", "server.py"],
+        "working_dir": str(working_dir),
+        "env": {},
+        "api": None,
+        "prompt_template": None,
+        "deployment_bound": False,
+        "deployment_error": "not sealed",
+    }
+
+
+def stub_se_factory(stage: dict):
+    """Stub SE server: ignores output_path, writes a relative path under working_dir."""
+
+    def call(arguments: dict):
+        stem = Path(str(arguments["audio_path"])).stem
+        relative = Path("artifacts") / "outputs" / f"{stem}_enh.wav"
+        target = Path(stage["working_dir"]) / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"ENH" + stem.encode())
+        return {"audio_path": relative.as_posix(), "sample_rate": 16000, "n_samples": 1}
+
+    return call
+
+
+def honoring_se_factory(stage: dict):
+    """Stub SE server: honors output_path and returns it absolute."""
+
+    def call(arguments: dict):
+        output_path = Path(str(arguments["output_path"]))
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(b"ENH")
+        return {"audio_path": str(output_path)}
+
+    return call
+
+
 def make_spec(dataset_root: Path, product_dir: Path) -> dict:
     return {
         "schema": "sure.agent_eval.spec_resolved.v1",
@@ -168,6 +216,8 @@ def make_spec(dataset_root: Path, product_dir: Path) -> dict:
                 "model": "asr_model",
                 "mode": "mcp_tool",
                 "task": "ASR",
+                "input_modality": "audio",
+                "output_modality": "text",
                 "model_dir": "/tmp/models/asr_model",
                 "config_path": "/tmp/models/asr_model/config.yaml",
                 "verdict_path": "/tmp/models/asr_model/verdict.json",
@@ -185,6 +235,8 @@ def make_spec(dataset_root: Path, product_dir: Path) -> dict:
                 "model": "llm_model",
                 "mode": "api",
                 "task": "LLM",
+                "input_modality": "text",
+                "output_modality": "text",
                 "model_dir": "/tmp/models/llm_model",
                 "config_path": "/tmp/models/llm_model/config.yaml",
                 "verdict_path": "/tmp/models/llm_model/verdict.json",
@@ -252,6 +304,59 @@ class RunAgentTests(unittest.TestCase):
             return {"text": "TRANSCRIBED:" + Path(str(arguments["audio_path"])).stem}
 
         return call
+
+    def test_se_asr_llm_chain_produces_a_compatible_bundle(self) -> None:
+        import yaml
+
+        working_dir = self.tmp / "se_working"
+        model_dir = self.tmp / "se_model"
+        working_dir.mkdir()
+        model_dir.mkdir()
+        spec = make_spec(self.dataset_root, self.product_dir)
+        spec["stages"].insert(0, se_stage_spec(working_dir, model_dir))
+
+        def factory(stage: dict):
+            return stub_se_factory(stage) if stage["id"] == "denoise" else self.stub_mcp_factory(stage)
+
+        result = agent_runner.run_agent(spec, self.run_dir, mcp_caller_factory=factory, api_caller=self.stub_api_caller)
+        self.assertEqual(result["job_status"], "succeeded", result.get("error"))
+        rows = [
+            line.split("\t")
+            for line in (self.product_dir / "predictions" / "mini_s2tt__unversioned.txt").read_text(encoding="utf-8").splitlines()
+        ]
+        self.assertEqual(rows, [["utt0", "TRANSLATED:TRANSCRIBED:utt0_enh"], ["utt1", "TRANSLATED:TRANSCRIBED:utt1_enh"]])
+        evidence = (self.product_dir / "enhanced" / "denoise" / "mini_s2tt__unversioned.tsv").read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(evidence), 2)
+        key, path = evidence[0].split("\t")
+        self.assertEqual(key, "utt0")
+        self.assertTrue(Path(path).is_file())
+        self.assertTrue(path.endswith("utt0_enh.wav"))
+        protocol = yaml.safe_load((self.product_dir / "protocol.yaml").read_text(encoding="utf-8"))
+        self.assertEqual([stage["output_modality"] for stage in protocol["stages"]], ["audio", "text", "text"])
+
+    def test_se_stage_honoring_output_path_writes_into_product_dir(self) -> None:
+        model_dir = self.tmp / "se_model"
+        model_dir.mkdir()
+        spec = make_spec(self.dataset_root, self.product_dir)
+        spec["stages"].insert(0, se_stage_spec(model_dir, model_dir))
+
+        def factory(stage: dict):
+            return honoring_se_factory(stage) if stage["id"] == "denoise" else self.stub_mcp_factory(stage)
+
+        result = agent_runner.run_agent(spec, self.run_dir, mcp_caller_factory=factory, api_caller=self.stub_api_caller)
+        self.assertEqual(result["job_status"], "succeeded", result.get("error"))
+        _, path = (self.product_dir / "enhanced" / "denoise" / "mini_s2tt__unversioned.tsv").read_text(encoding="utf-8").splitlines()[0].split("\t")
+        self.assertTrue(str(self.product_dir / "enhanced" / "denoise") in path)
+        self.assertTrue(Path(path).is_file())
+
+    def test_api_stage_receiving_audio_fails_at_runtime(self) -> None:
+        # Bypasses the resolver: an api stage fed audio must fail naming the stage.
+        spec = make_spec(self.dataset_root, self.product_dir)
+        spec["stages"][0] = se_stage_spec(self.tmp / "se_working", self.tmp / "se_model")
+        result = agent_runner.run_agent(spec, self.run_dir, mcp_caller_factory=stub_se_factory, api_caller=self.stub_api_caller)
+        self.assertEqual(result["job_status"], "failed")
+        self.assertEqual(result["failed_stage"], "translate")
+        self.assertIn("takes text input", result["error"])
 
     def stub_api_caller(self, api: dict, prompt: str) -> str:
         return "TRANSLATED:" + prompt.split(": ", 1)[-1]
@@ -546,6 +651,55 @@ class ExtractTextTests(unittest.TestCase):
 
     def test_unknown_payload(self) -> None:
         self.assertEqual(agent_runner.extract_text({"other": 1}), "")
+
+
+class ExtractAudioPathTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmp.name)
+        self.working_dir = self.tmp / "working"
+        self.model_dir = self.tmp / "model"
+        self.working_dir.mkdir()
+        self.model_dir.mkdir()
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_field_priority_and_relative_resolution(self) -> None:
+        target = self.working_dir / "artifacts" / "outputs" / "utt_enh.wav"
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b"x")
+        resolved = agent_runner.extract_audio_path(
+            {"path": "ignored.wav", "audio_path": "artifacts/outputs/utt_enh.wav"},
+            search_dirs=[self.working_dir, self.model_dir],
+        )
+        self.assertEqual(resolved, str(target.resolve()))
+
+    def test_falls_back_to_model_dir(self) -> None:
+        target = self.model_dir / "out.wav"
+        target.write_bytes(b"x")
+        resolved = agent_runner.extract_audio_path({"audio_path": "out.wav"}, search_dirs=[self.working_dir, self.model_dir])
+        self.assertEqual(resolved, str(target.resolve()))
+
+    def test_absolute_passthrough_and_plain_string(self) -> None:
+        target = self.tmp / "abs.wav"
+        target.write_bytes(b"x")
+        self.assertEqual(
+            agent_runner.extract_audio_path({"audio_path": str(target)}, search_dirs=[self.working_dir]),
+            str(target.resolve()),
+        )
+        self.assertEqual(agent_runner.extract_audio_path(str(target), search_dirs=[self.working_dir]), str(target.resolve()))
+
+    def test_missing_file_names_tried_candidates(self) -> None:
+        with self.assertRaises(RuntimeError) as ctx:
+            agent_runner.extract_audio_path({"audio_path": "missing.wav"}, search_dirs=[self.working_dir])
+        self.assertIn("tried", str(ctx.exception))
+
+    def test_echoed_input_path_is_skipped(self) -> None:
+        noisy = self.tmp / "noisy.wav"
+        noisy.write_bytes(b"x")
+        with self.assertRaises(RuntimeError):
+            agent_runner.extract_audio_path({"audio_path": str(noisy)}, search_dirs=[self.working_dir], input_path=str(noisy))
 
 
 if __name__ == "__main__":

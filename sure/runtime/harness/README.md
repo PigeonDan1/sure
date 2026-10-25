@@ -64,7 +64,9 @@ still uses `COPY --from=sure_harness_runtime`; its build command must pass:
 
 `bootstrap.py` materializes the host runtime, and the skills start it through
 its own interpreter; `SURE_HARNESS_BOOTSTRAP_PYTHON` names an interpreter to run
-`bootstrap.py` with instead, and `SURE_UV_BIN` names the uv binary. The host
+`bootstrap.py` with instead, `SURE_UV_BIN` names the uv binary, and
+`SURE_HARNESS_PYTHON_VERSION` pins the exact interpreter release the venv is
+built with (the image build uses it; the host never needs it). The host
 needs no Python of its own, because uv fetches the interpreter and the locked
 wheels itself. That first run needs network and can take minutes; later runs
 verify the prepared tree and reuse it. The manifest records

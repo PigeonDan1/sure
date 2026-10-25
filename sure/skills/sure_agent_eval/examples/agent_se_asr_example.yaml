@@ -1,0 +1,25 @@
+# Example Agent spec for /sure_agent_eval: a speech-enhancement pre-chain in front
+# of an S2TT agent. Stages 1 and 2 are speech-enhancement (SE) models: audio in,
+# enhanced audio out. A stage model whose approved config.yaml declares task: se
+# (or task_type: se) resolves as an audio-output mcp_tool stage and may sit at
+# position 0 and at middle positions. The chain must still end in a text-output
+# stage; a pure audio-output chain belongs to /sure_infer + /sure_eval.
+#
+# Stage `model` values must be exact directory names below
+# storage.approved_models_roots[0] (see config/site.local.yaml). Replace them
+# with the model bundles approved on your site before running.
+agent:
+  name: example_se_asr_s2tt_agent
+  task: s2tt
+  input: speech
+  output: text
+stages:
+  - id: denoise_mvdr      # SE pre-chain stage: deep-filter + MVDR denoising (audio -> audio)
+    model: deep_filter_mvdr
+  - id: denoise_gtcrn     # SE pre-chain stage: GTCRN speech enhancement (audio -> audio)
+    model: gtcrn
+  - id: asr               # ASR (audio -> text) through the model's MCP tool
+    model: qwen3_asr
+  - id: translate         # LLM translation (text -> text, API model)
+    model: qwen_llm_mt
+    prompt_template: "Translate to {target_language}: {text}"

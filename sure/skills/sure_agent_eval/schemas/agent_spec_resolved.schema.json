@@ -32,6 +32,8 @@
 					"model",
 					"mode",
 					"task",
+					"input_modality",
+					"output_modality",
 					"model_dir",
 					"config_path",
 					"verdict_path",
@@ -48,7 +50,12 @@
 					"id": { "type": "string" },
 					"model": { "type": "string" },
 					"mode": { "type": "string", "enum": ["mcp_tool", "api"] },
-					"task": { "type": "string" },
+					"task": {
+						"type": "string",
+						"description": "Stage model task, e.g. ASR, LLM, SE. An mcp_tool stage with task SE is a speech-enhancement (audio-output) stage."
+					},
+					"input_modality": { "type": "string", "enum": ["audio", "text"] },
+					"output_modality": { "type": "string", "enum": ["audio", "text"] },
 					"model_dir": { "type": "string" },
 					"config_path": { "type": "string" },
 					"verdict_path": { "type": "string" },

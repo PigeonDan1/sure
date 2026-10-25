@@ -75,6 +75,11 @@ LLM_CONFIG = {
         "max_tokens": 256,
     },
 }
+SE_CONFIG = {
+    "task": "se",
+    "server": {"command": ["python", "server.py"]},
+    "tools": [{"name": "enhance"}],
+}
 
 AGENT_YAML = """\
 agent:
@@ -88,6 +93,21 @@ stages:
   - id: translate
     model: llm_model
     prompt_template: "Translate to {target_language}: {text}"
+"""
+
+SE_CHAIN_YAML = """\
+agent:
+  name: demo_se_s2tt
+  task: s2tt
+  input: speech
+  output: text
+stages:
+  - id: denoise
+    model: se_model
+  - id: asr
+    model: asr_model
+  - id: translate
+    model: llm_model
 """
 
 TEXT_AGENT_YAML = """\
@@ -109,6 +129,7 @@ class ResolveAgentTests(unittest.TestCase):
         self.models_root = self.tmp / "models"
         write_model(self.models_root, "asr_model", ASR_CONFIG)
         write_model(self.models_root, "llm_model", LLM_CONFIG)
+        write_model(self.models_root, "se_model", SE_CONFIG)
         self.source_root = self.tmp / "src"
         self.dataset_root = write_flat_s2tt_source(self.source_root, "mini_s2tt")
         self.spec_path = self.tmp / "agent.yaml"
@@ -156,6 +177,10 @@ class ResolveAgentTests(unittest.TestCase):
         self.assertEqual(translate["api"]["top_p"], 1.0)
         self.assertEqual(translate["api"]["max_tokens"], 256)
         self.assertEqual(translate["prompt_template"], "Translate to {target_language}: {text}")
+        self.assertEqual(asr["input_modality"], "audio")
+        self.assertEqual(asr["output_modality"], "text")
+        self.assertEqual(translate["input_modality"], "text")
+        self.assertEqual(translate["output_modality"], "text")
         (dataset,) = payload["datasets"]
         self.assertEqual(dataset["dataset"], "mini_s2tt__unversioned")
         # an override root carries no configured key, and that is recorded as such
@@ -211,12 +236,50 @@ class ResolveAgentTests(unittest.TestCase):
             resolve_agent.resolve_agent(self.make_args(), approved_root=self.models_root)
         self.assertIn("the first stage must be an MCP-tool model", str(ctx.exception))
 
-    def test_later_stage_mcp_model_is_rejected(self) -> None:
+    def test_later_mcp_stage_after_text_stage_is_rejected(self) -> None:
         spec = AGENT_YAML.replace("model: llm_model", "model: asr_model")
         self.spec_path.write_text(spec, encoding="utf-8")
         with self.assertRaises(ValueError) as ctx:
             resolve_agent.resolve_agent(self.make_args(), approved_root=self.models_root)
-        self.assertIn("only the first stage", str(ctx.exception))
+        self.assertIn("MCP-tool stage past position 0 consumes audio", str(ctx.exception))
+
+    def test_se_asr_llm_chain_resolves_with_modality_fields(self) -> None:
+        self.spec_path.write_text(SE_CHAIN_YAML, encoding="utf-8")
+        payload = resolve_agent.resolve_agent(self.make_args(), approved_root=self.models_root)
+        denoise, asr, translate = payload["stages"]
+        self.assertEqual(denoise["mode"], "mcp_tool")
+        self.assertEqual(denoise["task"], "SE")
+        self.assertEqual(denoise["tool_names"], ["enhance"])
+        self.assertEqual(
+            [(stage["input_modality"], stage["output_modality"]) for stage in payload["stages"]],
+            [("audio", "audio"), ("audio", "text"), ("text", "text")],
+        )
+        self.assertEqual(asr["mode"], "mcp_tool")
+        self.assertEqual(translate["mode"], "api")
+
+    def test_se_task_alias_and_task_type_spelling_resolve_as_audio(self) -> None:
+        write_model(self.models_root, "se_model", {**SE_CONFIG, "task": "speech-enhancement"})
+        self.spec_path.write_text(SE_CHAIN_YAML, encoding="utf-8")
+        payload = resolve_agent.resolve_agent(self.make_args(), approved_root=self.models_root)
+        self.assertEqual(payload["stages"][0]["output_modality"], "audio")
+        write_model(self.models_root, "se_model", {key: value for key, value in SE_CONFIG.items() if key != "task"} | {"task_type": "se"})
+        payload = resolve_agent.resolve_agent(self.make_args(), approved_root=self.models_root)
+        self.assertEqual(payload["stages"][0]["task"], "SE")
+        self.assertEqual(payload["stages"][0]["output_modality"], "audio")
+
+    def test_api_stage_after_audio_stage_is_rejected(self) -> None:
+        spec = SE_CHAIN_YAML.replace("  - id: asr\n    model: asr_model\n", "")
+        self.spec_path.write_text(spec, encoding="utf-8")
+        with self.assertRaises(ValueError) as ctx:
+            resolve_agent.resolve_agent(self.make_args(), approved_root=self.models_root)
+        self.assertIn("takes text input", str(ctx.exception))
+
+    def test_final_audio_stage_is_rejected(self) -> None:
+        spec = "agent:\n  name: demo_se\n  task: se\n  input: speech\n  output: speech\nstages:\n  - id: denoise\n    model: se_model\n"
+        self.spec_path.write_text(spec, encoding="utf-8")
+        with self.assertRaises(ValueError) as ctx:
+            resolve_agent.resolve_agent(self.make_args(), approved_root=self.models_root)
+        self.assertIn("final stage must output text", str(ctx.exception))
 
     def test_invalid_spec_fails(self) -> None:
         self.spec_path.write_text("agent:\n  name: demo\nstages: []\n", encoding="utf-8")
