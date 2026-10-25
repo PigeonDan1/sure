@@ -138,36 +138,40 @@ class DockerfileTest(unittest.TestCase):
         """Copying a uv venv into an image ships an interpreter that cannot start."""
         self.assertNotIn("harness_runtime_source", self.text)
         self.assertIn("bootstrap.py", self.text)
-        # The interpreter has to live inside the tree, because only the tree is
-        # flattened into the image the adapters copy from.
-        self.assertIn('mv /opt/harness-base-python "$dest/base-python"', self.text)
+        # The bootstrap is the single source of the relocation recipe: the
+        # Dockerfile must run it and must not hand-roll the move/sed/symlink
+        # sequence, or the two copies of the recipe would drift apart again.
+        self.assertIn("$base\" \"$bootstrap\" --runtime-root /opt/sure-harness", self.text)
+        self.assertNotIn("mv /opt/harness-base-python", self.text)
+        self.assertNotIn("sed -i", self.text)
+        self.assertNotIn("ln -sfn", self.text)
         self.assertIn("COPY --from=build /opt/sure-harness/${RUNTIME_ID}/ /", self.text)
         # The runtime the image built must be the runtime the host manifest names.
         self.assertIn('[ -d "$dest" ]', self.text)
 
-    def test_the_relocated_tree_is_proven_self_contained_before_the_check(self) -> None:
-        """`--check` only starts the interpreter; a broken link or a stale path survives it."""
-        self.assertIn('find "$dest" -xtype l', self.text)
-        self.assertIn("dangling symlink under $dest", self.text)
-        self.assertIn('grep -rlI /opt/harness-base-python "$dest"', self.text)
-        self.assertIn("stale build-stage path under $dest", self.text)
-        # grep exits 1 when it finds nothing, which is the only passing case:
-        # 0 means a stale path is still there and 2 means grep itself failed.
-        self.assertIn('[ "$status" -eq 1 ]', self.text)
+    def test_the_self_contained_runtime_is_verified_before_the_check(self) -> None:
+        """bootstrap's own verification must run; `--check` is the image's re-proof."""
+        self.assertIn('"$dest/bin/python" "$bootstrap" --check --runtime-root /opt/sure-harness', self.text)
         check = self.text.index("--check --runtime-root")
-        self.assertLess(self.text.index("-xtype l"), check)
-        self.assertLess(self.text.index("grep -rlI"), check)
+        # bootstrap.py materializes and verifies the tree before the image
+        # re-checks it with the tree's own interpreter.
+        self.assertLess(self.text.index("$base\" \"$bootstrap\" --runtime-root /opt/sure-harness"), check)
 
-    def test_the_link_rewrite_cannot_swallow_a_failing_find(self) -> None:
-        """/bin/sh in the build stage is dash: no pipefail, so nothing may be piped into the loop."""
-        self.assertNotIn("-type l | while", self.text)
-        self.assertIn('done < "$scan"', self.text)
+    def test_no_shell_pipeline_swallows_a_failing_scan(self) -> None:
+        """The relocation proof now lives in bootstrap.py, so the Dockerfile must
+        not contain a `find | while` scan whose failure dash could swallow."""
+        self.assertNotIn("| while", self.text)
+        self.assertNotIn("-xtype l", self.text)
+        self.assertNotIn("grep -rlI", self.text)
 
     def test_the_interpreter_is_pinned_to_the_one_the_host_manifest_records(self) -> None:
         """"3.11" would let two builds of one lock ship different interpreter bytes."""
         self.assertIn('uv python install "${PYTHON_FULL_VERSION}"', self.text)
-        # The bootstrap asks uv for "3.11"; without this it could fetch a newer patch.
-        self.assertIn("UV_PYTHON_DOWNLOADS=never", self.text)
+        # bootstrap's UV_PYTHON_INSTALL_DIR override hides this pre-installed
+        # interpreter from uv, so the venv request must be pinned by name or it
+        # fetches the newest patch release at build time.
+        self.assertIn('SURE_HARNESS_PYTHON_VERSION="${PYTHON_FULL_VERSION}"', self.text)
+        self.assertIn("uv python find \"${PYTHON_FULL_VERSION}\"", self.text)
         self.assertIn('[ "$built" = "${PYTHON_FULL_VERSION}" ]', self.text)
 
 

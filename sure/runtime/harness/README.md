@@ -1,16 +1,26 @@
 # Harness Runtime Image
 
-The Harness Runtime is a uv virtual environment, and a uv virtual environment is
-not relocatable: `pyvenv.cfg` and `bin/python` both point at a base interpreter
-that lives outside the tree. Copying the host runtime into a container yields a
-Python that cannot start. So the image builds its own runtime from the same
-dependency lock, at the same destination path, with the managed interpreter
-inside that path. Because the identity is the lock hash, the image's
-`runtime_id` equals the host's by construction, and the build fails if it does
-not. Bootstrap the host runtime first; the image is built from its identity:
+`bootstrap.py` materializes the Harness Runtime as a self-contained tree: uv
+installs its managed interpreter beside the environment, and the bootstrap then
+moves that interpreter into the tree as `base-python`, re-points every link and
+rewrites `pyvenv.cfg` to name the in-tree copy. A uv virtual environment on its
+own is not relocatable — `pyvenv.cfg` and `bin/python` both point at a base
+interpreter outside the tree — but after the relocation nothing in the tree
+reaches outside it, so the same directory can be mounted into a container that
+has no host Python and entered through its own `bin/python`.
+
+`pyvenv.cfg home` stays absolute, because CPython reads a relative `home`
+against the process working directory and the tree then only starts from one
+directory. The consequence is that the tree runs where it was materialized:
+mount it at the path it was built at, which is what the container launcher does
+(it mounts the repository at its own host path). The image build runs the same
+bootstrap at the destination path, so it inherits that recipe.
+Because the identity is the lock hash, the image's `runtime_id` equals the
+host's by construction, and the build fails if it does not. Bootstrap the host
+runtime first; the image is built from its identity:
 
 ```bash
-export HARNESS_ROOT=/path/to/sure/.runtime/harness/sure-harness-v1-m3-py311-<lock>
+export HARNESS_ROOT=/path/to/sure/.runtime/harness/sure-harness-v1-m4-py311-<lock>
 python sure/runtime/harness/build_image.py \
   --runtime-root "$HARNESS_ROOT" \
   --image <registry>/sure-harness:v1 \
@@ -53,18 +63,24 @@ still uses `COPY --from=sure_harness_runtime`; its build command must pass:
 ## Runtime identity
 
 `bootstrap.py` materializes the host runtime, and the skills start it through
-`uv run --no-project --python 3.11`. `SURE_HARNESS_BOOTSTRAP_PYTHON` names an
-interpreter to run `bootstrap.py` with instead; `SURE_UV_BIN` names the uv
-binary. The host needs no Python of its own, because uv fetches the interpreter
-and the locked wheels itself. That first run needs network and can take
-minutes; later runs verify the prepared tree and reuse it. The manifest records
-`materialization: uv_venv` and the SHA-256 of the base interpreter uv picked.
+its own interpreter; `SURE_HARNESS_BOOTSTRAP_PYTHON` names an interpreter to run
+`bootstrap.py` with instead, `SURE_UV_BIN` names the uv binary, and
+`SURE_HARNESS_PYTHON_VERSION` pins the exact interpreter release the venv is
+built with (the image build uses it; the host never needs it). The host
+needs no Python of its own, because uv fetches the interpreter and the locked
+wheels itself. That first run needs network and can take minutes; later runs
+verify the prepared tree and reuse it. The manifest records
+`materialization: uv_venv`, `self_contained: true` and the SHA-256 of the base
+interpreter uv picked — read back from the in-tree `base-python` on every
+verification, so a tree whose interpreter was swapped underneath it is refused
+and rebuilt rather than trusted.
 
 `runtime_id` is
 `sure-harness-<harness_version>-m<materialization_version>-py311-<lock12>`, so
 the materialization version and the dependency lock are both part of the
-identity, and this runtime changed both. The gates compare those strings
-against the active runtime: `check_runtime_inventory.py` rejects an inventory
-and `check_container_package.py` rejects a container package whose `runtime_id`
-or `lock_sha256` differs. A bundle approved under the previous Harness Runtime
-is refused until it is approved again over this one.
+identity, and this runtime changed both (`materialization_version` 3 → 4, the
+bump that makes the self-contained layout part of the identity). The gates
+compare those strings against the active runtime: `check_runtime_inventory.py`
+rejects an inventory and `check_container_package.py` rejects a container
+package whose `runtime_id` or `lock_sha256` differs. A bundle approved under the
+previous Harness Runtime is refused until it is approved again over this one.

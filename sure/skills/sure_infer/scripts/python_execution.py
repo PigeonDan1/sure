@@ -129,6 +129,7 @@ def build_local_python_command(
     execution_provenance = build_execution_provenance(
         harness_root=repo_root,
         evaluation_runtime=evaluation_runtime,
+        harness_runtime=harness_runtime,
     )
     write_execution_provenance(execution_provenance_path, execution_provenance)
     skill_root = (repo_root / "sure" / "skills" / "sure_infer").resolve()

@@ -1,11 +1,11 @@
-# The Harness Runtime is a uv virtual environment, and a uv virtual environment
-# is not relocatable: pyvenv.cfg and bin/python point at a base interpreter that
-# lives outside the tree, so copying a host runtime into an image ships a Python
-# that cannot start. This image runs the same bootstrap against the same locked
-# requirements, at the destination path, and moves uv's managed interpreter into
-# the tree so the tree is self-contained again. The identity is the dependency
-# lock, so the runtime_id built here equals the host's by construction; the
-# build stops if it does not.
+# The Harness Runtime is a self-contained tree: bootstrap.py installs uv's
+# managed interpreter beside the environment and then moves it in as
+# `base-python`, re-points every link and rewrites pyvenv.cfg to name the
+# in-tree copy. The image build below runs that same bootstrap, so it inherits
+# the relocation for free and the manual move/sed/symlink loop that older
+# revisions needed here is gone. The identity is the dependency lock, so the
+# runtime_id built here equals the host's by construction; the build stops if it
+# does not.
 #
 # Pinned by digest, and from ghcr so an anonymous pull needs no registry
 # credentials: it carries uv and a glibc userland, which the managed CPython
@@ -19,20 +19,15 @@ FROM ${BUILD_IMAGE} AS build
 ARG RUNTIME_ID
 ARG PYTHON_VERSION
 ARG PYTHON_FULL_VERSION
-# uv refuses to create a virtual environment in a directory that already exists,
-# so its managed interpreter is installed beside the runtime and moved in after
-# the environment is built; every absolute link into the old location is then
-# re-pointed, which also covers uv's minor-version alias directory. The tree is
-# only self-contained if nothing survives that re-pointing, so the build then
-# proves it: no broken link anywhere under the destination, and no readable
-# text file still naming the build-stage install directory. Binary files are
-# skipped on purpose, because the standalone CPython legitimately carries its
-# own build prefix in compiled artefacts, so a `.pyc` cache that still embeds
-# the old path is not caught here. `--check` below cannot
-# show this -- it only proves the interpreter starts and the imports resolve.
-# The interpreter is pinned to the exact version the host manifest records, and
-# the bootstrap below may not download another one, so the runtime in the image
-# is the same interpreter build as the runtime the manifest describes.
+# bootstrap.py is the single source of the relocation recipe: it asks uv for a
+# managed interpreter under UV_PYTHON_INSTALL_DIR, builds the venv with copy
+# links, moves that interpreter into the tree, and refuses a tree that still
+# reaches outside itself. UV_LINK_MODE=copy keeps every wheel inside the tree
+# so the scratch layer below is a plain copy with nothing dangling. bootstrap's
+# own UV_PYTHON_INSTALL_DIR override hides the interpreter pre-installed here,
+# so SURE_HARNESS_PYTHON_VERSION pins the venv request to the exact interpreter
+# the host manifest records; without it uv would fetch the newest patch release
+# at build time and the identity check at the end would fail on timing alone.
 ENV UV_PYTHON_INSTALL_DIR=/opt/harness-base-python
 ENV UV_LINK_MODE=copy
 COPY --from=harness_runtime_spec uvenv.py /opt/sure-build/sure/runtime/uvenv.py
@@ -45,25 +40,10 @@ RUN set -eu; \
     uv python install "${PYTHON_FULL_VERSION}"; \
     base="$(uv python find "${PYTHON_FULL_VERSION}")"; \
     [ -x "$base" ] || { echo "uv did not install ${PYTHON_FULL_VERSION}" >&2; exit 1; }; \
-    UV_PYTHON_DOWNLOADS=never "$base" "$bootstrap" --runtime-root /opt/sure-harness \
+    SURE_HARNESS_PYTHON_VERSION="${PYTHON_FULL_VERSION}" "$base" "$bootstrap" --runtime-root /opt/sure-harness \
         || { cat /opt/sure-harness/logs/*.log >&2; exit 1; }; \
     [ -n "${RUNTIME_ID}" ] && [ -d "$dest" ] \
         || { echo "built runtime is not '${RUNTIME_ID}': $(ls /opt/sure-harness)" >&2; exit 1; }; \
-    mv /opt/harness-base-python "$dest/base-python"; \
-    sed -i "s|/opt/harness-base-python|$dest/base-python|g" "$dest/pyvenv.cfg"; \
-    scan=/tmp/harness-runtime-scan; \
-    find "$dest" -type l > "$scan"; \
-    while read -r link; do \
-        target="$(readlink "$link")"; \
-        case "$target" in /opt/harness-base-python/*) \
-            ln -sfn "$dest/base-python${target#/opt/harness-base-python}" "$link";; esac; \
-    done < "$scan"; \
-    find "$dest" -xtype l > "$scan"; \
-    [ ! -s "$scan" ] \
-        || { echo "dangling symlink under $dest" >&2; cat "$scan" >&2; exit 1; }; \
-    status=0; grep -rlI /opt/harness-base-python "$dest" > "$scan" || status=$?; \
-    [ "$status" -eq 1 ] \
-        || { echo "stale build-stage path under $dest (grep exit $status)" >&2; cat "$scan" >&2; exit 1; }; \
     "$dest/bin/python" "$bootstrap" --check --runtime-root /opt/sure-harness; \
     built="$("$dest/bin/python" -c 'import json,sys;print(json.load(open(sys.argv[1]))["python_version"])' "$dest/runtime-manifest.json")"; \
     [ "$built" = "${PYTHON_FULL_VERSION}" ] \
