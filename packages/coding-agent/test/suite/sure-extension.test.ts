@@ -724,6 +724,51 @@ describe("Sure extension", () => {
 		expect(harness.session.getActiveToolNames()).not.toContain("sure_update_state");
 	});
 
+	it("records assistant token usage for the active Sure run", async () => {
+		const harness = await createSureHarness();
+		cleanups.push(harness.cleanup);
+		setupSkillPackage(harness.tempDir);
+
+		harness.setResponses([
+			() => {
+				const runId = getOnlyRunId(harness.tempDir);
+				writeValidManifest(harness.tempDir, runId);
+				const response = fauxAssistantMessage(
+					fauxToolCall("sure_finish", {
+						status: "success",
+						manifest_path: `.sure/runs/${runId}/manifest.json`,
+						summary: "done",
+					}),
+				);
+				response.usage = {
+					input: 12,
+					output: 7,
+					cacheRead: 5,
+					cacheWrite: 0,
+					totalTokens: 24,
+					cost: { input: 0.12, output: 0.07, cacheRead: 0.01, cacheWrite: 0, total: 0.2 },
+				};
+				return response;
+			},
+		]);
+
+		await harness.session.prompt("/sure_feed topic");
+		await harness.session.agent.waitForIdle();
+		await waitForCondition(() => harness.session.messages.some((message) => message.role === "toolResult"));
+
+		const runId = getOnlyRunId(harness.tempDir);
+		const usage = JSON.parse(
+			readFileSync(join(harness.tempDir, ".sure", "runs", runId, "artifacts", "token_usage.json"), "utf-8"),
+		);
+		expect(usage).toMatchObject({
+			requests: 1,
+			status: "success",
+		});
+		expect(usage.input_tokens).toBeGreaterThan(0);
+		expect(usage.output_tokens).toBeGreaterThan(0);
+		expect(usage.total_tokens).toBeGreaterThan(0);
+	});
+
 	it("clears stale repair instructions after a later successful finish", async () => {
 		const harness = await createSureHarness();
 		cleanups.push(harness.cleanup);

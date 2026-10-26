@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { mergeSureDisplayState } from "./state.ts";
+import { updateTokenUsageMetadata } from "./token-usage.ts";
 import type { SureDisplayState, SureRunRecord, SureRunStatus, SureSkillPackage } from "./types.ts";
 
 const SURE_RUNS_DIR = ".sure/runs";
@@ -176,6 +177,7 @@ export class SureRunManager {
 	private writeRecord(record: SureRunRecord): void {
 		mkdirSync(record.runDir, { recursive: true });
 		writeJson(join(record.runDir, "run.json"), record);
+		updateTokenUsageMetadata(record);
 		this.writeResult(record);
 	}
 

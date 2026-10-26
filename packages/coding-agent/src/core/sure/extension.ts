@@ -18,6 +18,7 @@ import { discoverSureSkillPackages, SURE_COMMANDS, type SureDiscoveryDiagnostic 
 import { resolveOutputDir, stripOutputDir } from "./output-dir.ts";
 import { SureRunManager } from "./run-manager.ts";
 import { formatSureDisplayStatus, normalizeSureDisplayStatePatch } from "./state.ts";
+import { recordAssistantUsage } from "./token-usage.ts";
 import type {
 	SureArtifactRequirement,
 	SureDisplayState,
@@ -1228,6 +1229,15 @@ export function createSureExtension(): ExtensionFactory {
 					isError: true,
 				};
 			}
+			return undefined;
+		});
+
+		pi.on("message_end", async (event) => {
+			const active = activeRun;
+			if (!active || event.message.role !== "assistant") {
+				return undefined;
+			}
+			recordAssistantUsage(active.record, event.message);
 			return undefined;
 		});
 
