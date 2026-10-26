@@ -193,6 +193,10 @@ npm run check
 
 In PowerShell, call `npm.cmd` instead of `npm` here too, for the execution-policy reason given in the Quick Start.
 
+## Optional Context Folding
+
+Start with `SURE_CONTEXT_FOLDING=1 PI_OFFLINE=1 ./pi-test.sh` to enable reversible session context folding. It preserves the original session, folds released older tool turns and successfully completed skill instructions, deduplicates exact outputs and repeated line blocks, and provides `context_restore` for historical snapshots. It uses no separate compression model and continues across SURE commands in the same session. It is disabled by default; see [context folding](./docs/context-folding.md) for the protocol, cache behavior, metrics, and current limits.
+
 ## Seven SURE Commands
 
 | Command | Purpose | Main product |

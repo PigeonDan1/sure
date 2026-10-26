@@ -11,6 +11,7 @@ import {
 	type ExtensionContext,
 	type ExtensionFactory,
 } from "../extensions/index.ts";
+import { sureContextHandoffExtension } from "./context-handoff.ts";
 import { SureHookRunner } from "./hooks.ts";
 import { runSureInit } from "./init.ts";
 import type { SureInitManifest } from "./init-types.ts";
@@ -1372,6 +1373,8 @@ export function createSureExtension(): ExtensionFactory {
 			ctx.ui.setStatus(STATUS_KEY, undefined);
 			clearActiveRun(pi, active, setActiveRun);
 		});
+
+		sureContextHandoffExtension(pi);
 
 		pi.registerCommand("sure", {
 			description: "Show Sure skill discovery status",
