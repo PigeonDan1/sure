@@ -30,6 +30,7 @@ from deployment_contract import (
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 from sure.runtime.model.bootstrap import manifest_sha256
+from sure.runtime.model.device_dtype import dtype_from_config
 
 
 SCHEMA = "sure.onboard.runtime_inventory.v2"
@@ -245,6 +246,7 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
         eval_runtime = "unavailable"
 
     model_cfg = config.get("model") if isinstance(config.get("model"), dict) else {}
+    declared_dtype = dtype_from_config(config) if config else None
     return {
         "schema": SCHEMA,
         "generated_at": inventory_timestamp(package),
@@ -253,6 +255,7 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
             "name": str(resolved.get("model_name") or model_dir.name),
             "id": resolved.get("model_id") or model_cfg.get("id"),
             "task": resolved.get("task_type") or config.get("task"),
+            "dtype": declared_dtype,
             "deployment_type": deployment_type,
             "bundle_root": ".",
             "bundle_identity_sha256": bundle_identity,

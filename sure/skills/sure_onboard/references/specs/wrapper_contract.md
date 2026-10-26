@@ -14,9 +14,17 @@
 
 **Responsibilities**:
 - Abstract model-specific API into unified interface
-- Handle device placement (CPU/GPU)
+- Handle device placement (CPU/GPU) using the normalized runtime value
 - Manage lazy loading
 - Provide `predict()` or task-specific entry point
+
+**Device/dtype contract**:
+- Accept `cpu`, `cuda`, `cuda:0`, and `cuda:N`; `cuda` means the first
+  process-visible GPU and an explicit index must be preserved.
+- Device placement and model dtype are independent decisions. Do not derive
+  dtype from a device string.
+- If `config.yaml:model.dtype` is present, the loader must use that approved
+  dtype or fail; silently changing dtype is not allowed.
 
 **Must Provide**:
 ```python

@@ -16,6 +16,7 @@
 				"name": { "type": "string" },
 				"id": { "type": ["string", "null"] },
 				"task": { "type": ["string", "null"] },
+				"dtype": { "type": ["string", "null"], "enum": ["bfloat16", "float16", "float32", "float64", null] },
 				"deployment_type": { "enum": ["local", "api"] },
 				"bundle_root": { "const": "." },
 				"bundle_identity_sha256": { "type": ["string", "null"], "pattern": "^[0-9a-f]{64}$" }

@@ -20,6 +20,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+from sure.runtime.model.device_dtype import dtype_from_config, normalize_dtype_name
+
 ACTUAL_DEVICES = {"cuda", "cpu", "mps"}
 CUDA_FIRST_REQUESTS = {"auto", "cuda"}
 DEFAULT_CPU_FALLBACK_AFTER_CUDA_FAILURES = 3
@@ -229,6 +232,66 @@ def cuda_first_violation(data: dict[str, Any], run_dir: Path) -> str | None:
     return None
 
 
+def model_dir_for(run_dir: Path, data: dict[str, Any]) -> Path | None:
+    candidates: list[object] = [data.get("model_dir")]
+    resolved = load_json(run_dir / "artifacts" / "model_input_resolved.json")
+    if resolved:
+        candidates.append(resolved.get("model_dir"))
+    for raw in candidates:
+        if isinstance(raw, str) and raw.strip():
+            path = Path(raw).expanduser()
+            if (path / "config.yaml").is_file():
+                return path
+    return None
+
+
+def dtype_contract_violation(data: dict[str, Any], run_dir: Path) -> str | None:
+    """Require evidence that an explicit local model dtype was exercised."""
+    model_dir = model_dir_for(run_dir, data)
+    if model_dir is None:
+        return None
+    try:
+        import yaml
+        config = yaml.safe_load((model_dir / "config.yaml").read_text(encoding="utf-8")) or {}
+    except Exception as exc:  # malformed config is another gate's error
+        return f"cannot read model dtype declaration from {model_dir / 'config.yaml'}: {exc}"
+    try:
+        declared = dtype_from_config(config) if isinstance(config, dict) else None
+    except ValueError as exc:
+        return f"VALIDATE_ENV_COMPAT gate failed: {exc}"
+    if not declared:
+        return None
+    artifact_declared = str(data.get("declared_dtype") or "").strip().lower()
+    loaded = str(data.get("loaded_dtype") or "").strip().lower()
+    if artifact_declared != declared:
+        return (
+            "VALIDATE_ENV_COMPAT gate failed: model declares dtype "
+            f"{declared!r}, but env_compat_result.declared_dtype={artifact_declared or '<missing>'!r}."
+        )
+    if loaded != declared:
+        return (
+            "VALIDATE_ENV_COMPAT gate failed: model load did not prove the declared dtype; "
+            f"expected loaded_dtype={declared!r}, got {loaded or '<missing>'!r}."
+        )
+    if data.get("dtype_supported") is not True:
+        return "VALIDATE_ENV_COMPAT gate failed: dtype_supported must be true for a declared model dtype."
+    probe = data.get("probe")
+    if not isinstance(probe, dict) or probe.get("status") != "passed":
+        return "VALIDATE_ENV_COMPAT gate failed: a passed same-dtype hardware probe is required."
+    resolved_device = str(data.get("resolved_device") or data.get("device") or "").strip().lower()
+    device_map = str(data.get("device_map") or "").strip().lower()
+    if resolved_device.startswith("cuda") and not device_map.startswith("cuda:"):
+        return (
+            "VALIDATE_ENV_COMPAT gate failed: CUDA validation must record a concrete "
+            f"device_map such as cuda:0, got {device_map or '<missing>'!r}."
+        )
+    try:
+        normalize_dtype_name(loaded)
+    except ValueError as exc:
+        return f"VALIDATE_ENV_COMPAT gate failed: {exc}"
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-dir", required=True)
@@ -263,6 +326,11 @@ def main() -> int:
     device_violation = cuda_first_violation(data, run_dir)
     if device_violation:
         print(device_violation, file=sys.stderr)
+        return 1
+
+    dtype_violation = dtype_contract_violation(data, run_dir)
+    if dtype_violation:
+        print(dtype_violation, file=sys.stderr)
         return 1
 
     false_fields = [
