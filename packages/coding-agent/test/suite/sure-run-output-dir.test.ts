@@ -3,10 +3,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { fauxAssistantMessage } from "@earendil-works/pi-ai/compat";
 import { describe, expect, it } from "vitest";
 import { buildInvocationPrompt } from "../../src/core/sure/extension.ts";
 import { NFS_ROOT, resolveOutputDir, stripOutputDir } from "../../src/core/sure/output-dir.ts";
 import { SureRunManager } from "../../src/core/sure/run-manager.ts";
+import { recordAssistantUsage, TOKEN_USAGE_FILE } from "../../src/core/sure/token-usage.ts";
 import type { SureRunRecord, SureSkillPackage } from "../../src/core/sure/types.ts";
 
 function freshRoot(name: string): string {
@@ -224,6 +226,57 @@ describe("result.json", () => {
 		manager.setStatus(record, "success");
 
 		expect(existsSync(join(outputDir, "artifacts", "main_agent_run_report.json"))).toBe(true);
+	});
+
+	it("writes aggregated token usage and copies it on terminal status", () => {
+		const root = freshRoot("token-usage");
+		const outputDir = join(root, "out");
+		mkdirSync(outputDir, { recursive: true });
+		const manager = new SureRunManager(join(root, "cwd"));
+		const record = manager.createRun(skillPackage(), "model=demo", outputDir);
+		const first = fauxAssistantMessage("first");
+		first.usage = {
+			input: 10,
+			output: 4,
+			cacheRead: 2,
+			cacheWrite: 1,
+			cacheWrite1h: 1,
+			reasoning: 3,
+			totalTokens: 16,
+			cost: { input: 0.1, output: 0.2, cacheRead: 0.03, cacheWrite: 0.01, total: 0.34 },
+		};
+		const second = fauxAssistantMessage("second");
+		second.usage = {
+			input: 20,
+			output: 5,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 25,
+			cost: { input: 0.2, output: 0.25, cacheRead: 0, cacheWrite: 0, total: 0.45 },
+		};
+
+		recordAssistantUsage(record, first);
+		recordAssistantUsage(record, second);
+		manager.setStatus(record, "success");
+
+		const usage = JSON.parse(readFileSync(join(outputDir, "artifacts", TOKEN_USAGE_FILE), "utf-8"));
+		expect(usage).toMatchObject({
+			schema: "sure.token_usage.v1",
+			run_id: record.runId,
+			command: "/sure_eval",
+			requests: 2,
+			input_tokens: 30,
+			output_tokens: 9,
+			cache_read_tokens: 2,
+			cache_write_tokens: 1,
+			cache_write_1h_tokens: 1,
+			reasoning_tokens: 3,
+			total_tokens: 41,
+			cost: 0.79,
+			cost_breakdown: { input: 0.3, output: 0.45, cache_read: 0.03, cache_write: 0.01, total: 0.79 },
+			status: "success",
+		});
+		expect(Object.values(usage.by_model)).toHaveLength(1);
 	});
 
 	it("stays absent while the run is still going", () => {
