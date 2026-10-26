@@ -11,6 +11,7 @@ from typing import Any
 
 from check_package_gate import validate_model_runtime
 from deployment_contract import (
+    declared_server_protocol,
     load_model_artifact,
     passed,
     read_json,
@@ -21,6 +22,7 @@ from deployment_contract import (
     validate_image_and_digest,
     validate_runtime_roles,
 )
+from write_runtime_inventory import load_config
 
 
 STAGE_RESULTS = {
@@ -109,6 +111,25 @@ def local_readiness(observed: dict[str, bool]) -> bool:
     return all(observed[name] for name in LOCAL_EVIDENCE_CHECKS)
 
 
+def validate_jsonl_server_smoke(run_dir: Path, model_dir: Path) -> None:
+    config = load_config(model_dir)
+    if declared_server_protocol(config, model_dir) != "stdio_jsonl":
+        return
+    smoke_path = run_dir / "artifacts" / "server_smoke.json"
+    if not smoke_path.is_file():
+        raise ValueError("JSONL server requires server_smoke.json from this onboard run; rerun validate_infer")
+    smoke = read_json(smoke_path)
+    step = (smoke.get("steps") or {}).get("single_request") or {}
+    command = (config.get("server") or {}).get("command") or []
+    observed_command = smoke.get("server_command")
+    if (smoke.get("status") != "passed" or smoke.get("protocol") != "jsonl"
+            or smoke.get("list_only") is True or step.get("ok") is not True
+            or not isinstance(observed_command, list) or observed_command[1:] != command[1:]
+            or not isinstance(step.get("prediction"), dict)
+            or not isinstance(step.get("projection"), str)):
+        raise ValueError("JSONL server smoke did not prove a projected prediction; rerun validate_infer")
+
+
 def validate_local_container(build: dict[str, Any], validation: dict[str, Any]) -> tuple[str, str, str]:
     if not passed(build.get("status")) or not passed(validation.get("status")):
         raise ValueError("docker build and validation status must both pass")
@@ -140,6 +161,8 @@ def build_package_gate(run_dir: Path, model_dir: Path) -> dict[str, Any]:
 
     deployment_type = str(resolved.get("deployment_type") or "local")
     profile = str(resolved.get("package_profile") or "none")
+    if deployment_type == "local":
+        validate_jsonl_server_smoke(run_dir, model_dir)
     if deployment_type == "api" and profile != "none":
         raise ValueError("API deployment requires package_profile=none")
 
