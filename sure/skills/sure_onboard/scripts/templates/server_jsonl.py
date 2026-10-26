@@ -9,6 +9,10 @@ from model import ModelWrapper
 
 
 def main() -> int:
+    # The prediction is UTF-8 whatever the platform's console code page is: a
+    # non-ASCII transcript on a GBK console must not kill the server mid-run.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
     wrapper = ModelWrapper()
     wrapper.load()
     for line in sys.stdin:
