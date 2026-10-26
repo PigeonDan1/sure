@@ -5,9 +5,10 @@
 `EXECUTION_SURFACE_UNIT` records the execution handoff artifact for the
 current run.
 
-The artifact, `execution_surface.json`, is written by `scripts/run_infer.py`
-from the bundled `scripts/infer_entrypoint.py`. The agent runs
-`scripts/run_infer.py --run-dir <sure_run_dir>` once; the script resolves the
+The artifact, `execution_surface.json`, is written by the absolute path to
+this skill package's `scripts/run_infer.py`
+from the bundled `scripts/infer_entrypoint.py`. The agent runs the absolute
+skill-package path to `scripts/run_infer.py --run-dir <sure_run_dir>` once; the script resolves the
 approved binding, datasets, run directory, tool name and execution path, writes
 the surface, runs the compliance checks and launches inference in the approved
 runtime. The agent never authors the JSON by hand.
@@ -36,7 +37,7 @@ when no surface has been written.
 A compliant execution-surface unit should:
 
 1. **read `script_routing.json` as primary input**: the steps declared there are the bundled scripts `infer_entrypoint.py` runs; the surface must not add to or bypass them.
-2. run `scripts/run_infer.py --run-dir <sure_run_dir>` once
+2. run the absolute skill-package path to `scripts/run_infer.py --run-dir <sure_run_dir>` once; omit the optional shell timeout for long inference runs (`timeout=0` is invalid); do not rely on a preceding `cd` or a relative path because shell tool calls may use different working directories
 3. leave `execution_surface.json` and `execution_result.json` under `artifacts/` for `EXECUTION_READINESS_UNIT`, `SMOKE_TEST_UNIT` and `EXECUTE_WAIT_UNIT` to validate
 4. preserve dataset task/language metadata (`resolved_inputs.datasets`, `dataset_entries`) for generation and evaluation
 

@@ -107,6 +107,39 @@ class PythonDeliveryContractTests(unittest.TestCase):
         )
 
     def test_package_none_reaches_eval_ready_without_docker_evidence(self) -> None:
+        self._verify_python_delivery(False)
+        inventory_path = self.run_artifacts / "runtime_inventory.json"
+        inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+        inventory["model_runtime"].pop("server_source")
+        write_json(inventory_path, inventory)
+        write_json(self.model_artifacts / "runtime_inventory.json", inventory)
+        check = self.run_gate("check_runtime_inventory.py", inventory_path)
+        self.assertEqual(check.returncode, 0, check.stderr)
+
+    def test_package_none_with_undeclared_server_passes_inventory_gate(self) -> None:
+        (self.model_dir / "config.yaml").write_text(
+            "task: asr\ntools:\n  - name: predict\nresources:\n  gpu: false\n", encoding="utf-8"
+        )
+        self._verify_python_delivery(True)
+        inventory_path = self.run_artifacts / "runtime_inventory.json"
+        inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+        inventory["model_runtime"]["server_command"] = ["bin/python", "server.py"]
+        write_json(inventory_path, inventory)
+        write_json(self.model_artifacts / "runtime_inventory.json", inventory)
+        check = self.run_gate("check_runtime_inventory.py", inventory_path)
+        self.assertNotEqual(check.returncode, 0)
+        self.assertIn("must use the Harness fallback", check.stderr)
+        (self.model_dir / "config.yaml").write_text(
+            "task: asr\nserver:\n  command: [python, server.py]\n  protocol: mcp\n"
+            "tools:\n  - name: predict\nresources:\n  gpu: false\n", encoding="utf-8"
+        )
+        with patch.dict(os.environ, {"SURE_SITE_POLICY": str(self.site_policy)}):
+            write_inventory(self.model_dir, inventory_path, self.run_dir)
+        check = self.run_gate("check_runtime_inventory.py", inventory_path)
+        self.assertNotEqual(check.returncode, 0)
+        self.assertIn("requires passing server smoke evidence", check.stderr)
+
+    def _verify_python_delivery(self, fallback: bool) -> None:
         draft = self.run_artifacts / "build_env_draft.json"
         write_json(
             draft,
@@ -167,6 +200,14 @@ class PythonDeliveryContractTests(unittest.TestCase):
         }
         for name, value in passing_artifacts.items():
             write_json(self.run_artifacts / name, value)
+        if not fallback:
+            write_json(
+                self.run_artifacts / "server_smoke.json",
+                {
+                    "status": "passed", "server_command": [str(self.model_dir / ".venv/bin/python"), "server.py"],
+                    "tool": "predict", "protocol": "mcp",
+                },
+            )
 
         stage_result = stage_model_artifacts.main_with_args(
             ["--run-dir", str(self.run_dir), "--produces", str(self.run_artifacts / "artifact_manifest.json")]
@@ -190,6 +231,9 @@ class PythonDeliveryContractTests(unittest.TestCase):
         self.assertEqual(inventory["status"], "ready")
         self.assertEqual(inventory["policy"]["eval_runtime"], "python")
         self.assertFalse(inventory["container_runtime"]["required"])
+        self.assertEqual(inventory["model_runtime"]["server_source"], "harness_fallback" if fallback else "declared")
+        if fallback:
+            self.assertEqual(inventory["model_runtime"]["server_command"], [])
         inventory_check = self.run_gate("check_runtime_inventory.py", self.run_artifacts / "runtime_inventory.json")
         self.assertEqual(inventory_check.returncode, 0, inventory_check.stderr)
 
@@ -217,6 +261,8 @@ class PythonDeliveryContractTests(unittest.TestCase):
         with patch.dict(os.environ, {"SURE_SITE_POLICY": str(self.site_policy)}):
             binding = load_deployment_binding(self.model_dir, "demo")
         self.assertEqual(binding["schema"], "sure.eval.deployment_binding.v2")
+        if fallback:
+            self.assertEqual(Path(binding["python"]["server_command"][1]).name, "model_wrapper_mcp_server.py")
         self.assertEqual(binding["evidence"]["integrity_profile"], "manifest-complete-v1")
         self.assertFalse(any(self.model_artifacts.glob("docker_*.json")))
         self.assertFalse(any(".cache" in path.split("/") for path in deployment["required_artifact_sha256"]))

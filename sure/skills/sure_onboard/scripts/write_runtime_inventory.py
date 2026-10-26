@@ -85,12 +85,13 @@ def normalize_command(value: object) -> list[str]:
 
 def model_runtime_command(config: dict[str, Any], python_executable: str) -> tuple[list[str], list[str]]:
     server = config.get("server") if isinstance(config.get("server"), dict) else {}
-    command = normalize_command(server.get("command")) or [python_executable, "server.py"]
-    first = command[0]
-    if first in {"python", "python3"} or first.endswith("/python"):
-        command[0] = python_executable
-    else:
-        raise ValueError("package=none server.command must start with a Python executable")
+    command = normalize_command(server.get("command"))
+    if command:
+        first = command[0]
+        if first in {"python", "python3"} or first.endswith("/python"):
+            command[0] = python_executable
+        else:
+            raise ValueError("package=none server.command must start with a Python executable")
     tools = [
         str(tool["name"])
         for tool in config.get("tools", [])
@@ -217,6 +218,7 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
             "lock_sha256": manifest.get("lock_sha256"),
             "working_dir": ".",
             "server_command": command,
+            "server_source": "declared" if command else "harness_fallback",
             "tool_names": tool_names,
             "required_imports": [
                 str(item)

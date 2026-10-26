@@ -30,7 +30,7 @@ for _parent in Path(__file__).resolve().parents:
         sys.path.insert(0, str(_parent))
         break
 
-from sure.runtime.evaluation.task_registry import normalize_task, task_profile
+from sure.runtime.evaluation.task_registry import allows_empty_prediction, normalize_task, task_profile
 
 configure_logging(level="INFO")
 logger = get_logger(__name__)
@@ -175,6 +175,7 @@ def _task_contract_violations(
     structured: dict[str, dict[str, Any]],
     *,
     base_dir: Path | None = None,
+    require_nonempty: bool = False,
 ) -> list[str]:
     violations: list[str] = []
     sample_by_key = {str(sample.get("key", "")): sample for sample in samples}
@@ -188,7 +189,9 @@ def _task_contract_violations(
                 violations.append(key)
             continue
         try:
-            primary_field = str(task_profile(task)["io_contract"]["primary_field"])
+            contract = task_profile(task)["io_contract"]
+            primary_field = str(contract["primary_field"])
+            empty_is_scoreable = allows_empty_prediction(task)
         except ValueError:
             violations.append(key)
             continue
@@ -203,7 +206,7 @@ def _task_contract_violations(
             audio_path = value or normalized
             if not audio_path or not _resolve_audio_path(audio_path, base_dir).exists():
                 violations.append(key)
-        elif value in (None, "", [], {}) and not normalized:
+        elif value in (None, "", [], {}) and not normalized and (require_nonempty or not empty_is_scoreable):
             violations.append(key)
     return sorted(set(violations))
 
@@ -221,11 +224,32 @@ def _structured_projection_mismatches(
     return mismatches
 
 
+def _text_prediction_contract_violations(
+    samples: list[dict[str, Any]],
+    predictions: dict[str, str],
+    *,
+    require_nonempty: bool,
+) -> list[str]:
+    violations: list[str] = []
+    for sample in samples:
+        key = str(sample.get("key", ""))
+        if key not in predictions or predictions[key].strip():
+            continue
+        try:
+            empty_is_scoreable = allows_empty_prediction(str(sample.get("task") or ""))
+        except ValueError:
+            violations.append(key)
+            continue
+        if require_nonempty or not empty_is_scoreable:
+            violations.append(key)
+    return sorted(set(violations))
+
+
 def validate_prediction_file(
     dataset_manager: DatasetManager,
     dataset_name: str,
     prediction_path: Path,
-    require_nonempty: bool,
+    require_nonempty: bool = False,
     max_samples: int = 0,
 ) -> dict[str, Any]:
     canonical_name = dataset_manager.normalize_dataset_name(dataset_name)
@@ -254,11 +278,23 @@ def validate_prediction_file(
         sorted(expected_key_set - structured_key_set) if structured_path.exists() or structured_required else []
     )
     structured_extra_keys = sorted(structured_key_set - expected_key_set) if structured_path.exists() else []
-    contract_violation_keys = (
-        _task_contract_violations(samples, structured_predictions, base_dir=structured_path.parent)
-        if structured_path.exists()
-        else []
+    contract_violation_keys = _text_prediction_contract_violations(
+        samples,
+        predictions,
+        require_nonempty=require_nonempty,
     )
+    if structured_path.exists():
+        contract_violation_keys = sorted(
+            set(contract_violation_keys)
+            | set(
+                _task_contract_violations(
+                    samples,
+                    structured_predictions,
+                    base_dir=structured_path.parent,
+                    require_nonempty=require_nonempty,
+                )
+            )
+        )
     structured_projection_mismatch_keys = (
         _structured_projection_mismatches(predictions, structured_predictions, expected_key_set)
         if structured_path.exists()

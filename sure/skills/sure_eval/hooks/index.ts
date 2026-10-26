@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { SureHookContext, SureHookResult } from "@earendil-works/pi-coding-agent/hooks";
 import { agentBinDir, demoteAgentBinDir } from "../../../runtime/agent-path.ts";
@@ -142,6 +142,20 @@ function parseArgs(raw: string): Record<string, string> {
 	return out;
 }
 
+function parseStrictBooleanArg(args: Record<string, string>, name: string): { value?: boolean; error?: string } {
+	const raw = args[name];
+	if (raw === undefined) {
+		return { value: false };
+	}
+	if (raw === "true" || raw === "1") {
+		return { value: true };
+	}
+	if (raw === "false" || raw === "0") {
+		return { value: false };
+	}
+	return { error: `${name} must be true, false, 1, or 0; received ${JSON.stringify(raw)}.` };
+}
+
 // --- memory system glue -------------------------------------------------------
 // The shared orchestration lives in sure/runtime/memory/hooks.ts; this file only
 // decides WHEN to call it and where the results go (repair text, checkpoint,
@@ -190,14 +204,91 @@ export function evalProductDir(ctx: SureHookContext): string | undefined {
 	return typeof sourceDir === "string" && sourceDir.length > 0 ? sourceDir : undefined;
 }
 
+export function materializeDatasetScope(ctx: SureHookContext): GateResult {
+	const source = readArtifact(ctx, "prediction_source_resolved.json");
+	if (
+		!isRecord(source) ||
+		source.schema !== "sure.reval.approved_prediction_source.v2" ||
+		!Array.isArray(source.datasets) ||
+		source.datasets.length === 0 ||
+		!source.datasets.every(
+			(dataset) => typeof dataset === "string" && dataset.trim() !== "" && dataset === dataset.trim(),
+		) ||
+		new Set(source.datasets).size !== source.datasets.length
+	) {
+		return {
+			ok: false,
+			repair:
+				"prediction_source_resolved.json must contain a nonempty, unique set of canonical dataset ids before dataset_scope can advance.",
+		};
+	}
+	const sourceDatasets = source.datasets as string[];
+	const path = artifactPath(ctx, FIRST_UNIT.produces);
+	if (!existsSync(path)) {
+		try {
+			writeFileSync(
+				path,
+				`${JSON.stringify(
+					{
+						run_id: ctx.run.runId,
+						selection_basis: ["Score the complete dataset set from the resolved prediction source."],
+						selected_datasets: sourceDatasets,
+						skipped_datasets: [],
+						auto_selected: true,
+					},
+					null,
+					2,
+				)}\n`,
+				{ encoding: "utf-8", flag: "wx" },
+			);
+		} catch (error) {
+			if (!existsSync(path)) {
+				return {
+					ok: false,
+					repair: `Cannot create ${FIRST_UNIT.produces}: ${error instanceof Error ? error.message : String(error)}`,
+				};
+			}
+		}
+	}
+	const decision = readArtifact(ctx, FIRST_UNIT.produces);
+	if (decision === undefined) {
+		return { ok: false, repair: `Existing ${FIRST_UNIT.produces} is not valid JSON; repair it in place.` };
+	}
+	const validation = validateProduces(ctx, FIRST_UNIT, decision);
+	if (!validation.ok) {
+		return {
+			ok: false,
+			repair: validation.repair ?? `${FIRST_UNIT.produces} is not valid JSON or does not satisfy its schema.`,
+		};
+	}
+	if (
+		!isRecord(decision) ||
+		!Array.isArray(decision.selected_datasets) ||
+		decision.selected_datasets.length !== sourceDatasets.length ||
+		!decision.selected_datasets.every((dataset) => typeof dataset === "string" && sourceDatasets.includes(dataset)) ||
+		!Array.isArray(decision.skipped_datasets) ||
+		decision.skipped_datasets.length !== 0
+	) {
+		return {
+			ok: false,
+			repair: `${FIRST_UNIT.produces} must select the entire resolved prediction source dataset set without skips or duplicates.`,
+		};
+	}
+	return { ok: true };
+}
+
 export function preStart(ctx: SureHookContext): SureHookResult {
 	// Park agent bin at end of PATH so a docker shim there cannot shadow system docker.
 	demoteAgentBinDir(process.env, agentBinDir());
 	const args = parseArgs(ctx.args);
+	const requireNonempty = parseStrictBooleanArg(args, "require_nonempty_predictions");
+	if (requireNonempty.error) {
+		return failure(requireNonempty.error, "Invalid prediction validation policy.");
+	}
 	const missing = ["model", "datasets"].filter((key) => !args[key]);
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_eval parameter(s): ${missing.join(", ")}. Usage: /sure_eval model=<exact-model-id> datasets=<dataset__version[,...]> [source=<run_id|abs_dir>] (pipeline_id=<exact-pipeline-id,...> | metrics=<metric,...>) [protocol=standard_system|strict_core] [device=cpu|cuda[:index]] [output_dir=<abs_dir>]`,
+			`Missing required /sure_eval parameter(s): ${missing.join(", ")}. Usage: /sure_eval model=<exact-model-id> datasets=<dataset__version[,...]> [source=<run_id|abs_dir>] (pipeline_id=<exact-pipeline-id,...> | metrics=<metric,...>) [require_nonempty_predictions=true|false] [protocol=standard_system|strict_core] [device=cpu|cuda[:index]] [output_dir=<abs_dir>]`,
 			"Missing required parameters.",
 		);
 	}
@@ -311,14 +402,25 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 		strippedArgs: stripOutputDir(ctx.args),
 	});
 	diagnostics.push(...memoryStart.diagnostics);
+	const scopeResult = materializeDatasetScope(ctx);
+	if (!scopeResult.ok) {
+		return failure(
+			scopeResult.repair ?? "Unable to confirm the resolved prediction source dataset set.",
+			"Invalid dataset scope.",
+		);
+	}
+	const scoped = advance(FIRST_UNIT, checkpoint.data);
+	if (!scoped) {
+		return failure("The dataset_scope unit must precede execute_evaluation.", "Invalid evaluation state machine.");
+	}
 	return {
 		ok: true,
 		state_patch: {
-			phase: phaseFor(findUnit(checkpoint.data.currentUnit) ?? FIRST_UNIT, "running"),
-			message: `SURE-EVAL skill loaded for model "${args.model}"; Harness Runtime ${runtime.contract.runtime_id}; prediction source: ${sourcePath}.`,
-			counters: countersFor(checkpoint.data, 0),
+			phase: phaseFor(findUnit(scoped.data.currentUnit) ?? LAST_UNIT, "running"),
+			message: `SURE-EVAL dataset scope confirmed from ${sourcePath}; continue at unit "${scoped.data.currentUnit}" with Harness Runtime ${runtime.contract.runtime_id}.`,
+			counters: countersFor(scoped.data, 0),
 			diagnostics,
-			checkpoint,
+			checkpoint: scoped,
 			artifacts: [
 				{ type: "runtime_binding", name: "Skill runtime binding", path: runtimeBindingPath, status: "ready" },
 				{
@@ -327,7 +429,40 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 					path: `.sure/runs/${ctx.run.runId}/artifacts/prediction_source_resolved.json`,
 					status: "ready",
 				},
+				{
+					type: "dataset_decision",
+					name: "Confirmed dataset scope",
+					path: `.sure/runs/${ctx.run.runId}/artifacts/${FIRST_UNIT.produces}`,
+					status: "ready",
+				},
 			],
+		},
+	};
+}
+
+export function onResume(ctx: SureHookContext): SureHookResult {
+	const checkpoint = readCheckpoint(ctx);
+	if (checkpoint.data.currentUnit !== FIRST_UNIT.id || checkpoint.data.completedUnits.includes(FIRST_UNIT.id)) {
+		return { ok: true };
+	}
+	const scopeResult = materializeDatasetScope(ctx);
+	if (!scopeResult.ok) {
+		return failure(
+			scopeResult.repair ?? "Unable to confirm the resolved prediction source dataset set.",
+			"Invalid dataset scope.",
+		);
+	}
+	const scoped = advance(FIRST_UNIT, checkpoint.data);
+	if (!scoped) {
+		return failure("The dataset_scope unit must precede execute_evaluation.", "Invalid evaluation state machine.");
+	}
+	return {
+		ok: true,
+		state_patch: {
+			phase: phaseFor(findUnit(scoped.data.currentUnit) ?? LAST_UNIT, "running"),
+			message: `Dataset scope confirmed from the resolved prediction source; continue at unit "${scoped.data.currentUnit}".`,
+			counters: countersFor(scoped.data, 0),
+			checkpoint: scoped,
 		},
 	};
 }
@@ -543,7 +678,8 @@ export function postToolResult(ctx: SureHookContext): SureHookResult {
 	if (unchangedFailure) {
 		return unchangedFailure;
 	}
-	const producesResult = validateProduces(ctx, currentUnit, artifact);
+	const producesResult =
+		currentUnit.id === FIRST_UNIT.id ? materializeDatasetScope(ctx) : validateProduces(ctx, currentUnit, artifact);
 	if (!producesResult.ok) {
 		if (producesResult.missing) {
 			// "missing" also covers "present but not JSON": readArtifact returns undefined for both.

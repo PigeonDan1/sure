@@ -113,7 +113,10 @@ class ParallelTests(unittest.TestCase):
         (self.model / "server.py").write_text(FAKE_SERVER)
         config = {
             "model": {"name": "demo", "task": "ASR"},
-            "server": {"protocol": "mcp", "env": {"CUDA_VISIBLE_DEVICES": "all", "DEVICE": "cpu"}},
+            # A model that ships its own server declares it here; without a
+            # declared command the harness starts its generic adapter instead.
+            "server": {"command": [sys.executable, str(self.model / "server.py")],
+                       "protocol": "mcp", "env": {"CUDA_VISIBLE_DEVICES": "all", "DEVICE": "cpu"}},
             "tools": [{"name": "transcribe_audio", "input_schema": {
                 "properties": {"audio_path": {"type": "string"}}, "required": ["audio_path"]}}],
         }
@@ -150,7 +153,8 @@ class ParallelTests(unittest.TestCase):
         self.ctx = infer_entrypoint.Ctx(
             repo_root=self.script_root, harness_root=self.root, model_name="demo", model_dir=self.model,
             run_dir=self.product, run_id="test", protocol_id="standard_system", requested_datasets=["demo__v1"],
-            max_samples=0, no_resume=True, device="cuda", metrics="", smoke_samples=None, child_env=env,
+            max_samples=0, no_resume=True, device="cuda", metrics="", smoke_samples=None,
+            require_nonempty_predictions=False, child_env=env,
             tool_name="transcribe_audio", datasets_root=self.datasets_root, datasets=["demo__v1"],
             num_workers=3, gpu_devices=["2", "4", "6"],
         )
@@ -267,6 +271,20 @@ class ParallelTests(unittest.TestCase):
         row = {"key": "k0", "dataset": "demo__v1", "task": "ASR", "normalized_prediction": "ok", "prediction": {"text": "ok"}}
         with self.assertRaisesRegex(ValueError, "duplicate"):
             parallel._valid_records([row, row], self.samples, "demo__v1", self.product)
+
+    def test_empty_prediction_follows_the_run_and_task_policy(self) -> None:
+        row = {"key": "k0", "dataset": "demo__v1", "task": "ASR",
+               "normalized_prediction": "", "prediction": {"text": ""}}
+        # ASR scores an empty answer unless the run demands non-empty values.
+        self.assertEqual(list(parallel._valid_records([row], self.samples, "demo__v1", self.product)), ["k0"])
+        os.environ["SURE_EVAL_REQUIRE_NONEMPTY_PREDICTIONS"] = "1"
+        self.addCleanup(os.environ.pop, "SURE_EVAL_REQUIRE_NONEMPTY_PREDICTIONS", None)
+        self.assertEqual(parallel._valid_records([row], self.samples, "demo__v1", self.product), {})
+        # A task that does not score empty answers drops the row either way.
+        os.environ.pop("SURE_EVAL_REQUIRE_NONEMPTY_PREDICTIONS", None)
+        classification = [{**self.samples[0], "task": "classification"}]
+        self.assertEqual(parallel._valid_records([{**row, "task": "classification"}],
+                                                 classification, "demo__v1", self.product), {})
 
     def test_killed_worker_journal_keeps_complete_utf8_rows(self) -> None:
         path = self.root / "journal.jsonl"

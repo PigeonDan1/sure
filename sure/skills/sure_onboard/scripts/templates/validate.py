@@ -276,10 +276,13 @@ def validate_contract(sample: dict[str, Any], contract: dict[str, Any]) -> list[
     required = string_list(contract.get("required_fields"))
     nonempty = string_list(contract.get("nonempty_fields"))
     primary = contract.get("primary_field")
+    allow_empty_prediction = contract.get("allow_empty_prediction") is True
     if isinstance(primary, str) and primary:
         if primary not in required:
             required.append(primary)
-        if primary not in nonempty:
+        if allow_empty_prediction:
+            nonempty = [field for field in nonempty if field != primary]
+        elif primary not in nonempty:
             nonempty.append(primary)
     for field in required:
         if field not in sample:

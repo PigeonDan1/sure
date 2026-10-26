@@ -53,10 +53,21 @@ def io_contract_for_task(task: str) -> dict[str, Any]:
     profile = task_profile(task)
     contract = dict(profile["io_contract"])
     primary = str(contract["primary_field"])
+    allow_empty_prediction = contract.get("allow_empty_prediction") is True
+    nonempty_fields = list(contract.get("nonempty_fields") or [])
+    if allow_empty_prediction:
+        nonempty_fields = [field for field in nonempty_fields if field != primary]
+    elif not nonempty_fields:
+        nonempty_fields = [primary]
     return {
         **contract,
         "output_type": "json",
         "required_fields": list(contract.get("required_fields") or [primary]),
-        "nonempty_fields": list(contract.get("nonempty_fields") or [primary]),
+        "nonempty_fields": nonempty_fields,
+        "allow_empty_prediction": allow_empty_prediction,
         "json_serializable": True,
     }
+
+
+def allows_empty_prediction(task: str) -> bool:
+    return io_contract_for_task(task).get("allow_empty_prediction") is True

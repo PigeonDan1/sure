@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 import stage_model_artifacts
-from write_runtime_inventory import write_inventory
+from write_runtime_inventory import model_runtime_command, write_inventory
 
 
 def write_json(path: Path, data: dict) -> None:
@@ -18,6 +18,11 @@ def write_json(path: Path, data: dict) -> None:
 
 
 class RuntimeInventoryTests(unittest.TestCase):
+    def test_python_inventory_does_not_synthesize_a_factory_entrypoint(self) -> None:
+        command, tools = model_runtime_command({"tools": [{"name": "asr"}]}, "bin/python")
+        self.assertEqual(command, [])
+        self.assertEqual(tools, ["asr"])
+
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

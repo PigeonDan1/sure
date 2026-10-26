@@ -52,7 +52,8 @@ export const MAIN_FLOW_UNITS: Unit[] = [
 		requiredFields: ["selected_datasets", "skipped_datasets", "selection_basis"],
 		forbiddenFields: ["execution_path", "report_persisted"],
 	},
-	// EXECUTE_INFERENCE — the agent runs scripts/run_infer.py --run-dir <run_dir>,
+	// EXECUTE_INFERENCE — the agent runs the absolute skill-package path to
+	// scripts/run_infer.py --run-dir <run_dir>,
 	// which writes execution_surface.json and execution_result.json. The gate
 	// validates the terminal record and cross-checks the product tree.
 	{

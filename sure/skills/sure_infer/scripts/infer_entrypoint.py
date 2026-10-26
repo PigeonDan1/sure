@@ -18,7 +18,7 @@ Environment (all injected by the launcher; the names are the templates'):
   SURE_EVAL_CONFIG, SURE_EVAL_DATASETS_ROOT, SURE_EVAL_APPROVED_MODEL_DIR,
   SURE_EVAL_APPROVED_RESULT_DIR, SURE_EVAL_PUBLISHED_RUN_DIR,
   SURE_EVAL_INPUT_RESOLVED, SURE_EVAL_FROM_STAGE, HARNESS_PYTHON_BIN,
-  MODEL_PYTHON
+  MODEL_PYTHON, SURE_EVAL_REQUIRE_NONEMPTY_PREDICTIONS
 """
 from __future__ import annotations
 
@@ -28,8 +28,10 @@ import shutil
 import subprocess
 import signal
 import sys
+from contextlib import nullcontext
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any
 
 for _parent in Path(__file__).resolve().parents:
@@ -83,6 +85,7 @@ class Ctx:
     device: str
     metrics: str
     smoke_samples: int | None
+    require_nonempty_predictions: bool
     child_env: dict[str, str]
     tool_name: str = ""
     config_path: Path | None = None
@@ -145,6 +148,12 @@ def _nonempty_prediction_rows(path: Path) -> int:
         if len(parts) > 1 and parts[1].strip():
             count += 1
     return count
+
+
+def _prediction_rows(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    return sum(1 for line in path.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip())
 
 
 def _read_json(path: Path) -> dict[str, Any]:
@@ -221,6 +230,7 @@ def stage_guards() -> Ctx:
         raise StageError("guards", "num_workers must be an integer between 1 and 8") from exc
     if not 1 <= num_workers <= 8:
         raise StageError("guards", "num_workers must be an integer between 1 and 8")
+    require_nonempty_predictions = _env("SURE_EVAL_REQUIRE_NONEMPTY_PREDICTIONS") == "1"
 
     child_env = dict(os.environ)
     scripts_dir = str(repo_root / "scripts")
@@ -253,6 +263,7 @@ def stage_guards() -> Ctx:
         device=device,
         metrics=_env("METRICS"),
         smoke_samples=smoke_samples,
+        require_nonempty_predictions=require_nonempty_predictions,
         child_env=child_env,
         num_workers=num_workers,
     )
@@ -439,12 +450,21 @@ def stage_materialize(ctx: Ctx) -> None:
     if ctx.num_workers > 1:
         # Only the parallel controller publishes formal prediction files.
         return
+    predictions_dir = ctx.run_dir / "predictions"
+    pending = [
+        dataset for dataset in ctx.datasets
+        if ctx.no_resume
+        or not (predictions_dir / f"{dataset}.txt").is_file()
+        or not (predictions_dir / f"{dataset}.jsonl").is_file()
+    ]
+    if not pending:
+        return
     _run(
         ctx,
         "materialize",
         "materialize_predictions_template.py",
         "--dataset",
-        *ctx.datasets,
+        *pending,
         "--output-dir",
         str(ctx.run_dir / "predictions"),
         "--manifest-name",
@@ -453,14 +473,14 @@ def stage_materialize(ctx: Ctx) -> None:
     )
 
 
-def _generate_args(ctx: Ctx, dataset: str, *, max_samples: int | None) -> list[str]:
+def _generate_args(ctx: Ctx, dataset: str, *, max_samples: int | None, run_dir: Path | None = None) -> list[str]:
     args = [
         "--model-dir",
         str(ctx.model_dir),
         "--dataset",
         dataset,
         "--run-dir",
-        str(ctx.run_dir),
+        str(run_dir or ctx.run_dir),
         "--tool-name",
         ctx.tool_name,
         "--protocol",
@@ -494,21 +514,40 @@ def stage_smoke(ctx: Ctx) -> None:
     print(f"Smoke test on {dataset} ({samples} samples)", flush=True)
     smoke_ctx = ctx
     if ctx.num_workers > 1:
-        from dataclasses import replace
-
         smoke_ctx = replace(ctx, run_dir=ctx.run_dir / "parallel_inference" / "smoke",
                             child_env={**ctx.child_env, "CUDA_VISIBLE_DEVICES": ctx.gpu_devices[0],
                                        "DEVICE": "cuda:0", "SURE_EVAL_DEVICE_ACTUAL": "cuda:0"}, device="cuda:0")
     worker_flags = ["--worker-mode"] if ctx.num_workers > 1 else []
-    _run(smoke_ctx, "smoke", "generate_predictions_via_server.py", *_generate_args(smoke_ctx, dataset, max_samples=samples), *worker_flags)
-    valid = _nonempty_prediction_rows(smoke_ctx.run_dir / "predictions" / f"{dataset}.txt")
-    if valid < 1:
-        raise StageError(
-            "smoke",
-            f"smoke test produced no valid predictions in the first {samples} samples of {dataset}; "
-            f"see {ctx.run_dir / 'predictions' / 'logs'}",
-        )
-    print(f"Smoke test passed ({valid} valid rows)", flush=True)
+    existing_snapshot = not ctx.no_resume and (ctx.run_dir / "predictions" / f"{dataset}.jsonl").is_file()
+    workspace = TemporaryDirectory(prefix="sure-smoke-", dir=ctx.run_dir) if existing_snapshot else nullcontext(smoke_ctx.run_dir)
+    with workspace as smoke_dir:
+        smoke_root = Path(smoke_dir)
+        try:
+            _run(
+                smoke_ctx, "smoke", "generate_predictions_via_server.py",
+                *_generate_args(smoke_ctx, dataset, max_samples=samples, run_dir=smoke_root),
+                *worker_flags,
+            )
+            prediction_path = smoke_root / "predictions" / f"{dataset}.txt"
+            valid = _nonempty_prediction_rows(prediction_path)
+            generated = _prediction_rows(prediction_path)
+            observed = valid if ctx.require_nonempty_predictions else generated
+            if observed < 1:
+                raise StageError(
+                    "smoke",
+                    f"smoke test produced no {'non-empty ' if ctx.require_nonempty_predictions else ''}prediction rows in the first {samples} samples of {dataset}; "
+                    f"see {smoke_root / 'predictions' / 'logs'}",
+                )
+        except StageError as exc:
+            if existing_snapshot:
+                logs_dir = smoke_root / "predictions" / "logs"
+                if logs_dir.is_dir():
+                    preserved_logs = ctx.run_dir / "predictions" / "logs" / "resume-smoke"
+                    shutil.copytree(logs_dir, preserved_logs, dirs_exist_ok=True)
+                    raise StageError("smoke", f"{exc}; smoke logs: {preserved_logs}", exc.exit_code) from exc
+            raise
+        label = "non-empty rows" if ctx.require_nonempty_predictions else "prediction rows"
+        print(f"Smoke test passed ({observed} {label}; {valid} non-empty)", flush=True)
 
 
 def stage_generate(ctx: Ctx) -> None:
@@ -553,10 +592,11 @@ def stage_validate(ctx: Ctx) -> None:
         *ctx.datasets,
         "--pred-dir",
         str(ctx.run_dir / "predictions"),
-        "--require-nonempty",
         "--output",
         str(ctx.run_dir / "validation_payload.json"),
     ]
+    if ctx.require_nonempty_predictions:
+        args.append("--require-nonempty")
     if ctx.max_samples:
         args += ["--max-samples", str(ctx.max_samples)]
     _run(ctx, "validate", "validate_prediction_files.py", *args)

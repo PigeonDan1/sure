@@ -14,4 +14,5 @@ TARGET = Path(__file__).resolve().parents[1].parent / "sure_infer" / "scripts" /
 
 if __name__ == "__main__":
     sys.argv[0] = str(TARGET)
+    sys.path.insert(0, str(TARGET.parent))
     runpy.run_path(str(TARGET), run_name="__main__")

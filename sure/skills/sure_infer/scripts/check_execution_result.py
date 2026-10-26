@@ -45,6 +45,12 @@ def _nonempty_prediction_rows(path: Path) -> int:
     return count
 
 
+def _prediction_rows(path: Path) -> int:
+    if not path.is_file():
+        return 0
+    return sum(1 for line in path.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip())
+
+
 def gate_errors(run_dir: Path, result_path: Path) -> list[str]:
     result = _read_json(result_path)
     if result is None:
@@ -118,10 +124,15 @@ def gate_errors(run_dir: Path, result_path: Path) -> list[str]:
             continue
         name = str(row["dataset"])
         stem = stems.get(name, name)
-        actual = _nonempty_prediction_rows(product_dir / "predictions" / f"{stem}.txt")
+        actual = _prediction_rows(product_dir / "predictions" / f"{stem}.txt")
         if actual != row.get("generated"):
             errors.append(
-                f"predictions/{stem}.txt has {actual} non-empty rows but execution_result.json claims {row.get('generated')!r}"
+                f"predictions/{stem}.txt has {actual} rows but execution_result.json claims {row.get('generated')!r}"
+            )
+        expected = row.get("expected")
+        if isinstance(expected, int) and actual != expected:
+            errors.append(
+                f"predictions/{stem}.txt has {actual} rows but execution_result.json expects {expected} samples"
             )
         dataset_status = status_rows.get(stem)
         plan = plans.get(stem)

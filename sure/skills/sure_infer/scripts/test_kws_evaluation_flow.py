@@ -319,10 +319,10 @@ class KwsPredictionAndEvaluationTests(unittest.TestCase):
 
 
     def test_external_bridge_uses_the_canonical_kws_route_and_preserves_det_metrics(self) -> None:
-        pipeline_id = "kws.any.accuracy.conversion_kws_sure_json_to_samples_v1.wekws_det_v1"
+        pipeline_id = "kws.any.macro_recall.conversion_kws_sure_json_to_samples_v2.wekws_det_v2"
         pipeline = {
             "pipeline_id": pipeline_id,
-            "metric": "accuracy",
+            "metric": "macro_recall",
             "required_roles": ["reference_jsonl", "sample_output"],
             "nodes": [{"node_id": "scoring/wekws_det"}],
         }
@@ -336,16 +336,24 @@ class KwsPredictionAndEvaluationTests(unittest.TestCase):
                 "score": 1.0,
                 "details": {
                     "results": {
-                        "accuracy": {"score": 1.0},
-                        "false_reject_rate": {"score": 0.0},
-                        "false_alarm_rate": {"score": 0.0},
-                        "false_alarm_per_hour": {"score": 0.0},
-                        "det_curve": {"details": {"points": []}},
+                        "macro_recall": {
+                            "score": 1.0,
+                            "details": {
+                                "operating_point": {
+                                    "threshold": 0.5,
+                                    "macro_recall": 1.0,
+                                    "false_alarms": 0,
+                                    "false_alarm_per_hour": 0.0,
+                                    "per_keyword": {"hello": {"recall": 1.0}},
+                                },
+                                "trigger_latency": {"overall": 0.0, "unit": "ms"},
+                            },
+                        },
                     }
                 },
             }
             return {
-                "summary": {"metric": "accuracy", "score": 1.0, "pipeline_id": pipeline_id},
+                "summary": {"metric": "macro_recall", "score": 1.0, "pipeline_id": pipeline_id},
                 "pipeline": pipeline,
                 "report": report,
             }
@@ -366,13 +374,16 @@ class KwsPredictionAndEvaluationTests(unittest.TestCase):
                 device="cpu",
                 cache_dir=None,
                 timeout=30,
-                metric_override="accuracy",
+                metric_override="macro_recall",
                 task_override="KWS",
             )
 
         self.assertEqual(captured["reference_jsonl"], str(self.reference.resolve()))
         self.assertEqual(result["pipeline_id"], pipeline_id)
-        self.assertEqual(result["details"]["report"]["details"]["results"]["false_alarm_per_hour"]["score"], 0.0)
+        operating_point = result["details"]["report"]["details"]["results"]["macro_recall"]["details"][
+            "operating_point"
+        ]
+        self.assertEqual(operating_point["false_alarm_per_hour"], 0.0)
 
 
 if __name__ == "__main__":

@@ -112,6 +112,13 @@ def _tool_names(config: dict[str, Any]) -> list[str]:
         return ["predict"]
 
 
+def _advertised_schema(config: dict[str, Any], name: str, task: str) -> dict[str, Any]:
+    for tool in config.get("tools") or []:
+        if isinstance(tool, dict) and tool.get("name") == name and isinstance(tool.get("input_schema"), dict):
+            return tool["input_schema"]
+    return _tool_schema(task)
+
+
 def _respond(payload: dict[str, Any]) -> None:
     sys.stdout.write(json.dumps(payload, ensure_ascii=False) + "\n")
     sys.stdout.flush()
@@ -168,7 +175,7 @@ def main() -> int:
     model_dir = Path(args.model_dir).resolve()
     os.chdir(model_dir)
     config = _load_yaml(model_dir / "config.yaml")
-    model = _create_model(model_dir, config)
+    model: Any = None
     task = _model_task(config)
     tools = _tool_names(config)
 
@@ -202,7 +209,7 @@ def main() -> int:
                                 {
                                     "name": name,
                                     "description": f"Run {model_dir.name} ModelWrapper.predict",
-                                    "inputSchema": _tool_schema(task),
+                                    "inputSchema": _advertised_schema(config, name, task),
                                 }
                                 for name in tools
                             ]
@@ -215,6 +222,8 @@ def main() -> int:
                 arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
                 if name not in set(tools) | {"predict", "healthcheck"}:
                     raise ValueError(f"Unknown tool: {name}")
+                if model is None:
+                    model = _create_model(model_dir, config)
                 if name == "healthcheck" and hasattr(model, "healthcheck"):
                     result = model.healthcheck()
                 else:

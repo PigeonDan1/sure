@@ -89,6 +89,10 @@ class CheckExecutionResultTests(unittest.TestCase):
     def test_a_clean_success_passes(self) -> None:
         self.assertEqual(self.errors(), [])
 
+    def test_a_succeeded_execution_rejects_missing_prediction_rows(self) -> None:
+        (self.product_dir / "predictions" / f"{DATASET}.txt").write_text("k0\tp0\n", encoding="utf-8")
+        self.assertTrue(any("expects 2 samples" in error for error in self.errors()))
+
     def test_a_terminal_failure_is_a_valid_gate_outcome(self) -> None:
         self.write_result(job_status="failed", exit_code=3, failed_stage="generate", datasets=[])
         self.assertEqual(self.errors(), [])
@@ -113,7 +117,13 @@ class CheckExecutionResultTests(unittest.TestCase):
 
     def test_a_generated_count_that_disagrees_with_the_predictions_file_fails(self) -> None:
         self.write_result(datasets=[{"dataset": DATASET, "expected": 2, "generated": 5, "valid": 5}])
-        self.assertTrue(any("non-empty rows" in error for error in self.errors()))
+        self.assertTrue(any("has 2 rows" in error for error in self.errors()))
+
+    def test_empty_prediction_rows_count_as_generated_rows(self) -> None:
+        prediction = self.product_dir / "predictions" / f"{DATASET}.txt"
+        prediction.write_text("k0\t\nk1\ttext\n", encoding="utf-8")
+        self.write_result(datasets=[{"dataset": DATASET, "expected": 2, "generated": 2, "valid": 1}])
+        self.assertEqual(self.errors(), [])
 
     def test_a_dataset_the_status_file_did_not_complete_fails(self) -> None:
         self.write_product(rows=2, status="running")

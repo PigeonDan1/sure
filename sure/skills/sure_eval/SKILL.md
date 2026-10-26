@@ -9,7 +9,7 @@ Score predictions that already exist. This skill is evaluation-only: it must not
 
 **Prerequisite**: run `/sure_init` first to select an agent, configure auth, and validate the environment for this project.
 
-Control principle: **agent decides scope, scripts execute.** You (the agent) confirm which datasets of the source bundle are in scope; `../sure_infer/scripts/run_eval.py` resolves the routes, runs the pinned evaluation engine in the locked Evaluation Runtime and appends the batch; the hook gates enforce that every artifact is in the right place, the right format, and the right value domain.
+Control principle: **the resolved prediction source fixes scope, scripts execute.** The hook selects every dataset from the resolved source; `../sure_infer/scripts/run_eval.py` resolves the routes, runs the pinned evaluation engine in the locked Evaluation Runtime and appends the batch; the hook gates enforce that every artifact is in the right place, the right format, and the right value domain.
 
 ## Prediction Sources
 
@@ -36,6 +36,7 @@ At `pre_start` the hook also writes `artifacts/runtime_binding.json`: the exact 
 | `protocol` | — | `standard_system` (default) or `strict_core`; must equal the source bundle's protocol. |
 | `device` | — | Evaluation device (`cpu` default). Never changes prediction identity. |
 | `output_dir` | — | Absolute directory where the harness collects this invocation's `result.json` and control artifacts. Consumed at `pre_start`; the evaluation batch itself always lands in the source bundle. Must be outside every configured `forbidden_output_roots` entry and writable. Quote the value when the path contains spaces: `output_dir="/data/My Runs/job"`. |
+| `require_nonempty_predictions` | — | `false` by default; when `true`, revalidate the reused prediction bundle with `--require-nonempty`. Missing, extra and duplicate keys remain errors in either mode. Accepts `true`, `false`, `1`, `0`, or a bare flag. |
 
 `reuse_predictions_from`, `model_dir`, `tmp_root`, `copy_mode`, `max_samples`, `config` and `evaluation_engine_root` are rejected: they would weaken source identity, replace the pinned evaluator, or turn a full evaluation into a bounded test.
 
@@ -68,17 +69,17 @@ successful execution alone does not establish an improvement in speech quality.
 KWS wake-word example:
 
 ```text
-/sure_eval model=<approved-kws-model> datasets=<wake-dataset>__<version> source=<sure_infer_run> metrics=accuracy
+/sure_eval model=<approved-kws-model> datasets=<wake-dataset>__<version> source=<sure_infer_run> metrics=macro_recall
 ```
 
-For KWS, `metrics=accuracy` or `metrics=macro_recall` selects the pinned
-`conversion/kws_sure_json_to_samples -> scoring/wekws_det` route. Its metric
-artifact also reports precision, recall, F1, false reject rate, false alarm
-rate, false alarms per hour, and the DET curve. The current SURE JSON route
-counts a sample positive only when `detected` is true and `score` reaches the
-scanned threshold; it cannot recover candidates suppressed by the model's
-internal threshold. Full WekWS-style DET/FAR requires threshold-independent
-candidate scores from the model wrapper.
+For KWS, `metrics=macro_recall` selects the pinned
+`kws.any.macro_recall.conversion_kws_sure_json_to_samples_v2.wekws_det_v2`
+route. KWS v2 reports per-keyword recall and macro recall at a fixed
+system-wide false-alarm budget (default 0.1 FA/hour), plus trigger latency at
+the same operating point; ROC curves and AUC are optional. Accuracy,
+precision, F1, FRR, FAR, and DET are no longer KWS metrics. The wrapper must
+emit raw candidate scores on every clip: the evaluator's threshold sweep
+cannot recover candidates the model's internal threshold already censored.
 
 If a requested metric has no route for a dataset language (for example a mixed
 language split), the backend stops before scoring and includes available catalog
@@ -87,7 +88,7 @@ that route's language and metric semantics.
 
 ## State Machine
 
-Advance happens **only** when the current unit's `produces` artifact is compliant (location + format + value domain; no forbidden fields). Linear units are agent self-driven; gate units additionally run a Python semantic check. Produce the current unit's artifact, then call `sure_update_state`.
+Advance happens **only** when the current unit's `produces` artifact is compliant (location + format + value domain; no forbidden fields). The `dataset_scope` unit is completed deterministically by `pre_start`; on older resumed runs the `on_resume` hook completes it before prompting the agent without replacing an existing decision. Gate units additionally run a Python semantic check. For the remaining units, produce the current artifact and call `sure_update_state`.
 
 | # | Unit | Kind | Produces | Gate script |
 |---|------|------|----------|-------------|
@@ -99,11 +100,11 @@ Advance happens **only** when the current unit's `produces` artifact is complian
 
 ### Per-unit contract (Inputs → Output → Allowed → Must Not Do → Failure)
 
-- **dataset_scope**: Inputs = `artifacts/prediction_source_resolved.json` + explicit human constraints. Output = `dataset_decision.json` {selection_basis, selected_datasets, skipped_datasets}; `selected_datasets` names the canonical dataset ids from `prediction_source_resolved.json -> datasets`. The source is scored as a whole: this unit confirms the set, it does not pick a subset or invent a different scope. Must Not Do: do not set `execution_path`/`report_persisted` (later units); do not add memory fields to `dataset_decision.json` (its schema forbids extra keys). Also read `artifacts/memory_context.json` when it exists: the `pre_start` hook writes it with the memory facts that match this cluster, model and datasets, shape `{schema: "sure.memory.context.v1", skill, target_id, facts: [{entry_id, title, path, scope, checked_at, stale, status}], omitted_provisional}`; the file is written even when nothing matched (`facts: []`); it is advisory, verify before relying, and `stale: true` means the fact is older than its scope's re-check limit. Routing for the rest of the memory tree is `../sure_infer/references/memory/ROUTING.md` (this package has no `references/` tree of its own).
+- **dataset_scope**: Inputs = `artifacts/prediction_source_resolved.json`. The hook writes and validates `dataset_decision.json` {selection_basis, selected_datasets, skipped_datasets, auto_selected} and advances to `execute_evaluation` before the agent starts. `selected_datasets` equals the complete canonical dataset set in `prediction_source_resolved.json -> datasets`, with no skips or subsets. On an older resumed run still at this unit, the `on_resume` hook performs the same step before prompting the agent; an existing valid decision is preserved and an invalid one is rejected, never silently overwritten. Do not manually create or claim this artifact. `artifacts/memory_context.json` is advisory for subsequent units; the `pre_start` hook writes it with matching facts in shape `{schema: "sure.memory.context.v1", skill, target_id, facts: [{entry_id, title, path, scope, checked_at, stale, status}], omitted_provisional}`. Verify any memory facts before relying on them. Routing for the rest of the memory tree is `../sure_infer/references/memory/ROUTING.md`.
 - **execute_evaluation**: run the backend command below. It re-resolves the source, imports the predictions into `<sure_run_dir>/scratch/`, validates them, resolves the routes, runs the evaluation engine, persists the batch and writes `eval_run_report.json` into `artifacts/`. Do not author `eval_run_report.json` by hand. The gate `check_eval_run_report.py` validates the report against `prediction_source_resolved.json`, the scratch artifacts, the pinned engine commit and tree hash, the batch manifest and the appended `report.jsonl` rows. A backend failure leaves an `eval_run_report.json` with `status: failed` and an `error_code`; read it and the scratch evidence before deciding what to do.
 - **assessment**: Inputs = the batch's metric artifacts and `report_snapshot.md`. Output = `assessment_report.json` {anomaly_detected, user_confirmed, ...}: say whether the scores look plausible for this model and dataset set, name the anomaly when there is one, and record the user's confirmation. Must Not Do: do not set `report_persisted`.
 - **extract_lessons**: Inputs = `artifacts/run_digest.json`, written by the hook the moment `assessment` passed (read it; never rebuild it in place). Output = `extraction_declaration.json` {schema, no_new_lessons, no_lessons_reason, covered_by, candidates, infra_noise, infra_evidence} plus 0 to 5 candidate directories under `artifacts/candidates/<nn>-<slug>/` (`proposal.json` + `proposal.md`) and, for facts, evidence files under `artifacts/memory_evidence/`. The full contract (digest fields, candidate formats, the gate's ten checks, the write-tools-only rule) is `sure/runtime/memory/EXTRACTION.md`; read it before writing anything. Write candidates and evidence first and the declaration last. `no_new_lessons: true` with a one-line reason is the normal result of a clean run. Must Not Do: do not run `scripts/build_run_digest.py` onto `artifacts/run_digest.json` (a preview goes to `--out <run_dir>/artifacts/run_digest.preview.json` and the gate ignores it); do not write under `sure/memory/` or `references/memory/`; do not use bash heredocs for these files. Failure: `scripts/check_memory_extraction.py` says which check failed; after two consecutive failures the hook advances on its own with `extraction: failed`, and switching to `no_new_lessons: true` with the reason is always a valid way out.
-- **run_report**: {report_persisted, execution_path_actual}. Point `run_dir` at the source bundle, record the requested and resolved pipelines, the dataset set, `evaluation_only: true`, and the batch id. `check_run_report.py --profile eval` accepts a completed run only when `artifacts/eval_run_report.json` reports `status: success`; a failed run needs the failed `eval_run_report.json` and a `next_action`.
+- **run_report**: The backend writes `scratch/main_agent_run_report.json`, **not** `artifacts/main_agent_run_report.json`. Produce the latter as this unit's distinct artifact before reading or gating it; use the scratch report and `artifacts/assessment_report.json` as evidence, keep the actual execution path (`local_bash` for the evaluation backend), and include only fields permitted by `schemas/run_report.schema.json` (the backend's scratch report has extra fields). Point `run_dir` at the scratch evaluation artifact root and record `report_persisted`, `execution_path_actual`, the dataset set, and `evaluation_only: true`; `artifacts/eval_run_report.json` carries resolved pipelines and the batch id. Never retry a read of a missing `artifacts/main_agent_run_report.json`: write it first. `check_run_report.py --profile eval` validates the completed report; a failed run needs the failed `eval_run_report.json` and a `next_action`.
 
 ## Deterministic Backend
 
@@ -115,6 +116,7 @@ Advance happens **only** when the current unit's `produces` artifact is complian
   --metric <metric> ... | --pipeline-id <exact-pipeline-id> ... \
   [--source-run <run_id|abs_dir>] \
   [--device <cpu|cuda[:index]>] \
+  [--require-nonempty-predictions] \
   --invocation-run-dir <sure-run-dir>   # cwd = this skill package dir
 ```
 

@@ -35,6 +35,8 @@ args = sys.argv[1:]
 out = Path(args[args.index("--output-dir") + 1])
 out.mkdir(parents=True, exist_ok=True)
 (out / "manifest.json").write_text(json.dumps({"datasets": []}), encoding="utf-8")
+for dataset in args[args.index("--dataset") + 1 : args.index("--output-dir")]:
+    (out / f"{dataset}.txt").write_text("key0\\t\\n", encoding="utf-8")
 """
 
 FAKE_GENERATE = """
@@ -46,6 +48,13 @@ dataset = args[args.index("--dataset") + 1]
 rows = int(args[args.index("--max-samples") + 1]) if "--max-samples" in args else 3
 with (run_dir / "fake_calls.jsonl").open("a", encoding="utf-8") as handle:
     handle.write(json.dumps(args) + "\\n")
+if os.environ.get("FAKE_FAIL_SMOKE") == "1" and "--max-samples" in args:
+    logs = run_dir / "predictions" / "logs"
+    logs.mkdir(parents=True, exist_ok=True)
+    (logs / "smoke.log").write_text("smoke diagnostic", encoding="utf-8")
+    sys.exit(23)
+if os.environ.get("FAKE_FAIL_GENERATE_FULL") == "1" and "--max-samples" not in args:
+    sys.exit(23)
 predictions = run_dir / "predictions"
 predictions.mkdir(parents=True, exist_ok=True)
 empty = os.environ.get("FAKE_EMPTY_PREDICTIONS") == "1"
@@ -64,6 +73,8 @@ import json, sys
 from pathlib import Path
 args = sys.argv[1:]
 datasets = args[args.index("--dataset") + 1 : args.index("--pred-dir")]
+with (Path(args[args.index("--output") + 1]).parent / "fake_validate_args.json").open("w", encoding="utf-8") as handle:
+    json.dump(args, handle)
 Path(args[args.index("--output") + 1]).write_text(
     json.dumps({"is_valid": True, "results": [{"dataset": name, "is_valid": True} for name in datasets]}), encoding="utf-8"
 )
@@ -263,6 +274,42 @@ class InferEntrypointTests(unittest.TestCase):
         for call in self.generate_calls():
             self.assertNotIn("--resume", call)
 
+    def test_resume_preserves_existing_snapshot_through_materialize_and_smoke(self) -> None:
+        predictions = self.run_dir / "predictions"
+        predictions.mkdir(exist_ok=True)
+        text = predictions / "ds_a__v1.txt"
+        structured = predictions / "ds_a__v1.jsonl"
+        text.write_text("key0\toriginal\n", encoding="utf-8")
+        structured.write_text('{"key": "key0", "normalized_prediction": "original"}\n', encoding="utf-8")
+
+        completed = self.run_entrypoint(FAKE_FAIL_GENERATE_FULL="1")
+        self.assertEqual(self.failed_stage(completed), "generate", completed.stdout + completed.stderr)
+        self.assertEqual(text.read_text(encoding="utf-8"), "key0\toriginal\n")
+        self.assertEqual(
+            json.loads(structured.read_text(encoding="utf-8").splitlines()[0])["normalized_prediction"],
+            "original",
+        )
+        self.assertIn("[smoke]", completed.stdout)
+        self.assertEqual(list(self.run_dir.glob("sure-smoke-*")), [])
+        self.assertEqual(len(self.generate_calls()), 1)
+
+    def test_resume_smoke_failure_retains_diagnostics_without_damaging_snapshot(self) -> None:
+        predictions = self.run_dir / "predictions"
+        predictions.mkdir(exist_ok=True)
+        text = predictions / "ds_a__v1.txt"
+        structured = predictions / "ds_a__v1.jsonl"
+        text.write_text("key0\toriginal\n", encoding="utf-8")
+        structured.write_text('{"key": "key0", "normalized_prediction": "original"}\n', encoding="utf-8")
+
+        completed = self.run_entrypoint(FAKE_FAIL_SMOKE="1")
+        self.assertEqual(self.failed_stage(completed), "smoke", completed.stdout + completed.stderr)
+        self.assertEqual(text.read_text(encoding="utf-8"), "key0\toriginal\n")
+        self.assertEqual(structured.read_text(encoding="utf-8"), '{"key": "key0", "normalized_prediction": "original"}\n')
+        self.assertEqual(
+            (predictions / "logs" / "resume-smoke" / "smoke.log").read_text(encoding="utf-8"),
+            "smoke diagnostic",
+        )
+
     def test_resume_from_validate_skips_model_generation_stages(self) -> None:
         completed = self.run_entrypoint(SURE_EVAL_FROM_STAGE="validate")
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -303,8 +350,17 @@ class InferEntrypointTests(unittest.TestCase):
         }
         self.assertEqual(languages, {"ds_a__v1__asr": "zh", "ds_b__v1__asr": "en"})
 
-    def test_a_failing_smoke_stops_before_the_full_pass(self) -> None:
+    def test_empty_prediction_rows_are_allowed_by_default(self) -> None:
         completed = self.run_entrypoint(FAKE_EMPTY_PREDICTIONS="1")
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        validate_args = json.loads((self.run_dir / "fake_validate_args.json").read_text(encoding="utf-8"))
+        self.assertNotIn("--require-nonempty", validate_args)
+
+    def test_strict_nonempty_policy_rejects_empty_prediction_rows(self) -> None:
+        completed = self.run_entrypoint(
+            FAKE_EMPTY_PREDICTIONS="1",
+            SURE_EVAL_REQUIRE_NONEMPTY_PREDICTIONS="1",
+        )
         self.assertNotEqual(completed.returncode, 0)
         self.assertEqual(self.failed_stage(completed), "smoke")
         self.assertEqual(len(self.generate_calls()), 1)

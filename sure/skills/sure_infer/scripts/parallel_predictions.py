@@ -100,7 +100,9 @@ def _valid_records(
             raise ValueError(f"Unknown, duplicate or wrong-dataset prediction key: {key!r}")
         seen.add(key)
         normalized = row.get("normalized_prediction")
-        if not isinstance(normalized, str) or not normalized.strip():
+        if not isinstance(normalized, str):
+            continue
+        if not normalized.strip() and not generation._empty_prediction_allowed(str(expected[key].get("task") or "")):
             continue
         if generation._normalize_task(row.get("task")) != generation._normalize_task(expected[key].get("task", "ASR")):
             raise ValueError(f"Prediction task disagrees with the dataset: {key}")

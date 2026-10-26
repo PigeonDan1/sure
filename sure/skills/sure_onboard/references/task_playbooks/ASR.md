@@ -16,6 +16,8 @@ ASR 的 SURE 最小契约是：
 
 - 输入以本地音频路径为主，不在 wrapper 内隐式下载数据。
 - 输出主字段为 `text`，必须 JSON serializable。
+- `text` 可以是空字符串；空字符串表示该音频未识别出文本，属于有效预测，必须继续批量推理并交给 CER/WER 计分。
+- 只有音频不可读、模型异常、超时、进程退出或响应格式错误才应返回失败；不要把“模型输出为空”升级成服务错误。
 - 如果模型支持语言字段，可返回 `language`，但不能把语言识别当作 ASR 文本替代。
 - 第一阶段只做最小 smoke，不做完整 WER/CER leaderboard。
 
@@ -28,6 +30,7 @@ io_contract:
   output_type: "text"
   primary_field: "text"
   required_fields: ["text"]
+  allow_empty_prediction: true
   json_serializable: true
 ```
 

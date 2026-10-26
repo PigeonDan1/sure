@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from deployment_contract import (
+    declared_server_protocol,
     normalize_harness_runtime,
     read_json,
     require_timestamp_after,
@@ -19,7 +20,9 @@ from deployment_contract import (
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 from sure.runtime.model.bootstrap import ModelRuntimeError, manifest_sha256, verify_runtime
+from sure.runtime.model_server.launch import declared_server_command
 from sure.site.loader import SitePolicyError, load_site_policy
+from write_runtime_inventory import load_config
 
 
 def main() -> int:
@@ -99,10 +102,28 @@ def main() -> int:
             if not lockfile.is_file() or runtime.get("lock_sha256") != hashlib.sha256(lockfile.read_bytes()).hexdigest():
                 raise ValueError("Python-ready inventory lockfile hash mismatch")
             command = runtime.get("server_command")
-            if not isinstance(command, list) or not command or command[0] != runtime.get("python_executable"):
-                raise ValueError("Python-ready inventory server_command must start with the bound Model Python")
+            source = runtime.get("server_source")
+            config = load_config(model_dir)
             if not runtime.get("tool_names"):
                 raise ValueError("Python-ready inventory must declare tool_names")
+            if declared_server_command(config):
+                if (not isinstance(command, list) or not command or command[0] != runtime.get("python_executable")
+                        or source not in (None, "declared")):
+                    raise ValueError("Python-ready inventory declared server_command must start with the bound Model Python")
+                smoke_path = run_dir / "artifacts" / "server_smoke.json"
+                if not smoke_path.is_file():
+                    raise ValueError("Python-ready declared server requires passing server smoke evidence; rerun validate_infer")
+                smoke = read_json(smoke_path)
+                smoke_command = smoke.get("server_command")
+                protocol = declared_server_protocol(config, model_dir)
+                smoke_protocol = "jsonl" if protocol == "stdio_jsonl" else "mcp"
+                if (smoke.get("status") != "passed" or not isinstance(smoke_command, list)
+                        or smoke_command[1:] != command[1:]
+                        or smoke.get("protocol") != smoke_protocol
+                        or smoke.get("tool") not in runtime.get("tool_names", [])):
+                    raise ValueError("Python-ready declared server does not match passing server smoke evidence; rerun validate_infer")
+            elif command != [] or source not in (None, "harness_fallback"):
+                raise ValueError("Python-ready inventory without server.command must use the Harness fallback")
             container = data.get("container_runtime") if isinstance(data.get("container_runtime"), dict) else {}
             if container.get("required") is not False:
                 raise ValueError("package=none must not require a container runtime")
