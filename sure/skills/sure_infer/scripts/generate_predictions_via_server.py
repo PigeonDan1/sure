@@ -816,6 +816,20 @@ def _send_jsonl_request(
             continue
 
 
+def _kill_wedged_server(process: subprocess.Popen[str]) -> None:
+    """Reap a server that overran its deadline, so it cannot outlive the exchange.
+
+    The kill turns its blocking read into the timeout it actually was, on either
+    platform: a server that missed the deadline is unusable, and leaving it alive
+    would hold the Worker for the whole run.
+    """
+    try:
+        process.kill()
+    except (AttributeError, OSError):
+        # A handle that is already gone needs no deadline enforced.
+        pass
+
+
 def _worker_request(call: Any, process: subprocess.Popen[str], request: dict[str, Any], timeout: float) -> Any:
     """Bound a Worker stdio exchange; a timeout makes its connection unusable."""
     if not timeout:
@@ -828,6 +842,9 @@ def _worker_request(call: Any, process: subprocess.Popen[str], request: dict[str
         signal.setitimer(signal.ITIMER_REAL, timeout)
         try:
             return call(process, request)
+        except TimeoutError:
+            _kill_wedged_server(process)
+            raise
         finally:
             signal.setitimer(signal.ITIMER_REAL, 0)
             signal.signal(signal.SIGALRM, previous)
@@ -839,11 +856,7 @@ def _worker_request(call: Any, process: subprocess.Popen[str], request: dict[str
 
     def kill() -> None:
         expired.set()
-        try:
-            process.kill()
-        except (AttributeError, OSError):
-            # A handle that is already gone needs no deadline enforced.
-            pass
+        _kill_wedged_server(process)
 
     timer = threading.Timer(timeout, kill)
     timer.start()
