@@ -958,19 +958,24 @@ def verify_runtime(run_dir: Path) -> dict[str, Any]:
             raise ApprovalError(f"candidate image pull verification failed: {pull.stderr[-2000:]}")
         container = binding["container"]
         model_target = str(container["model_mount"]["target"])
-        command = [
-            "docker",
-            "run",
-            "--rm",
-            "--mount",
-            f"type=bind,src={candidate},dst={model_target},readonly",
-            "--workdir",
-            str(container["working_dir"]),
-        ]
-        if container.get("gpu_required") is True:
-            command.extend(["--gpus", "all"])
-        command.extend([image_ref, str(container["python_executable"]), f"{model_target}/validate.py"])
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=1800, check=False)
+        with tempfile.TemporaryDirectory(prefix="sure-approve-validation-") as validation_root:
+            validation_output = Path(validation_root)
+            shutil.copytree(candidate / "artifacts", validation_output, dirs_exist_ok=True)
+            command = [
+                "docker",
+                "run",
+                "--rm",
+                "--mount",
+                f"type=bind,src={candidate},dst={model_target},readonly",
+                "--mount",
+                f"type=bind,src={validation_output},dst={model_target}/artifacts",
+                "--workdir",
+                str(container["working_dir"]),
+            ]
+            if container.get("gpu_required") is True:
+                command.extend(["--gpus", "all"])
+            command.extend([image_ref, str(container["python_executable"]), f"{model_target}/validate.py"])
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=1800, check=False)
         smoke = {"command": command, "pull_stdout_sha256": sha256_bytes(pull.stdout.encode()), "exit_code": completed.returncode, "stdout_sha256": sha256_bytes(completed.stdout.encode()), "stderr": completed.stderr[-2000:]}
     if completed.returncode != 0:
         raise ApprovalError(f"candidate runtime verification failed: {smoke['stderr']}")
