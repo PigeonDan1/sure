@@ -115,7 +115,7 @@ def _resolve_server_command(
     if not isinstance(container, dict):
         raise ValueError("approved model container runtime is missing")
     command = container.get("server_command")
-    if not isinstance(command, list) or not all(isinstance(item, str) and item for item in command):
+    if not isinstance(command, list) or not command or not all(isinstance(item, str) and item for item in command):
         raise ValueError("approved model container server_command is invalid")
     expected_image = str(container.get("target_image_ref") or "")
     actual_image = os.environ.get("SURE_EVAL_CONTAINER_IMAGE", "")
@@ -124,6 +124,13 @@ def _resolve_server_command(
             "inference container does not match the approved digest-pinned image: "
             f"expected={expected_image!r} actual={actual_image!r}"
         )
+    if Path(command[0]).name in {"python", "python3"}:
+        # The launch runs inside the image, so a bare `python` resolves against
+        # its PATH -- not necessarily the Model Python the approval probed.
+        approved_python = str(container.get("python_executable") or "")
+        if not approved_python:
+            raise ValueError("approved container python_executable is missing")
+        command = [approved_python, *command[1:]]
     return command
 
 
