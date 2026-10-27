@@ -37,6 +37,7 @@ import type { SureHookContext } from "../../src/core/sure/types.ts";
 // touches the real sure/memory/ of this checkout:
 //   <tmp>/repo/sure/runtime/memory                link to the real shared library
 //   <tmp>/repo/sure/runtime/model                 link to the real model runtime (deployment_binding.py imports it)
+//   <tmp>/repo/sure/runtime/evaluation            link to the task registry (deployment_binding.py imports it)
 //   <tmp>/repo/sure/runtime/bundle_content.py     copy of the shared bundle policy (same import chain)
 //   <tmp>/repo/sure/runtime/uvenv.py              link for evaluation_runtime import chain
 //   <tmp>/repo/sure/site                          link to the real site loader (same import chain)
@@ -220,6 +221,7 @@ function fixture(name: string, options: { publishStub?: boolean } = {}): Fixture
 	const links: Array<[target: string, link: string]> = [
 		[MEMORY_LIB_DIR, join(repoRoot, "sure", "runtime", "memory")],
 		[join(REPO_ROOT, "sure", "runtime", "model"), join(repoRoot, "sure", "runtime", "model")],
+		[join(REPO_ROOT, "sure", "runtime", "evaluation"), join(repoRoot, "sure", "runtime", "evaluation")],
 		[join(REPO_ROOT, "sure", "runtime", "uvenv.py"), join(repoRoot, "sure", "runtime", "uvenv.py")],
 		[join(REPO_ROOT, "sure", "site"), join(repoRoot, "sure", "site")],
 		[join(REAL_PACKAGE_DIR, "schemas"), join(packageDir, "schemas")],
