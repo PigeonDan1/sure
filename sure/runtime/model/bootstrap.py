@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import codecs
 import hashlib
 import json
 import os
@@ -11,8 +12,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 for _parent in Path(__file__).resolve().parents:
     if (_parent / "sure" / "runtime" / "uvenv.py").is_file():
@@ -85,15 +87,45 @@ def _run(
     timeout: int,
     cwd: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    completed = subprocess.run(
-        command,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=timeout,
-        cwd=cwd,
-    )
+    stage = " ".join(command[1:3]) if command[1] == "pip" else command[1]
+    print(f"Model Runtime: {stage} (timeout={timeout}s)", file=sys.stderr, flush=True)
+    output: list[str] = []
+    errors: list[str] = []
+
+    def relay(pipe: BinaryIO, target: list[str]) -> None:
+        decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+        with pipe:
+            while chunk := pipe.read1(4096):
+                text = decoder.decode(chunk)
+                target.append(text)
+                sys.stderr.write(text)
+                sys.stderr.flush()
+            tail = decoder.decode(b"", final=True)
+            target.append(tail)
+            sys.stderr.write(tail)
+            sys.stderr.flush()
+
+    # No `with` block: on timeout the buffered pipes must not be closed here.
+    # A killed uv can leave build-backend grandchildren holding the pipes, and
+    # close() then blocks on the reader-held buffer locks until their EOF.
+    process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, cwd=cwd)
+    assert process.stdout is not None and process.stderr is not None
+    readers = [
+        threading.Thread(target=relay, args=(process.stdout, output), daemon=True),
+        threading.Thread(target=relay, args=(process.stderr, errors), daemon=True),
+    ]
+    for reader in readers:
+        reader.start()
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        # Report at once; the daemon readers are dropped with this process.
+        process.kill()
+        process.wait()
+        raise ModelRuntimeError(f"Model Runtime {stage} exceeded existing command timeout ({timeout}s)") from exc
+    for reader in readers:
+        reader.join()
+    completed = subprocess.CompletedProcess(command, process.returncode, "".join(output), "".join(errors))
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip() or f"exit {completed.returncode}"
         raise ModelRuntimeError(f"Model Runtime command failed ({command[1]}): {detail}")
@@ -184,6 +216,8 @@ def materialize_runtime(
     source_python: Path,
     lock_path: Path,
     uv_bin: str | None = None,
+    uv_cache_dir: Path | None = None,
+    uv_config: Path | None = None,
 ) -> dict[str, Any]:
     """Build one immutable uv environment and return its verified contract."""
 
@@ -193,6 +227,7 @@ def materialize_runtime(
         raise ModelRuntimeError(f"selected source Python is missing or not executable: {source_python}")
     if not lock_path.is_file():
         raise ModelRuntimeError(f"locked requirements file is missing: {lock_path}")
+    print("Model Runtime: probe source Python", file=sys.stderr, flush=True)
     source_probe = probe(source_python, error=ModelRuntimeError)
     lock_sha256 = sha256_file(lock_path)
     runtime_id = _runtime_id(lock_sha256, source_probe)
@@ -201,10 +236,35 @@ def materialize_runtime(
     runtime_dir = root / runtime_id
     lock_file = root / f".{runtime_id}.lock"
 
+    print(f"Model Runtime: waiting for lock {runtime_id}", file=sys.stderr, flush=True)
     with exclusive_lock(lock_file):
         if runtime_dir.exists():
+            print(f"Model Runtime: verify existing {runtime_id}", file=sys.stderr, flush=True)
             return verify_runtime(root, _read_json(runtime_dir / MANIFEST_NAME))
 
+        cache_dir = uv_cache_dir.expanduser().resolve() if uv_cache_dir is not None else root / ".uv-cache"
+        if uv_cache_dir is None:
+            cache_dir.mkdir(exist_ok=True)
+        if not cache_dir.is_dir() or not os.access(cache_dir, os.R_OK | os.W_OK | os.X_OK):
+            raise ModelRuntimeError(f"UV cache is not accessible: {cache_dir}")
+        try:
+            with tempfile.TemporaryFile(dir=cache_dir):
+                pass
+        except OSError as exc:
+            raise ModelRuntimeError(f"UV cache is not writable: {cache_dir}: {exc}") from exc
+        extra = ["--cache-dir", str(cache_dir)]
+        if uv_config is not None:
+            uv_config = uv_config.expanduser().resolve()
+            if not uv_config.is_file() or not os.access(uv_config, os.R_OK):
+                raise ModelRuntimeError(f"UV config is not readable: {uv_config}")
+            extra.extend(["--config-file", str(uv_config)])
+        cache_note = (
+            f"cache={cache_dir} (site default; no --uv-cache-dir given; keep compile and install on this same cache)"
+            if uv_cache_dir is None
+            else f"cache={cache_dir}"
+        )
+        print(f"Model Runtime: {cache_note}; config={uv_config or 'uv discovery from lock directory'}",
+              file=sys.stderr, flush=True)
         staging = Path(tempfile.mkdtemp(prefix=f".{runtime_id}.", dir=root))
         try:
             uv = uv_binary(
@@ -212,8 +272,6 @@ def materialize_runtime(
                 error=ModelRuntimeError,
                 message="uv is required to materialize package=none Model Python runtimes",
             )
-            cache_dir = root / ".uv-cache"
-            cache_dir.mkdir(exist_ok=True)
             env = child_environment()
             env["UV_CACHE_DIR"] = str(cache_dir)
             _run(
@@ -229,6 +287,7 @@ def materialize_runtime(
                     lock_path,
                     allow_python_downloads=False,
                     allow_empty=True,
+                    extra=extra,
                 ),
                 env=env,
                 timeout=1800,
@@ -242,6 +301,7 @@ def materialize_runtime(
             packages_path = staging / PACKAGES_NAME
             packages_path.write_text(frozen, encoding="utf-8")
             shutil.copy2(lock_path, staging / LOCK_NAME)
+            print("Model Runtime: verify materialized Python", file=sys.stderr, flush=True)
             runtime_probe = probe(runtime_python, error=ModelRuntimeError)
             for key in ("python_version", "python_abi", "python_platform", "base_python_sha256"):
                 if runtime_probe[key] != source_probe[key]:
@@ -255,6 +315,7 @@ def materialize_runtime(
             (staging / MANIFEST_NAME).write_text(
                 json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
             )
+            print(f"Model Runtime: publish {runtime_id}", file=sys.stderr, flush=True)
             publish(staging, runtime_dir, error=ModelRuntimeError)
         except (OSError, subprocess.SubprocessError):
             raise
