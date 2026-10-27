@@ -41,7 +41,7 @@ from deployment_contract import declared_server_protocol
 from model_child_env import model_child_env
 from server_protocol import JSONL_SERVER_PROTOCOL
 from sure.runtime.evaluation.task_registry import normalize_task
-from sure.runtime.model.device_dtype import CUDA_DEVICE_RE, dtype_from_config
+from sure.runtime.model.device_dtype import dtype_from_config, normalize_device
 from sure.runtime.model_server.tool_contract import tool_contracts
 from sure.runtime.uvenv import runtime_python_relative
 
@@ -56,9 +56,6 @@ KIND_TO_PASS_KEY = {
     "infer": "infer_passed",
     "contract": "contract_passed",
 }
-
-ACTUAL_DEVICES = {"cuda", "cpu", "mps"}
-
 
 def resolve_path(raw: object, base: Path) -> Path | None:
     if not raw:
@@ -106,12 +103,12 @@ def log_path_for(data: dict, kind: str, run_dir: Path, cwd: Path) -> Path:
 
 
 def concrete_device(value: str | None) -> str | None:
-    raw = str(value or "").strip().lower()
-    if raw == "cuda":
-        return "cuda:0"
-    if CUDA_DEVICE_RE.fullmatch(raw):
-        return f"cuda:{int(raw.split(':', 1)[1]) if ':' in raw else 0}"
-    return raw if raw in {"cpu", "mps"} else None
+    if not value or value.strip().lower() == "auto":
+        return None
+    try:
+        return normalize_device(value)
+    except ValueError:
+        return None
 
 
 def declared_dtype_for(data: dict, base: Path) -> str | None:
@@ -128,38 +125,73 @@ def declared_dtype_for(data: dict, base: Path) -> str | None:
     try:
         config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         return dtype_from_config(config) if isinstance(config, dict) else None
-    except (OSError, ValueError, TypeError):
-        return None
+    except (OSError, ValueError, TypeError) as exc:
+        raise ValueError(f"cannot read declared dtype from {config_path}: {exc}") from exc
 
 
 def rewrite_container_env(command: list[str] | str, updates: dict[str, str]) -> list[str] | str:
-    """Keep declared Docker/Podman environment consistent with local gates."""
-    if not isinstance(command, list) or not command or Path(command[0]).name not in {"docker", "podman"}:
+    """Insert env options before the image, without changing container arguments.
+
+    Only direct Docker/Podman run argv is rewritten. Unsupported run options
+    fail explicitly rather than guessing where the image starts.
+    """
+    if not updates or not isinstance(command, list) or not command or Path(command[0]).name not in {"docker", "podman"}:
         return command
+    if len(command) < 3 or command[1] != "run":
+        raise ValueError("validation container commands must use direct docker/podman run argv")
+    boolean_options = {
+        "--rm", "--detach", "--interactive", "--tty", "--privileged", "--read-only",
+        "--init", "--publish-all", "--help", "--sig-proxy", "--oom-kill-disable",
+        "--disable-content-trust", "--no-healthcheck", "--replace", "-d", "-i", "-t", "-P",
+    }
+    value_options = {
+        "--env", "--env-file", "--entrypoint", "--volume", "--mount", "--workdir",
+        "--user", "--name", "--gpus", "--network", "--net", "--ipc", "--pid", "--uts",
+        "--shm-size", "--memory", "--memory-swap", "--cpus", "--cpuset-cpus", "--device",
+        "--ulimit", "--security-opt", "--cap-add", "--cap-drop", "--runtime", "--platform",
+        "--pull", "--publish", "--expose", "--hostname", "--add-host", "--dns", "--label",
+        "--log-driver", "--log-opt", "--restart", "--stop-signal", "--stop-timeout",
+        "--cidfile", "--userns", "--group-add", "--tmpfs", "--volume-from", "--volumes-from",
+        "-e", "-v", "-w", "-u", "-p", "-h", "-l", "-a", "--attach",
+    }
     result = list(command)
     seen: set[str] = set()
-    index = 0
+    index = 2
     while index < len(result):
         token = result[index]
+        if token == "--" or not token.startswith("-"):
+            break
         value_index: int | None = None
         value: str | None = None
-        if token in {"-e", "--env"} and index + 1 < len(result):
-            value_index, value = index + 1, result[index + 1]
-        elif token.startswith("--env="):
-            value_index, value = index, token[6:]
-        if value is not None and "=" in value:
-            key, _ = value.split("=", 1)
+        option = token.split("=", 1)[0]
+        if option in value_options:
+            if "=" in token:
+                value_index, value = index, token.split("=", 1)[1]
+            elif index + 1 < len(result):
+                value_index, value = index + 1, result[index + 1]
+            else:
+                raise ValueError(f"container option {token} requires a value")
+        elif token.startswith("-e") and not token.startswith("--"):
+            option, value_index, value = "-e", index, token[2:]
+        elif option in boolean_options or (not token.startswith("--") and set(token[1:]) <= set("dit")):
+            index += 1
+            continue
+        else:
+            raise ValueError(f"unsupported validation container option {token}; use explicit supported run options")
+        if option in {"-e", "--env"} and value is not None:
+            key = value.split("=", 1)[0]
             if key in updates:
                 replacement = f"{key}={updates[key]}"
                 result[value_index] = f"--env={replacement}" if value_index == index else replacement
                 seen.add(key)
-        index += 1
-    insertion = result.index("--entrypoint") if "--entrypoint" in result else len(result)
+        index += 2 if value_index == index + 1 else 1
+    if index >= len(result) or (result[index] == "--" and index + 1 >= len(result)):
+        raise ValueError("validation container command must specify an image")
     flags: list[str] = []
     for key, value in updates.items():
         if key not in seen:
             flags.extend(["-e", f"{key}={value}"])
-    result[insertion:insertion] = flags
+    result[2:2] = flags
     return result
 
 
@@ -170,7 +202,7 @@ def env_for(data: dict, validation_device: str | None = None, dtype: str | None 
         for key, value in raw_env.items():
             if isinstance(key, str) and isinstance(value, (str, int, float, bool)):
                 env[key] = str(value)
-    if validation_device in ACTUAL_DEVICES:
+    if concrete_device(validation_device) is not None:
         # Keep the legacy bare `cuda` spelling when env_compat_result does not
         # provide concrete-device evidence. A resolved_device such as cuda:0
         # is passed through by validation_device_for below.
@@ -243,7 +275,7 @@ def validation_device_for(run_dir: Path) -> str | None:
         except ValueError:
             compat = {}
         device = str(compat.get("resolved_device") or compat.get("device") or "").lower()
-        if device in ACTUAL_DEVICES:
+        if concrete_device(device) is not None:
             return device
 
     resolved_path = run_dir / "artifacts" / "model_input_resolved.json"
@@ -253,29 +285,23 @@ def validation_device_for(run_dir: Path) -> str | None:
         except ValueError:
             resolved = {}
         requested = str(resolved.get("device") or "").lower()
-        if requested in ACTUAL_DEVICES:
+        if concrete_device(requested) is not None:
             return requested
     return None
 
 
-def declared_device_in_artifact(data: dict) -> str | None:
-    device = data.get("device")
-    if isinstance(device, str) and device.strip():
-        return device.strip().lower()
+def validate_artifact_device(data: dict, target: str | None) -> str | None:
+    if concrete_device(target) is None:
+        return None
+    declarations = [data.get("device")]
     raw_env = data.get("env")
     if isinstance(raw_env, dict):
-        for key in ("DEVICE", "SURE_DEVICE"):
-            value = raw_env.get(key)
-            if isinstance(value, str) and value.strip():
-                return value.strip().lower()
-    return None
-
-
-def validate_artifact_device(data: dict, target: str | None) -> str | None:
-    if target not in ACTUAL_DEVICES:
-        return None
-    declared = declared_device_in_artifact(data)
-    if declared in ACTUAL_DEVICES and declared != target:
+        declarations.extend(raw_env.get(key) for key in ("DEVICE", "SURE_DEVICE", "SURE_EVAL_DEVICE_ACTUAL"))
+    for declared in declarations:
+        if not declared:
+            continue
+        if concrete_device(str(declared)) == concrete_device(target):
+            continue
         return (
             f"validation artifact requests device={declared!r}, but "
             f"env_compat_result selected device={target!r}. Keep validation "
@@ -408,7 +434,7 @@ def run_validation_command(
     command = normalize_repo_relative_command(command, repo_root)
     dtype = declared_dtype_for(data, run_dir)
     updates: dict[str, str] = {}
-    target = concrete_device(validation_device)
+    target = validation_device if concrete_device(validation_device) else None
     if target:
         updates.update({"DEVICE": target, "SURE_DEVICE": target, "SURE_EVAL_DEVICE_ACTUAL": target})
     if dtype:
@@ -658,6 +684,14 @@ def drive_declared_server(data: dict, run_dir: Path, model_dir: Path, validation
         **declaration["env"],
         **(data.get("env") if isinstance(data.get("env"), dict) else {}),
     }
+    dtype = declared_dtype_for({"model_dir": str(model_dir)}, run_dir)
+    updates: dict[str, str] = {}
+    if concrete_device(validation_device):
+        updates.update({key: validation_device for key in ("DEVICE", "SURE_DEVICE", "SURE_EVAL_DEVICE_ACTUAL")})
+    if dtype:
+        updates.update({"SURE_MODEL_DTYPE": dtype, "SURE_EVAL_APPROVED_DTYPE": dtype})
+    child_env.update(updates)
+    declaration["command"] = rewrite_container_env(declaration["command"], updates)
     invocation = {
         **data,
         "cwd": str(declaration["cwd"]),

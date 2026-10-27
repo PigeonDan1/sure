@@ -149,10 +149,26 @@ def instantiate_wrapper() -> Any:
 
 
 def runtime_evidence(wrapper: Any) -> dict[str, Any]:
+    declared = model_declared_dtype()
+    if declared is None:
+        return {}
+    model = getattr(wrapper, "model", None)
+    parameters = getattr(model, "parameters", None)
+    loaded = str(getattr(wrapper, "dtype", "") or "").replace("torch.", "")
+    if callable(parameters):
+        dtypes = {
+            str(parameter.dtype).replace("torch.", "")
+            for parameter in parameters() if parameter.is_floating_point()
+        }
+        if dtypes != {declared}:
+            raise ValueError(f"loaded parameter dtypes {sorted(dtypes)} do not match declared dtype {declared}")
+        loaded = declared
+    if loaded != declared:
+        raise ValueError(f"loaded dtype {loaded!r} does not match declared dtype {declared!r}")
     value: dict[str, Any] = {
-        "declared_dtype": model_declared_dtype(),
-        "resolved_device": getattr(wrapper, "device", None),
-        "loaded_dtype": str(getattr(wrapper, "dtype", "") or "").replace("torch.", "") or None,
+        "declared_dtype": declared,
+        "resolved_device": str(getattr(wrapper, "device", "") or "") or None,
+        "loaded_dtype": loaded,
     }
     device = str(value["resolved_device"] or "").lower()
     value["device_map"] = device if device.startswith("cuda:") else None
@@ -163,6 +179,7 @@ def load_wrapper() -> Any:
     wrapper = instantiate_wrapper()
     if hasattr(wrapper, "load"):
         wrapper.load()
+    runtime_evidence(wrapper)
     return wrapper
 
 

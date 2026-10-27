@@ -21,7 +21,10 @@ from pathlib import Path
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
-from sure.runtime.model.device_dtype import dtype_from_config, normalize_dtype_name
+from sure.runtime.model.device_dtype import dtype_from_config, normalize_device
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "runtime" / "harness"))
+from model_child_env import model_child_env
 
 ACTUAL_DEVICES = {"cuda", "cpu", "mps"}
 CUDA_FIRST_REQUESTS = {"auto", "cuda"}
@@ -240,6 +243,8 @@ def model_dir_for(run_dir: Path, data: dict[str, Any]) -> Path | None:
     for raw in candidates:
         if isinstance(raw, str) and raw.strip():
             path = Path(raw).expanduser()
+            if not path.is_absolute():
+                path = run_dir / path
             if (path / "config.yaml").is_file():
                 return path
     return None
@@ -247,6 +252,9 @@ def model_dir_for(run_dir: Path, data: dict[str, Any]) -> Path | None:
 
 def dtype_contract_violation(data: dict[str, Any], run_dir: Path) -> str | None:
     """Require evidence that an explicit local model dtype was exercised."""
+    resolved = load_json(run_dir / "artifacts" / "model_input_resolved.json") or {}
+    if resolved.get("deployment_type") == "api":
+        return None
     model_dir = model_dir_for(run_dir, data)
     if model_dir is None:
         return None
@@ -280,16 +288,73 @@ def dtype_contract_violation(data: dict[str, Any], run_dir: Path) -> str | None:
         return "VALIDATE_ENV_COMPAT gate failed: a passed same-dtype hardware probe is required."
     resolved_device = str(data.get("resolved_device") or data.get("device") or "").strip().lower()
     device_map = str(data.get("device_map") or "").strip().lower()
-    if resolved_device.startswith("cuda") and not device_map.startswith("cuda:"):
-        return (
-            "VALIDATE_ENV_COMPAT gate failed: CUDA validation must record a concrete "
-            f"device_map such as cuda:0, got {device_map or '<missing>'!r}."
-        )
     try:
-        normalize_dtype_name(loaded)
+        target = normalize_device(resolved_device)
+        if resolved_device.startswith("cuda") and device_map != target:
+            return f"VALIDATE_ENV_COMPAT gate failed: device_map must match {target!r}."
     except ValueError as exc:
         return f"VALIDATE_ENV_COMPAT gate failed: {exc}"
+    if (probe.get("operation") != "same_dtype_matmul" or probe.get("dtype") != declared
+            or probe.get("device") != target):
+        return "VALIDATE_ENV_COMPAT gate failed: probe dtype/device/operation must match the declared runtime."
     return None
+
+
+def run_dtype_probe(data: dict[str, Any], run_dir: Path) -> None:
+    """Generate hardware evidence using the selected Model Python, never Harness Python."""
+    resolved = load_json(run_dir / "artifacts" / "model_input_resolved.json") or {}
+    if resolved.get("deployment_type") == "api":
+        return
+    model_dir = model_dir_for(run_dir, data)
+    if model_dir is None:
+        return
+    import yaml
+
+    try:
+        config = yaml.safe_load((model_dir / "config.yaml").read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(f"invalid model config: {exc}") from exc
+    if not isinstance(config, dict):
+        raise ValueError("model config must be a mapping")
+    dtype = dtype_from_config(config)
+    if dtype is None:
+        return
+    # Invalidate hand-authored/stale success evidence before attempting the probe.
+    data["dtype_supported"] = False
+    data["probe"] = {"status": "failed"}
+    build = load_json(run_dir / "artifacts" / "build_env_result.json") or {}
+    python = data.get("python_executable") or build.get("python_executable")
+    device = normalize_device(data.get("resolved_device") or data.get("device"))
+    helper = Path(__file__).resolve().parents[3] / "runtime" / "model" / "device_dtype.py"
+    if build.get("backend") == "docker":
+        image = build.get("docker_image")
+        if not isinstance(image, str) or not image:
+            raise ValueError("Docker dtype probe requires build_env_result.docker_image")
+        command = ["docker", "run", "--rm", "--network", "none", "-v", f"{helper}:/sure-dtype-probe.py:ro"]
+        if device.startswith("cuda:"):
+            command.extend(["--gpus", "all"])
+        if "CUDA_VISIBLE_DEVICES" in os.environ:
+            command.extend(["-e", f"CUDA_VISIBLE_DEVICES={os.environ['CUDA_VISIBLE_DEVICES']}"])
+        command.extend(["--entrypoint", str(python or "python"), image, "/sure-dtype-probe.py"])
+    else:
+        if not isinstance(python, str) or not python:
+            raise ValueError("declared dtype requires the selected Model Python python_executable")
+        executable = Path(python).expanduser()
+        if not executable.is_absolute():
+            executable = model_dir / executable
+        command = [str(executable), str(helper)]
+    command.extend(["--device", device, "--dtype", dtype])
+    proc = subprocess.run(
+        command,
+        cwd=model_dir, env=model_child_env(), capture_output=True, text=True, timeout=60, check=False,
+    )
+    if proc.returncode:
+        raise ValueError(f"Model Python dtype probe failed: {proc.stderr.strip() or proc.stdout.strip()}")
+    probe = json.loads(proc.stdout)
+    if not isinstance(probe, dict):
+        raise ValueError("Model Python dtype probe must return a JSON object")
+    data["probe"] = probe
+    data["dtype_supported"] = probe.get("status") == "passed"
 
 
 def main() -> int:
@@ -328,7 +393,12 @@ def main() -> int:
         print(device_violation, file=sys.stderr)
         return 1
 
-    dtype_violation = dtype_contract_violation(data, run_dir)
+    try:
+        run_dtype_probe(data, run_dir)
+        dtype_violation = dtype_contract_violation(data, run_dir)
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        dtype_violation = f"VALIDATE_ENV_COMPAT gate failed: {exc}"
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     if dtype_violation:
         print(dtype_violation, file=sys.stderr)
         return 1

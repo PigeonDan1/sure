@@ -44,11 +44,11 @@ def normalize_device(
         if cuda_available is None:
             raise ValueError("auto device requires an explicit hardware probe")
         value = "cuda:0" if cuda_available else "cpu"
-    if value == "cpu":
+    if value in {"cpu", "mps"}:
         return value
     match = CUDA_DEVICE_RE.fullmatch(value)
     if not match:
-        raise ValueError(f"unsupported device {requested!r}; use cpu, cuda, or cuda:<index>")
+        raise ValueError(f"unsupported device {requested!r}; use cpu, mps, cuda, or cuda:<index>")
     if cuda_available is False:
         raise RuntimeError(f"CUDA device {value} requested but CUDA is unavailable")
     index = int(match.group(1) or 0)
@@ -83,3 +83,19 @@ def probe_dtype(device: str, dtype_name: str, torch_module: Any) -> dict[str, An
         "device": str(target),
         "dtype": dtype_name,
     }
+
+
+if __name__ == "__main__":
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(description="Probe a declared dtype in the Model Python runtime")
+    parser.add_argument("--device", required=True)
+    parser.add_argument("--dtype", required=True)
+    args = parser.parse_args()
+    import torch
+
+    device = normalize_device(
+        args.device, cuda_available=torch.cuda.is_available(), cuda_count=torch.cuda.device_count()
+    )
+    print(json.dumps(probe_dtype(device, normalize_dtype_name(args.dtype), torch)))

@@ -3,6 +3,8 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 
 TEMPLATE = Path(__file__).parent / "templates" / "validate.py"
@@ -121,6 +123,38 @@ class ValidateTemplateTest(unittest.TestCase):
     def test_sample_outputs_jsonl_is_staged(self):
         stage_model_artifacts = load_stage_model_artifacts()
         self.assertIn("sample_outputs.jsonl", stage_model_artifacts.OPTIONAL_RUN_ARTIFACTS)
+
+    def test_declared_dtype_constructor_and_load_evidence_match_schema(self):
+        self.module.MODEL_DIR = Path(self.temp_dir.name)
+        (self.module.MODEL_DIR / "config.yaml").write_text("model:\n  dtype: torch.float32\n")
+        received = {}
+
+        def wrapper(**kwargs):
+            received.update(kwargs)
+            return SimpleNamespace(device=kwargs["device"], dtype=kwargs["dtype"])
+
+        self.module.import_wrapper_class = lambda: wrapper
+        with patch.dict("os.environ", {"DEVICE": "cuda"}):
+            self.assertTrue(self.module.stage_load())
+        self.assertEqual(received["device"], "cuda")
+        self.assertEqual(received["dtype"], "float32")
+        artifact = json.loads((self.module.ARTIFACTS_DIR / "load_result.json").read_text())
+        schema = json.loads((TEMPLATE.parent.parent.parent / "schemas" / "load_result.schema.json").read_text())
+        self.assertLessEqual(set(artifact), set(schema["properties"]))
+        self.assertEqual(artifact["loaded_dtype"], "float32")
+
+    def test_declared_dtype_never_retries_constructor_without_dtype(self):
+        self.module.model_declared_dtype = lambda: "float32"
+        self.module.import_wrapper_class = lambda: (lambda: object())
+        with self.assertRaises(TypeError):
+            self.module.instantiate_wrapper()
+
+    def test_loaded_parameters_override_wrapper_dtype_claim(self):
+        self.module.model_declared_dtype = lambda: "float32"
+        parameter = SimpleNamespace(dtype="torch.float16", is_floating_point=lambda: True)
+        wrapper = SimpleNamespace(device="cpu", dtype="float32", model=SimpleNamespace(parameters=lambda: iter([parameter])))
+        with self.assertRaisesRegex(ValueError, "loaded parameter dtypes"):
+            self.module.runtime_evidence(wrapper)
 
 
 if __name__ == "__main__":

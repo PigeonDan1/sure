@@ -246,7 +246,7 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
         eval_runtime = "unavailable"
 
     model_cfg = config.get("model") if isinstance(config.get("model"), dict) else {}
-    declared_dtype = dtype_from_config(config) if config else None
+    declared_dtype = dtype_from_config(config) if config and deployment_type != "api" else None
     return {
         "schema": SCHEMA,
         "generated_at": inventory_timestamp(package),

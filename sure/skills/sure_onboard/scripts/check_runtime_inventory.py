@@ -48,7 +48,7 @@ def main() -> int:
         if data.get("schema") != "sure.onboard.runtime_inventory.v2":
             raise ValueError("runtime inventory schema must be sure.onboard.runtime_inventory.v2")
         config_path = model_dir / "config.yaml"
-        if config_path.is_file():
+        if config_path.is_file() and resolved.get("deployment_type") != "api":
             try:
                 import yaml
                 config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}

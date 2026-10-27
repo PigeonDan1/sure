@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import unittest
-from types import SimpleNamespace
 
 from sure.runtime.model.device_dtype import dtype_from_config, normalize_device, normalize_dtype_name
 
@@ -11,6 +10,7 @@ class DeviceDtypeTests(unittest.TestCase):
         self.assertEqual(normalize_device("cuda", cuda_available=True, cuda_count=2), "cuda:0")
         self.assertEqual(normalize_device("cuda:1", cuda_available=True, cuda_count=2), "cuda:1")
         self.assertEqual(normalize_device("cpu", cuda_available=False), "cpu")
+        self.assertEqual(normalize_device("mps", cuda_available=False), "mps")
 
     def test_invalid_or_invisible_cuda_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
