@@ -11,15 +11,18 @@ import approval_core
 
 
 class ContainerValidationMountTests(unittest.TestCase):
-    def test_validate_smoke_overlays_writable_copy_of_artifacts(self) -> None:
+    def _verify(self, *, model_target: str = "/workspace/model", ship_artifacts: bool = True):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             run_dir = root / "run"
             candidate = root / "candidate"
             artifacts = candidate / "artifacts"
-            artifacts.mkdir(parents=True)
-            (artifacts / "artifact_manifest.json").write_text("{}\n", encoding="utf-8")
-            (artifacts / "fixture_manifest.json").write_text("{}\n", encoding="utf-8")
+            if ship_artifacts:
+                artifacts.mkdir(parents=True)
+                (artifacts / "artifact_manifest.json").write_text("{}\n", encoding="utf-8")
+                (artifacts / "fixture_manifest.json").write_text("{}\n", encoding="utf-8")
+            else:
+                candidate.mkdir(parents=True)
             (run_dir / "artifacts").mkdir(parents=True)
             (run_dir / "artifacts" / "approval_manifest.json").write_text(
                 json.dumps({"candidate_dir": str(candidate), "candidate_digest": "digest", "model_name": "demo"}),
@@ -34,7 +37,7 @@ class ContainerValidationMountTests(unittest.TestCase):
                 "runtime_kind": "container",
                 "target_image_ref": "registry.example/demo@sha256:" + "a" * 64,
                 "container": {
-                    "model_mount": {"target": "/workspace/model"},
+                    "model_mount": {"target": model_target},
                     "working_dir": "/workspace/model",
                     "python_executable": "/usr/local/bin/python",
                     "gpu_required": False,
@@ -49,7 +52,9 @@ class ContainerValidationMountTests(unittest.TestCase):
                 mounts = [value for value in command if value.startswith("type=bind")]
                 observed["mounts"] = mounts
                 validation_mount = next(value for value in mounts if value.endswith(",dst=/workspace/model/artifacts"))
-                validation_source = Path(validation_mount.removeprefix("type=bind,src=").removesuffix(",dst=/workspace/model/artifacts"))
+                validation_source = Path(
+                    validation_mount.removeprefix("type=bind,src=").removesuffix(",dst=/workspace/model/artifacts")
+                )
                 observed["copied_files"] = sorted(path.name for path in validation_source.iterdir())
                 return mock.Mock(returncode=0, stdout="", stderr="")
 
@@ -60,13 +65,31 @@ class ContainerValidationMountTests(unittest.TestCase):
                 mock.patch.object(approval_core.subprocess, "run", side_effect=run),
             ):
                 result = approval_core.verify_runtime(run_dir)
+            return candidate, result, observed
 
-            mounts = observed["mounts"]
-            assert isinstance(mounts, list)
-            self.assertIn(f"type=bind,src={candidate},dst=/workspace/model,readonly", mounts)
-            self.assertTrue(any(value.endswith(",dst=/workspace/model/artifacts") for value in mounts))
-            self.assertEqual(observed["copied_files"], ["artifact_manifest.json", "fixture_manifest.json"])
-            self.assertEqual(result["status"], "passed")
+    def test_validate_smoke_overlays_writable_copy_of_artifacts(self) -> None:
+        candidate, result, observed = self._verify()
+
+        mounts = observed["mounts"]
+        assert isinstance(mounts, list)
+        # verify_runtime resolves the manifest's candidate_dir; Windows temp paths
+        # come back in their 8.3 spelling, so compare the resolved form.
+        self.assertIn(f"type=bind,src={candidate.resolve()},dst=/workspace/model,readonly", mounts)
+        self.assertTrue(any(value.endswith(",dst=/workspace/model/artifacts") for value in mounts))
+        self.assertEqual(observed["copied_files"], ["artifact_manifest.json", "fixture_manifest.json"])
+        self.assertEqual(result["status"], "passed")
+
+    def test_validation_mount_target_normalizes_a_trailing_slash(self) -> None:
+        _, _, observed = self._verify(model_target="/workspace/model/")
+
+        mounts = observed["mounts"]
+        assert isinstance(mounts, list)
+        self.assertTrue(any(value.endswith(",dst=/workspace/model/artifacts") for value in mounts))
+        self.assertFalse(any("//artifacts" in value for value in mounts))
+
+    def test_validate_smoke_refuses_a_candidate_without_artifacts(self) -> None:
+        with self.assertRaisesRegex(approval_core.ApprovalError, "no artifacts/ directory"):
+            self._verify(ship_artifacts=False)
 
 
 if __name__ == "__main__":

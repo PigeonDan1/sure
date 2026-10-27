@@ -15,7 +15,7 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 
@@ -958,9 +958,22 @@ def verify_runtime(run_dir: Path) -> dict[str, Any]:
             raise ApprovalError(f"candidate image pull verification failed: {pull.stderr[-2000:]}")
         container = binding["container"]
         model_target = str(container["model_mount"]["target"])
+        # Mount targets name locations inside the image, so they are POSIX on
+        # every host; a trailing slash in the binding must not leave a second
+        # one in the nested target.
+        artifacts_target = str(PurePosixPath(model_target) / "artifacts")
         with tempfile.TemporaryDirectory(prefix="sure-approve-validation-") as validation_root:
             validation_output = Path(validation_root)
+            # The model mount is read-only, and validate.py persists its stage
+            # artifacts inside the bundle. Overlay a writable copy of what the
+            # bundle already ships: the sealed tree keeps one digest, and the
+            # container still sees artifact_manifest.json and the fixtures.
+            if not (candidate / "artifacts").is_dir():
+                raise ApprovalError(f"candidate has no artifacts/ directory: {candidate / 'artifacts'}")
             shutil.copytree(candidate / "artifacts", validation_output, dirs_exist_ok=True)
+            # The image may run as a non-root USER while the temporary directory
+            # belongs to the approving account, created 0700.
+            os.chmod(validation_output, 0o777)
             command = [
                 "docker",
                 "run",
@@ -968,7 +981,7 @@ def verify_runtime(run_dir: Path) -> dict[str, Any]:
                 "--mount",
                 f"type=bind,src={candidate},dst={model_target},readonly",
                 "--mount",
-                f"type=bind,src={validation_output},dst={model_target}/artifacts",
+                f"type=bind,src={validation_output},dst={artifacts_target}",
                 "--workdir",
                 str(container["working_dir"]),
             ]
