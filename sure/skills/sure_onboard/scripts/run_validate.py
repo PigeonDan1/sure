@@ -171,7 +171,10 @@ def env_for(data: dict, validation_device: str | None = None, dtype: str | None 
             if isinstance(key, str) and isinstance(value, (str, int, float, bool)):
                 env[key] = str(value)
     if validation_device in ACTUAL_DEVICES:
-        target = concrete_device(validation_device) or validation_device
+        # Keep the legacy bare `cuda` spelling when env_compat_result does not
+        # provide concrete-device evidence. A resolved_device such as cuda:0
+        # is passed through by validation_device_for below.
+        target = validation_device
         env["SURE_DEVICE"] = target
         env["DEVICE"] = target
         env["SURE_EVAL_DEVICE_ACTUAL"] = target
@@ -239,7 +242,7 @@ def validation_device_for(run_dir: Path) -> str | None:
             compat = read_json(env_compat_path)
         except ValueError:
             compat = {}
-        device = str(compat.get("device") or "").lower()
+        device = str(compat.get("resolved_device") or compat.get("device") or "").lower()
         if device in ACTUAL_DEVICES:
             return device
 
