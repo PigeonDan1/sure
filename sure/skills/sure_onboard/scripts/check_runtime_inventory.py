@@ -15,6 +15,7 @@ from deployment_contract import (
     read_json,
     require_timestamp_after,
     resolve_model_dir,
+    sha256_file,
     validate_image_and_digest,
 )
 
@@ -137,8 +138,44 @@ def main() -> int:
                         or smoke.get("protocol") != smoke_protocol
                         or smoke.get("tool") not in runtime.get("tool_names", [])):
                     raise ValueError("Python-ready declared server does not match passing server smoke evidence; rerun validate_infer")
-            elif command != [] or source not in (None, "harness_fallback"):
-                raise ValueError("Python-ready inventory without server.command must use the Harness fallback")
+            elif command == []:
+                if source not in (None, "harness_fallback"):
+                    raise ValueError("Python-ready inventory without server.command must use the Harness fallback")
+            else:
+                # The installed-adapter fallback: a commandless ModelWrapper model
+                # is served by the harness adapter copied into the bundle. The
+                # shape is fixed -- exactly the adapter's own name and flag, a
+                # bare relative path so the bundle stays relocatable -- and it
+                # must carry the same passing smoke evidence a declared server
+                # does, because it is driven the same way in validate_infer.
+                if (source != "harness_fallback"
+                        or not isinstance(command, list) or len(command) != 4
+                        or command[0] != runtime.get("python_executable")
+                        or command[1] != "model_wrapper_mcp_server.py"
+                        or command[2:] != ["--model-dir", "."]
+                        or not (model_dir / "model_wrapper_mcp_server.py").is_file()):
+                    raise ValueError(
+                        "Python-ready inventory without server.command must use the Harness fallback "
+                        "(empty command or the installed model_wrapper_mcp_server.py adapter)"
+                    )
+                evidence = data.get("evidence") if isinstance(data.get("evidence"), dict) else {}
+                core_hashes = evidence.get("model_core_sha256") if isinstance(evidence.get("model_core_sha256"), dict) else {}
+                adapter_hash = core_hashes.get("model_wrapper_mcp_server.py")
+                if not adapter_hash or sha256_file(model_dir / "model_wrapper_mcp_server.py") != adapter_hash:
+                    raise ValueError("installed adapter is missing from the inventory core hashes")
+                smoke_path = run_dir / "artifacts" / "server_smoke.json"
+                if not smoke_path.is_file():
+                    raise ValueError(
+                        "Python-ready adapter fallback requires passing server smoke evidence; rerun validate_infer"
+                    )
+                smoke = read_json(smoke_path)
+                if (smoke.get("status") != "passed" or not isinstance(smoke.get("server_command"), list)
+                        or smoke["server_command"][1:] != command[1:]
+                        or smoke.get("protocol") != "mcp"
+                        or smoke.get("tool") not in runtime.get("tool_names", [])):
+                    raise ValueError(
+                        "Python-ready adapter fallback does not match passing server smoke evidence; rerun validate_infer"
+                    )
             container = data.get("container_runtime") if isinstance(data.get("container_runtime"), dict) else {}
             if container.get("required") is not False:
                 raise ValueError("package=none must not require a container runtime")

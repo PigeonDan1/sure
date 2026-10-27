@@ -274,7 +274,22 @@ CORE_BUNDLE_FILES = {
     "validate.py",
     "config.yaml",
 }
-TRANS_RESERVED_ROOTS = {*CORE_BUNDLE_FILES, "Dockerfile", "Dockerfile.sure", "artifacts", "fixture"}
+FALLBACK_ADAPTER_NAME = "model_wrapper_mcp_server.py"
+
+
+def core_bundle_files(model_dir: Path) -> set[str]:
+    """The core file set a bundle must carry, adapter exemption included.
+
+    Same rule as the onboard gates' `core_files_for`: when the harness fallback
+    adapter was installed for a commandless ModelWrapper model, the adapter is
+    the serving surface and `server.py` is exempt.
+    """
+    if (model_dir / FALLBACK_ADAPTER_NAME).is_file():
+        return CORE_BUNDLE_FILES - {"server.py"} | {FALLBACK_ADAPTER_NAME}
+    return set(CORE_BUNDLE_FILES)
+
+
+TRANS_RESERVED_ROOTS = {*CORE_BUNDLE_FILES, FALLBACK_ADAPTER_NAME, "Dockerfile", "Dockerfile.sure", "artifacts", "fixture"}
 COMMON_MANDATORY_SIDECARS = {
     "artifacts/artifact_manifest.json",
     "artifacts/fixture_manifest.json",
@@ -351,7 +366,7 @@ def _mandatory_integrity_paths(
         weights_integrity in WEIGHTS_INTEGRITY_MODES,
         f"unsupported deployment weights_integrity: {weights_integrity!r}",
     )
-    required = {*CORE_BUNDLE_FILES, *COMMON_MANDATORY_SIDECARS}
+    required = core_bundle_files(model_dir) | COMMON_MANDATORY_SIDECARS
     for relative in COMMON_MANDATORY_SIDECARS:
         _require((model_dir / relative).is_file(), f"mandatory deployment sidecar is missing: {relative}")
     if profile == "docker-registry":

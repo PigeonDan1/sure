@@ -40,6 +40,18 @@ class PythonDeploymentBindingTests(unittest.TestCase):
             self.assertEqual(command[-2:], ["--model-dir", str(model_dir)])
             self.assertEqual(Path(command[1]).name, "model_wrapper_mcp_server.py")
 
+    def test_fallback_prefers_the_bundle_local_adapter_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            model_dir = Path(directory)
+            (model_dir / "model_wrapper_mcp_server.py").write_text("# adapter\n", encoding="utf-8")
+            command = resolve_python_server_command(
+                model_dir, {"task": "asr"}, sys.executable, []
+            )
+            # A bare relative spelling: the bundle is launched from its own
+            # working directory, so the command stays valid wherever the
+            # bundle is published.
+            self.assertEqual(command, [sys.executable, "model_wrapper_mcp_server.py", "--model-dir", str(model_dir)])
+
     def test_declared_server_retains_its_command(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             command = resolve_python_server_command(

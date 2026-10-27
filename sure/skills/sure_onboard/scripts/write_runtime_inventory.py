@@ -31,6 +31,7 @@ from deployment_contract import (
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 from sure.runtime.model.bootstrap import manifest_sha256
 from sure.runtime.model.device_dtype import dtype_from_config
+from sure.runtime.model_server.launch import declared_server_command
 
 
 SCHEMA = "sure.onboard.runtime_inventory.v2"
@@ -303,7 +304,11 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
             "lock_sha256": manifest.get("lock_sha256"),
             "working_dir": ".",
             "server_command": command,
-            "server_source": "declared" if command else "harness_fallback",
+            # The source of the serving surface is what the config declares, not
+            # whether the command list happens to be filled: a commandless
+            # ModelWrapper model is served by the installed adapter, which is
+            # the harness fallback surface as much as the empty-command shape.
+            "server_source": "declared" if declared_server_command(config) else "harness_fallback",
             "tool_names": tool_names,
             "required_imports": [
                 str(item)
