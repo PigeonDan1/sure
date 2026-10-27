@@ -1,11 +1,7 @@
-import { contextFoldingExtension } from "./context-folding-extension.ts";
 import type { ExtensionFactory, InlineExtension } from "./extensions/index.ts";
 import { sureExtension } from "./sure/index.ts";
 
-const DEFAULT_EXTENSION_FACTORIES: InlineExtension[] = [
-	{ name: "context-folding", factory: contextFoldingExtension },
-	{ name: "sure", factory: sureExtension },
-];
+const DEFAULT_EXTENSION_FACTORIES: InlineExtension[] = [{ name: "sure", factory: sureExtension }];
 
 export interface DefaultExtensionFactoryOptions {
 	includeDefaults?: boolean;
