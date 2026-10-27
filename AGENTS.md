@@ -114,6 +114,7 @@ Our pi is pi 0.85.1 plus the patches below. This list is the record; keep it cur
 - `noOpUIContext`, `notify` in print mode, and exit code 130 on SIGINT.
 - `sendUserMessage` returns `Promise<void>`.
 - Default extension injection: `src/core/default-extensions.ts` and its `InlineExtension` entries, suppressed by `--no-extensions`.
+- Opt-in session-wide reversible context folding in `src/core/context-folding*.ts`, enabled by `SURE_CONTEXT_FOLDING=1`, with delayed STALE signals, exact output/block deduplication, successful SURE handoffs from `src/core/sure/context-handoff.ts`, original-output/instruction restore, and per-turn diagnostics alongside provider usage metrics.
 - A three-tier provider scope (`provider | all | scoped`) in the model selector.
 - The `./hooks` package export (`dist/core/sure/hook-types.js`).
 - The `/sure_init` compat note in `docs/models.md`.
