@@ -16,6 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 
 from sure.runtime.bundle_content import is_excluded
+from sure.runtime.evaluation.task_registry import task_profile
 from sure.runtime.model.bootstrap import ModelRuntimeError, manifest_sha256, verify_runtime
 from sure.runtime.model_server.launch import declared_server_command, resolve_python_server_command
 from sure.site.loader import SitePolicyError, load_site_policy
@@ -321,6 +322,23 @@ def _bundle_files(root: Path, model_dir: Path, label: str) -> set[str]:
     return files
 
 
+def _sample_audio_is_generated(model_dir: Path) -> bool:
+    """Whether `sample_output.json`'s `audio_path` is the model's output.
+
+    Only audio-output tasks (se/tse/tts/vc) name their generated audio there.
+    An ASR bundle may echo the input fixture path in the same field, and
+    demanding `artifacts/outputs/` for it refuses a healthy model. An unknown
+    task keeps the strict check, so generated audio stored elsewhere is still
+    caught.
+    """
+    inventory = _read_json(model_dir, "artifacts/runtime_inventory.json")
+    model = inventory.get("model") if isinstance(inventory.get("model"), dict) else {}
+    try:
+        return str(task_profile(model.get("task"))["io_contract"]["primary_field"]) == "audio_path"
+    except (ValueError, KeyError, TypeError):
+        return True
+
+
 def _mandatory_integrity_paths(
     model_dir: Path,
     package: dict[str, Any],
@@ -366,13 +384,19 @@ def _mandatory_integrity_paths(
     generated_audio = sample.get("audio_path")
     if generated_audio is not None:
         audio_path = _portable_relative(generated_audio, "generated sample audio_path")
+        # An SV embedding names the speaker's input audio, not an output it
+        # produced: the fixture it was given is the evidence, so demanding
+        # artifacts/outputs/ here refuses a healthy voice-cloning bundle.
         if (
             audio_path.parts[:2] == ("fixture", "sv")
             and isinstance(sample.get("embedding"), list)
             and bool(sample["embedding"])
         ):
             _require(audio_path.as_posix() in fixture_files, "SV sample input audio must be a bundled fixture")
-        else:
+        # Only a task whose output is this audio stores it there; an ASR bundle
+        # may echo the input fixture in `audio_path`, and an SV bundle names
+        # its input above. An unknown task keeps the strict check.
+        elif _sample_audio_is_generated(model_dir):
             _require(
                 audio_path.parts[:2] == ("artifacts", "outputs"),
                 "generated sample audio must be stored below artifacts/outputs",

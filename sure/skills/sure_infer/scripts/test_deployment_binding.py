@@ -380,6 +380,13 @@ class DeploymentBindingTests(unittest.TestCase):
         with self.assertRaisesRegex(DeploymentBindingError, "generated sample audio must be stored below artifacts/outputs"):
             _mandatory_integrity_paths(self.model, package, {}, "docker-registry", "external")
 
+        # Declaring the task must not weaken the SV check: the task's primary
+        # field is the embedding, so `audio_path` is still an input here.
+        write_json(self.model / "artifacts" / "runtime_inventory.json", {"model": {"task": "SV"}})
+        write_json(sample, {"audio_path": "fixture/sv/missing.wav", "embedding": [0.1]})
+        with self.assertRaisesRegex(DeploymentBindingError, "SV sample input audio must be a bundled fixture"):
+            _mandatory_integrity_paths(self.model, package, {}, "docker-registry", "external")
+
     def _rewrite_marker(self, **fields: object) -> None:
         marker = json.loads((self.artifacts / "deployment_ready.json").read_text())
         marker.update(fields)
@@ -812,6 +819,27 @@ class MandatoryIntegrityPathTests(unittest.TestCase):
         self.assertNotIn("checkpoints", {Path(path).parts[0] for path in required})
         self.assertIn("artifacts/weights_manifest.json", required)
         self.assertIn("fixture/asr/gt.jsonl", required)
+
+    def test_an_asr_sample_may_echo_its_input_audio(self) -> None:
+        write_json(self.model / "artifacts" / "runtime_inventory.json", {"model": {"task": "asr"}})
+        write_json(
+            self.model / "artifacts" / "sample_output.json",
+            {"text": "hello", "audio_path": "fixture/asr/sample.wav"},
+        )
+
+        required = _mandatory_integrity_paths(self.model, {}, {}, "none", "external")
+
+        self.assertIn("fixture/asr/gt.jsonl", required)
+
+    def test_generated_sample_audio_outside_artifacts_outputs_is_still_refused(self) -> None:
+        write_json(self.model / "artifacts" / "runtime_inventory.json", {"model": {"task": "se"}})
+        write_json(
+            self.model / "artifacts" / "sample_output.json",
+            {"audio_path": "artifacts/sample_enhanced.wav"},
+        )
+
+        with self.assertRaisesRegex(DeploymentBindingError, "must be stored below artifacts/outputs"):
+            _mandatory_integrity_paths(self.model, {}, {}, "none", "external")
 
     def test_bundled_weights_must_be_present_inside_the_bundle(self) -> None:
         with self.assertRaisesRegex(DeploymentBindingError, "weights root is missing"):
