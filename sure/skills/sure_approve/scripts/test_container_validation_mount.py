@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import stat
 import tempfile
 import unittest
 from pathlib import Path
@@ -11,7 +12,7 @@ import approval_core
 
 
 class ContainerValidationMountTests(unittest.TestCase):
-    def _verify(self, *, model_target: str = "/workspace/model", ship_artifacts: bool = True):
+    def _verify(self, *, model_target: str = "/workspace/model", ship_artifacts: bool = True, ship_outputs: bool = False):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             run_dir = root / "run"
@@ -21,6 +22,13 @@ class ContainerValidationMountTests(unittest.TestCase):
                 artifacts.mkdir(parents=True)
                 (artifacts / "artifact_manifest.json").write_text("{}\n", encoding="utf-8")
                 (artifacts / "fixture_manifest.json").write_text("{}\n", encoding="utf-8")
+                if ship_outputs:
+                    outputs = artifacts / "outputs"
+                    outputs.mkdir()
+                    outputs.chmod(0o750)
+                    sample = outputs / "sample.wav"
+                    sample.write_text("audio\n", encoding="utf-8")
+                    sample.chmod(0o640)
             else:
                 candidate.mkdir(parents=True)
             (run_dir / "artifacts").mkdir(parents=True)
@@ -56,6 +64,10 @@ class ContainerValidationMountTests(unittest.TestCase):
                     validation_mount.removeprefix("type=bind,src=").removesuffix(",dst=/workspace/model/artifacts")
                 )
                 observed["copied_files"] = sorted(path.name for path in validation_source.iterdir())
+                observed["modes"] = {
+                    str(path.relative_to(validation_source)): stat.S_IMODE(path.stat().st_mode)
+                    for path in validation_source.rglob("*")
+                }
                 return mock.Mock(returncode=0, stdout="", stderr="")
 
             with (
@@ -90,6 +102,17 @@ class ContainerValidationMountTests(unittest.TestCase):
     def test_validate_smoke_refuses_a_candidate_without_artifacts(self) -> None:
         with self.assertRaisesRegex(approval_core.ApprovalError, "no artifacts/ directory"):
             self._verify(ship_artifacts=False)
+
+    def test_overlay_opens_nested_artifacts_for_non_root_images(self) -> None:
+        _, result, observed = self._verify(ship_outputs=True)
+
+        self.assertEqual(result["status"], "passed")
+        modes = observed["modes"]
+        assert isinstance(modes, dict)
+        # copytree preserves the restrictive host bits; the overlay must reopen
+        # every directory and file so a non-root container USER can write.
+        self.assertEqual(modes["outputs"], 0o777)
+        self.assertEqual(modes["outputs/sample.wav"], 0o666)
 
 
 if __name__ == "__main__":

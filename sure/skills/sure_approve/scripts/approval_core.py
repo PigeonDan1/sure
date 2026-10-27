@@ -971,9 +971,14 @@ def verify_runtime(run_dir: Path) -> dict[str, Any]:
             if not (candidate / "artifacts").is_dir():
                 raise ApprovalError(f"candidate has no artifacts/ directory: {candidate / 'artifacts'}")
             shutil.copytree(candidate / "artifacts", validation_output, dirs_exist_ok=True)
-            # The image may run as a non-root USER while the temporary directory
-            # belongs to the approving account, created 0700.
-            os.chmod(validation_output, 0o777)
+            # The image may run as a non-root USER while the copied tree
+            # belongs to the approving account; copytree preserves the host
+            # permission bits, so open up every directory (validate.py writes
+            # stage artifacts and audio outputs) and every file in the copy.
+            for overlay_root, _dirs, overlay_files in os.walk(validation_output):
+                os.chmod(overlay_root, 0o777)
+                for name in overlay_files:
+                    os.chmod(Path(overlay_root) / name, 0o666)
             command = [
                 "docker",
                 "run",
