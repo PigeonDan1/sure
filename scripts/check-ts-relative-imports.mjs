@@ -2,14 +2,25 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import ts from "typescript";
 
-const ignoredDirectories = new Set([".git", "coverage", "dist", "node_modules"]);
+const ignoredDirectories = new Set([
+	".artifacts",
+	".git",
+	".sure",
+	"coverage",
+	"data",
+	"dist",
+	"node_modules",
+	"results",
+]);
+const ignoredPaths = new Set(["sure/models"]);
 const files = [];
 
-function collectTypescriptFiles(directory) {
+function collectTypescriptFiles(directory, relativeDirectory = "") {
 	for (const entry of readdirSync(directory, { withFileTypes: true })) {
+		const relativePath = relativeDirectory ? `${relativeDirectory}/${entry.name}` : entry.name;
 		if (entry.isDirectory()) {
-			if (!ignoredDirectories.has(entry.name)) {
-				collectTypescriptFiles(join(directory, entry.name));
+			if (!ignoredDirectories.has(entry.name) && !ignoredPaths.has(relativePath)) {
+				collectTypescriptFiles(join(directory, entry.name), relativePath);
 			}
 			continue;
 		}
