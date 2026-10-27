@@ -14,10 +14,12 @@ import json
 import math
 import os
 import re
+import signal
 import socket
 import subprocess
 import sys
 import tempfile
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from time import monotonic
@@ -28,7 +30,7 @@ for _parent in Path(__file__).resolve().parents:
         sys.path.insert(0, str(_parent))
         break
 
-from sure.runtime.evaluation.task_registry import normalize_task, task_profile
+from sure.runtime.evaluation.task_registry import allows_empty_prediction, normalize_task, task_profile
 from sure.runtime.model_server.launch import declared_server_command, resolve_python_server_command
 from sure.runtime.prediction_payload import (
     extract_mcp_payload as _extract_response_payload,
@@ -230,6 +232,16 @@ def _normalize_task(value: Any) -> str:
     if not value_text:
         return ""
     return normalize_task(value_text).upper()
+
+
+def _empty_prediction_allowed(task: str) -> bool:
+    """An empty prediction is a scoreable answer unless the run or the task forbids it."""
+    if os.environ.get("SURE_EVAL_REQUIRE_NONEMPTY_PREDICTIONS") == "1":
+        return False
+    try:
+        return allows_empty_prediction(task)
+    except ValueError:
+        return False
 
 
 def _split_metrics(value: str | None) -> list[str]:
@@ -804,6 +816,60 @@ def _send_jsonl_request(
             continue
 
 
+def _kill_wedged_server(process: subprocess.Popen[str]) -> None:
+    """Reap a server that overran its deadline, so it cannot outlive the exchange.
+
+    The kill turns its blocking read into the timeout it actually was, on either
+    platform: a server that missed the deadline is unusable, and leaving it alive
+    would hold the Worker for the whole run.
+    """
+    try:
+        process.kill()
+    except (AttributeError, OSError):
+        # A handle that is already gone needs no deadline enforced.
+        pass
+
+
+def _worker_request(call: Any, process: subprocess.Popen[str], request: dict[str, Any], timeout: float) -> Any:
+    """Bound a Worker stdio exchange; a timeout makes its connection unusable."""
+    if not timeout:
+        return call(process, request)
+    if hasattr(signal, "SIGALRM") and hasattr(signal, "setitimer"):
+        def expired(_signum: int, _frame: Any) -> None:
+            raise TimeoutError(f"Model server did not respond within {timeout:g} seconds")
+
+        previous = signal.signal(signal.SIGALRM, expired)
+        signal.setitimer(signal.ITIMER_REAL, timeout)
+        try:
+            return call(process, request)
+        except TimeoutError:
+            _kill_wedged_server(process)
+            raise
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, previous)
+    # Windows has no interval timer for a blocking read, so the deadline is
+    # enforced by killing the server: a wedged pipe would otherwise block this
+    # Worker for the whole run. The resulting short read is reported as the
+    # timeout it is, not as a server crash.
+    expired = threading.Event()
+
+    def kill() -> None:
+        expired.set()
+        _kill_wedged_server(process)
+
+    timer = threading.Timer(timeout, kill)
+    timer.start()
+    try:
+        return call(process, request)
+    except (RuntimeError, OSError, EOFError, ValueError) as exc:
+        if expired.is_set():
+            raise TimeoutError(f"Model server did not respond within {timeout:g} seconds") from exc
+        raise
+    finally:
+        timer.cancel()
+
+
 def _prediction_projection(value: Any, *, task: str) -> str:
     if task.upper() in {"TTS", "VC", "SE", "TSE", "SD", "SA-ASR", "SA_ASR"}:
         return _path_text(value, field="prediction")
@@ -1131,8 +1197,8 @@ def _write_prediction_manifests(
         "predictions_dir": str(predictions_dir),
         "datasets": existing_conversion_datasets + [conversion_row],
     }
-    manifest_path.write_text(json.dumps(prediction_manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    conversion_path.write_text(json.dumps(conversion_manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    _write_status_file(manifest_path, prediction_manifest)
+    _write_status_file(conversion_path, conversion_manifest)
     return manifest_path, conversion_path
 
 
@@ -1146,6 +1212,8 @@ def main() -> int:
     parser.add_argument("--language", help="Optional language argument passed through to the tool")
     parser.add_argument("--max-samples", type=int, default=0, help="Optional limit for quick tests")
     parser.add_argument("--resume", action="store_true", help="Resume keys with matching text and structured predictions")
+    parser.add_argument("--keys-file", help="Internal Worker key subset; applied after the dataset sample cap")
+    parser.add_argument("--worker-mode", action="store_true", help="Isolated Worker: persist completed rows and continue sample errors")
     parser.add_argument(
         "--resume-exclude-keys-file",
         help="Optional newline-delimited keys to ignore while loading existing resume predictions.",
@@ -1201,6 +1269,13 @@ def main() -> int:
     samples = _load_jsonl(jsonl_path)
     if args.max_samples > 0:
         samples = samples[: args.max_samples]
+    if args.keys_file:
+        selected_keys = Path(args.keys_file).read_text(encoding="utf-8").splitlines()
+        available_keys = {str(sample.get("key", "")) for sample in samples}
+        if len(selected_keys) != len(set(selected_keys)) or set(selected_keys) - available_keys:
+            raise ValueError("Worker keys must be unique and belong to the selected dataset scope")
+        selected = set(selected_keys)
+        samples = [sample for sample in samples if str(sample.get("key", "")) in selected]
     sample_task = str(samples[0].get("task", "ASR")) if samples else "ASR"
     sample_language = str(samples[0].get("language", "")) if samples else ""
 
@@ -1211,8 +1286,13 @@ def main() -> int:
         model_cfg,
         _split_metrics(os.environ.get("SURE_EVAL_METRICS") or os.environ.get("METRICS")),
     )
+    empty_allowed = _empty_prediction_allowed(sample_task)
     runtime_inventory_document = _load_runtime_inventory(model_dir)
     server_cfg = model_cfg.get("server", {})
+    request_timeout = float(server_cfg.get("timeout", 300)) if args.worker_mode else 0
+    startup_timeout = float(server_cfg.get("startup_timeout_sec", request_timeout)) if args.worker_mode else 0
+    if args.worker_mode and any(not math.isfinite(value) or value <= 0 for value in (request_timeout, startup_timeout)):
+        raise ValueError("Worker server timeout and startup_timeout_sec must be finite positive seconds")
     command = _resolve_server_command(model_dir, runtime_inventory_document)
     working_dir = _resolve_working_dir(model_dir, runtime_inventory_document)
     server_protocol = resolve_server_protocol(server_cfg) if declared_server_command(model_cfg) else MCP_SERVER_PROTOCOL
@@ -1245,6 +1325,11 @@ def main() -> int:
             env["CUDA_VISIBLE_DEVICES"] = ""
     env_overrides = _parse_env_overrides(args.env)
     env.update(env_overrides)
+    if args.worker_mode:
+        # The Worker owns the GPU; an approved server env must not widen it.
+        env["CUDA_VISIBLE_DEVICES"] = os.environ["CUDA_VISIBLE_DEVICES"]
+        env["DEVICE"] = "cuda:0"
+        env["SURE_EVAL_DEVICE_ACTUAL"] = "cuda:0"
     protocol_id = args.protocol
     protocol_resolution = _resolve_protocol_parameters(protocol_id, model_dir, env)
 
@@ -1380,6 +1465,10 @@ def main() -> int:
         "result_log_path": str(result_log_path),
         "error": None,
     }
+    if args.worker_mode:
+        dataset_status["sample_errors"] = []
+        dataset_status["request_timeout_seconds"] = request_timeout
+        dataset_status["startup_timeout_seconds"] = startup_timeout
     status_payload, current_dataset_status = _upsert_dataset_status(status_path, default_status_payload, dataset_status)
     generation_started = monotonic()
     argument_keys_seen: set[str] = set()
@@ -1395,6 +1484,13 @@ def main() -> int:
     )
     _write_status_file(status_path, status_payload)
 
+    if args.worker_mode:
+        def interrupted(signum: int, _frame: Any) -> None:
+            raise InterruptedError(f"Worker interrupted by signal {signum}")
+
+        signal.signal(signal.SIGTERM, interrupted)
+        signal.signal(signal.SIGINT, interrupted)
+
     with open(log_path, "w", encoding="utf-8") as log_handle, open(result_log_path, "w", encoding="utf-8") as result_log_handle:
         if args.resume and prediction_map:
             _write_existing_result_log_entries(result_log_handle, samples, prediction_map)
@@ -1409,15 +1505,17 @@ def main() -> int:
 
         try:
             if server_protocol == MCP_SERVER_PROTOCOL:
-                initialize = _send_request(
+                initialize = _worker_request(_send_request,
                     process,
                     {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                    startup_timeout,
                 )
                 if "error" in initialize:
                     raise RuntimeError(initialize["error"].get("message", "initialize failed"))
-                tools_list = _send_request(
+                tools_list = _worker_request(_send_request,
                     process,
                     {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
+                    request_timeout,
                 )
                 if "error" in tools_list:
                     raise RuntimeError(tools_list["error"].get("message", "tools/list failed"))
@@ -1433,106 +1531,125 @@ def main() -> int:
                     ):
                         continue
 
-                    audio_path = _materialize_sample_audio(repo_root, sample, scratch_dir)
-                    arguments = _build_tool_arguments(
-                        repo_root=repo_root,
-                        sample=sample,
-                        task=sample_task,
-                        language=args.language or sample_language,
-                        argument_name=args.argument_name,
-                        audio_path=audio_path,
-                        output_audio_dir=output_audio_dir,
-                        tool_args=tool_args,
-                    )
-                    arguments = _filter_tool_arguments(
-                        arguments,
-                        allowed_tool_args,
-                        required_tool_args,
-                    )
-                    argument_keys_seen.update(str(key) for key in arguments)
-                    dynamic_argument_fields.update(
-                        str(key)
-                        for key in arguments
-                        if key not in tool_args and _is_dynamic_argument_key(str(key))
-                    )
+                    try:
+                        audio_path = _materialize_sample_audio(repo_root, sample, scratch_dir)
+                        arguments = _build_tool_arguments(
+                            repo_root=repo_root,
+                            sample=sample,
+                            task=sample_task,
+                            language=args.language or sample_language,
+                            argument_name=args.argument_name,
+                            audio_path=audio_path,
+                            output_audio_dir=output_audio_dir,
+                            tool_args=tool_args,
+                        )
+                        arguments = _filter_tool_arguments(
+                            arguments,
+                            allowed_tool_args,
+                            required_tool_args,
+                        )
+                        argument_keys_seen.update(str(key) for key in arguments)
+                        dynamic_argument_fields.update(
+                            str(key)
+                            for key in arguments
+                            if key not in tool_args and _is_dynamic_argument_key(str(key))
+                        )
 
-                    if server_protocol == MCP_SERVER_PROTOCOL:
-                        response = _send_request(
-                            process,
-                            {
-                                "jsonrpc": "2.0",
-                                "id": next_id,
-                                "method": "tools/call",
-                                "params": {"name": tool_name, "arguments": arguments},
-                            },
+                        if server_protocol == MCP_SERVER_PROTOCOL:
+                            response = _worker_request(_send_request,
+                                process,
+                                {
+                                    "jsonrpc": "2.0",
+                                    "id": next_id,
+                                    "method": "tools/call",
+                                    "params": {"name": tool_name, "arguments": arguments},
+                                },
+                                request_timeout,
+                            )
+                        else:
+                            response = _worker_request(_send_jsonl_request, process, arguments, request_timeout)
+                        next_id += 1
+                        raw_payload = (
+                            _extract_response_payload(response)
+                            if server_protocol == MCP_SERVER_PROTOCOL
+                            else response
                         )
-                    else:
-                        response = _send_jsonl_request(process, arguments)
-                    next_id += 1
-                    raw_payload = (
-                        _extract_response_payload(response)
-                        if server_protocol == MCP_SERVER_PROTOCOL
-                        else response
-                    )
-                    raw_response_types.add(type(raw_payload).__name__)
-                    if isinstance(raw_payload, dict):
-                        raw_response_keys.update(str(key) for key in raw_payload)
-                    prediction, normalized_prediction = _normalize_prediction_payload(raw_payload, task=sample_task)
-                    prediction_map[key] = prediction
-                    structured_map[key] = {
-                        "key": key,
-                        "dataset": canonical_dataset,
-                        "task": sample_task,
-                        "language": str(sample.get("language") or sample_language),
-                        "prediction": normalized_prediction,
-                        "normalized_prediction": prediction,
-                        "raw_response": raw_payload,
-                    }
-                    result_log_handle.write(f"{key}\t{prediction}\n")
-                    result_log_handle.flush()
+                        raw_response_types.add(type(raw_payload).__name__)
+                        if isinstance(raw_payload, dict):
+                            raw_response_keys.update(str(key) for key in raw_payload)
+                        prediction, normalized_prediction = _normalize_prediction_payload(raw_payload, task=sample_task)
+                        prediction_map[key] = prediction
+                        structured_map[key] = {
+                            "key": key,
+                            "dataset": canonical_dataset,
+                            "task": sample_task,
+                            "language": str(sample.get("language") or sample_language),
+                            "prediction": normalized_prediction,
+                            "normalized_prediction": prediction,
+                            "raw_response": raw_payload,
+                        }
+                        if args.worker_mode:
+                            if not prediction.strip() and not empty_allowed:
+                                raise ValueError("Model returned an empty prediction")
+                            with (run_dir / "completed.jsonl").open("a", encoding="utf-8") as journal:
+                                journal.write(json.dumps(structured_map[key], ensure_ascii=False) + "\n")
+                                journal.flush()
+                                os.fsync(journal.fileno())
+                        result_log_handle.write(f"{key}\t{prediction}\n")
+                        result_log_handle.flush()
 
-                    current_dataset_status["num_generated_samples"] = len(prediction_map)
-                    empty_keys = {key for key, value in prediction_map.items() if not value.strip()}
-                    current_dataset_status["empty_prediction_count"] = len(empty_keys)
-                    current_dataset_status["empty_prediction_keys"] = sorted(empty_keys)
-                    status_payload["updated_at"] = _utc_now()
-                    _update_generation_observations(
-                        status_payload,
-                        argument_keys_seen=argument_keys_seen,
-                        dynamic_argument_fields=dynamic_argument_fields,
-                        raw_response_types=raw_response_types,
-                        raw_response_keys=raw_response_keys,
-                    )
-                    _write_status_file(status_path, status_payload)
-                    if len(prediction_map) % PREDICTION_SNAPSHOT_INTERVAL == 0:
-                        # The only line this script logged used to be its last one,
-                        # so a five-hour generation pass looked identical to a hung
-                        # one. Counting lines in the prediction file does not help:
-                        # snapshots are only rewritten on this interval and skip
-                        # rows without a prediction yet.
-                        generated = len(prediction_map)
-                        processed = generated - len(resume_complete_keys)
-                        elapsed = max(monotonic() - generation_started, 1e-9)
-                        remaining = max(len(samples) - generated, 0)
-                        logger.info(
-                            "Generating predictions",
-                            dataset=canonical_dataset,
-                            generated=generated,
-                            expected=len(samples),
-                            elapsed_seconds=round(elapsed, 1),
-                            seconds_per_sample=round(elapsed / processed, 3),
-                            eta_seconds=round(remaining * elapsed / processed, 1),
+                        current_dataset_status["num_generated_samples"] = len(prediction_map)
+                        empty_keys = {key for key, value in prediction_map.items() if not value.strip()}
+                        current_dataset_status["empty_prediction_count"] = len(empty_keys)
+                        current_dataset_status["empty_prediction_keys"] = sorted(empty_keys)
+                        status_payload["updated_at"] = _utc_now()
+                        _update_generation_observations(
+                            status_payload,
+                            argument_keys_seen=argument_keys_seen,
+                            dynamic_argument_fields=dynamic_argument_fields,
+                            raw_response_types=raw_response_types,
+                            raw_response_keys=raw_response_keys,
                         )
-                        _write_prediction_snapshots(
-                            samples=samples,
-                            prediction_path=prediction_path,
-                            structured_prediction_path=structured_prediction_path,
-                            prediction_map=prediction_map,
-                            structured_map=structured_map,
-                            canonical_dataset=canonical_dataset,
-                            sample_task=sample_task,
-                            sample_language=sample_language,
-                        )
+                        _write_status_file(status_path, status_payload)
+                        if len(prediction_map) % PREDICTION_SNAPSHOT_INTERVAL == 0:
+                            # The only line this script logged used to be its last one,
+                            # so a five-hour generation pass looked identical to a hung
+                            # one. Counting lines in the prediction file does not help:
+                            # snapshots are only rewritten on this interval and skip
+                            # rows without a prediction yet.
+                            generated = len(prediction_map)
+                            processed = generated - len(resume_complete_keys)
+                            elapsed = max(monotonic() - generation_started, 1e-9)
+                            remaining = max(len(samples) - generated, 0)
+                            logger.info(
+                                "Generating predictions",
+                                dataset=canonical_dataset,
+                                generated=generated,
+                                expected=len(samples),
+                                elapsed_seconds=round(elapsed, 1),
+                                seconds_per_sample=round(elapsed / processed, 3),
+                                eta_seconds=round(remaining * elapsed / processed, 1),
+                            )
+                            _write_prediction_snapshots(
+                                samples=samples,
+                                prediction_path=prediction_path,
+                                structured_prediction_path=structured_prediction_path,
+                                prediction_map=prediction_map,
+                                structured_map=structured_map,
+                                canonical_dataset=canonical_dataset,
+                                sample_task=sample_task,
+                                sample_language=sample_language,
+                            )
+
+                    except Exception as exc:
+                        if not args.worker_mode or isinstance(exc, InterruptedError):
+                            raise
+                        prediction_map.pop(key, None)
+                        structured_map.pop(key, None)
+                        current_dataset_status["sample_errors"].append({"key": key, "error": str(exc), "error_type": type(exc).__name__})
+                        _write_status_file(status_path, status_payload)
+                        if process.poll() is not None or isinstance(exc, (TimeoutError, BrokenPipeError, EOFError)):
+                            raise
 
             _write_prediction_snapshots(
                 samples=samples,
@@ -1561,7 +1678,10 @@ def main() -> int:
             )
 
             current_dataset_status["status"] = "completed"
-            current_dataset_status["num_generated_samples"] = len(samples)
+            current_dataset_status["num_generated_samples"] = len(prediction_map) if args.worker_mode else len(samples)
+            if args.worker_mode and len(prediction_map) != len(samples):
+                current_dataset_status["status"] = "failed"
+                current_dataset_status["error"] = "Worker has missing or invalid sample predictions"
             current_dataset_status["empty_prediction_count"] = sum(
                 1 for value in prediction_map.values() if not value.strip()
             )
@@ -1606,7 +1726,7 @@ def main() -> int:
             raise
         finally:
             try:
-                if server_protocol == MCP_SERVER_PROTOCOL:
+                if server_protocol == MCP_SERVER_PROTOCOL and not args.worker_mode:
                     _send_request(
                         process,
                         {"jsonrpc": "2.0", "id": 999999, "method": "shutdown", "params": {}},
@@ -1618,7 +1738,18 @@ def main() -> int:
                     process.stdin.close()
                 except BrokenPipeError:
                     pass
-            process.wait(timeout=30)
+            if args.worker_mode:
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait()
+            else:
+                process.wait(timeout=30)
 
     logger.info(
         "Generated predictions via model-local server",
@@ -1644,7 +1775,7 @@ def main() -> int:
             ensure_ascii=False,
         )
     )
-    return 0
+    return 1 if args.worker_mode and current_dataset_status["status"] != "completed" else 0
 
 
 if __name__ == "__main__":

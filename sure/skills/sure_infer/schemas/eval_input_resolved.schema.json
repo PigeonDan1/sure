@@ -8,7 +8,7 @@
 	"properties": {
 		"schema": { "type": "string", "enum": ["sure.eval.input_resolved.v1"] },
 		"generated_at": { "type": "string" },
-		"user_input": { "type": "object", "additionalProperties": true },
+		"user_input": { "type": "object", "properties": { "num_workers": { "type": ["integer", "null"], "minimum": 1, "maximum": 8 } }, "additionalProperties": true },
 		"model": { "type": "object", "additionalProperties": true },
 		"datasets": {
 			"type": "array",
@@ -21,10 +21,13 @@
 					"jsonl_path": { "type": "string" },
 					"jsonl_exists": { "type": "boolean" },
 					"task": { "type": "string" },
+					"supported_tasks": { "type": "array", "items": { "type": "string" } },
 					"language": { "type": "string" },
 					"default_metrics": { "type": "array", "items": { "type": "string" } },
 					"source": { "type": ["string", "null"] },
 					"num_samples": { "type": ["number", "null"] },
+					"selected_samples": { "type": "integer", "minimum": 1 },
+					"planned_workers": { "type": "integer", "minimum": 1, "maximum": 8 },
 					"display_name": { "type": "string" },
 					"dataset_task": { "type": "string" },
 					"task_source": { "type": "string" },
@@ -37,7 +40,7 @@
 			}
 		},
 		"task_summary": { "type": "object", "additionalProperties": true },
-		"runtime": { "type": "object", "additionalProperties": true },
+		"runtime": { "type": "object", "properties": { "num_workers": { "type": "integer", "minimum": 1, "maximum": 8 }, "worker_selection": { "enum": ["auto", "explicit"] } }, "additionalProperties": true },
 		"evaluation": { "type": "object", "additionalProperties": true },
 		"expected_outputs": { "type": "object", "additionalProperties": true }
 	},

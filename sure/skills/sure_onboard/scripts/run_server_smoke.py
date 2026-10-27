@@ -47,6 +47,8 @@ from typing import Any
 # as its stdlib base.
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "runtime" / "harness"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from deployment_contract import sha256_file
 from model_child_env import model_child_env
 from sure.runtime.evaluation.task_registry import allows_empty_prediction
 from sure.runtime.prediction_payload import extract_mcp_payload, normalize_prediction_payload
@@ -56,6 +58,23 @@ STDERR_TAIL_LINES = 200
 MCP_PROTOCOL = "mcp"
 JSONL_PROTOCOL = "jsonl"
 MCP_STEPS = ("initialize", "tools_list", "tools_call", "shutdown")
+
+
+def server_entry_file(cwd: Path, command: list[str]) -> Path | None:
+    """The file a declared server command runs, when the command names one.
+
+    A smoke is a receipt for one file's behaviour, so the receipt can only be
+    tied to that file when the command points at one. ponytail: a command that
+    runs a module (`python -m server`) names no file, so there is nothing to
+    bind; the command comparison still holds the receipt to one invocation.
+    """
+    for argument in list(command[1:]) + list(command[:1]):
+        if argument.startswith("-"):
+            continue
+        candidate = cwd / argument
+        if candidate.is_file():
+            return candidate.resolve()
+    return None
 
 
 def output_is_nonempty(payload: Any) -> bool:
@@ -355,6 +374,11 @@ def main() -> int:
     stderr_handle = None
     stderr_thread: threading.Thread | None = None
     proc: subprocess.Popen | None = None
+    # Which file this receipt is about: the gate ties the evidence to that
+    # file's digest, so a server edited after it answered cannot pass on this
+    # receipt.
+    entry_root = Path(args.cwd) if args.cwd else Path.cwd()
+    server_entry = server_entry_file(entry_root, server_command)
     if fatal is None:
         if args.server_stderr_log:
             try:
@@ -435,6 +459,8 @@ def main() -> int:
         "declared_input_schema": input_schema,
         "list_only": args.list_only,
         "server_command": server_command,
+        "server_entry_path": str(server_entry) if server_entry else "",
+        "server_entry_sha256": sha256_file(server_entry) if server_entry else "",
         "cwd": args.cwd or "",
         "server_exit_code": exit_code,
         "steps": steps,

@@ -15,7 +15,7 @@ import subprocess
 import sys
 import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 
@@ -958,19 +958,42 @@ def verify_runtime(run_dir: Path) -> dict[str, Any]:
             raise ApprovalError(f"candidate image pull verification failed: {pull.stderr[-2000:]}")
         container = binding["container"]
         model_target = str(container["model_mount"]["target"])
-        command = [
-            "docker",
-            "run",
-            "--rm",
-            "--mount",
-            f"type=bind,src={candidate},dst={model_target},readonly",
-            "--workdir",
-            str(container["working_dir"]),
-        ]
-        if container.get("gpu_required") is True:
-            command.extend(["--gpus", "all"])
-        command.extend([image_ref, str(container["python_executable"]), f"{model_target}/validate.py"])
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=1800, check=False)
+        # Mount targets name locations inside the image, so they are POSIX on
+        # every host; a trailing slash in the binding must not leave a second
+        # one in the nested target.
+        artifacts_target = str(PurePosixPath(model_target) / "artifacts")
+        with tempfile.TemporaryDirectory(prefix="sure-approve-validation-") as validation_root:
+            validation_output = Path(validation_root)
+            # The model mount is read-only, and validate.py persists its stage
+            # artifacts inside the bundle. Overlay a writable copy of what the
+            # bundle already ships: the sealed tree keeps one digest, and the
+            # container still sees artifact_manifest.json and the fixtures.
+            if not (candidate / "artifacts").is_dir():
+                raise ApprovalError(f"candidate has no artifacts/ directory: {candidate / 'artifacts'}")
+            shutil.copytree(candidate / "artifacts", validation_output, dirs_exist_ok=True)
+            # The image may run as a non-root USER while the copied tree
+            # belongs to the approving account; copytree preserves the host
+            # permission bits, so open up every directory (validate.py writes
+            # stage artifacts and audio outputs) and every file in the copy.
+            for overlay_root, _dirs, overlay_files in os.walk(validation_output):
+                os.chmod(overlay_root, 0o777)
+                for name in overlay_files:
+                    os.chmod(Path(overlay_root) / name, 0o666)
+            command = [
+                "docker",
+                "run",
+                "--rm",
+                "--mount",
+                f"type=bind,src={candidate},dst={model_target},readonly",
+                "--mount",
+                f"type=bind,src={validation_output},dst={artifacts_target}",
+                "--workdir",
+                str(container["working_dir"]),
+            ]
+            if container.get("gpu_required") is True:
+                command.extend(["--gpus", "all"])
+            command.extend([image_ref, str(container["python_executable"]), f"{model_target}/validate.py"])
+            completed = subprocess.run(command, capture_output=True, text=True, timeout=1800, check=False)
         smoke = {"command": command, "pull_stdout_sha256": sha256_bytes(pull.stdout.encode()), "exit_code": completed.returncode, "stdout_sha256": sha256_bytes(completed.stdout.encode()), "stderr": completed.stderr[-2000:]}
     if completed.returncode != 0:
         raise ApprovalError(f"candidate runtime verification failed: {smoke['stderr']}")

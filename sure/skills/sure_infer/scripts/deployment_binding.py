@@ -366,16 +366,23 @@ def _mandatory_integrity_paths(
     generated_audio = sample.get("audio_path")
     if generated_audio is not None:
         audio_path = _portable_relative(generated_audio, "generated sample audio_path")
-        _require(
-            audio_path.parts[:2] == ("artifacts", "outputs"),
-            "generated sample audio must be stored below artifacts/outputs",
-        )
-        audio_target = (model_dir / audio_path).resolve()
-        _require(
-            audio_target.is_file() and _is_relative_to(audio_target, model_dir.resolve()),
-            "generated sample audio file is missing from the model bundle",
-        )
-        required.add(audio_path.as_posix())
+        if (
+            audio_path.parts[:2] == ("fixture", "sv")
+            and isinstance(sample.get("embedding"), list)
+            and bool(sample["embedding"])
+        ):
+            _require(audio_path.as_posix() in fixture_files, "SV sample input audio must be a bundled fixture")
+        else:
+            _require(
+                audio_path.parts[:2] == ("artifacts", "outputs"),
+                "generated sample audio must be stored below artifacts/outputs",
+            )
+            audio_target = (model_dir / audio_path).resolve()
+            _require(
+                audio_target.is_file() and _is_relative_to(audio_target, model_dir.resolve()),
+                "generated sample audio file is missing from the model bundle",
+            )
+            required.add(audio_path.as_posix())
 
     payload_manifest_path = model_dir / "artifacts" / "model_payload_manifest.json"
     if payload_manifest_path.is_file():

@@ -161,17 +161,36 @@ def declared_server_protocol(config: dict[str, Any], model_dir: Path) -> str | N
     return _server_framing(server)
 
 
-def _server_framing(server: dict[str, Any]) -> str:
-    """Normalize a declared framing through the one shared alias table."""
+def _server_protocol_module():
+    """The one alias table the infer client and the onboard gates share.
+
+    Imported lazily: the path insert happens per call, so it cannot shadow a
+    same-named module elsewhere on the path for the whole process.
+    """
     scripts = Path(__file__).resolve().parents[2] / "sure_infer" / "scripts"
     if str(scripts) not in sys.path:
         sys.path.insert(0, str(scripts))
-    from server_protocol import resolve_server_protocol
+    import server_protocol
 
+    return server_protocol
+
+
+def _server_framing(server: dict[str, Any]) -> str:
+    """Normalize a declared framing through the one shared alias table."""
     try:
-        return resolve_server_protocol(server)
+        return _server_protocol_module().resolve_server_protocol(server)
     except ValueError as exc:
         raise ValueError(f"config.yaml declares an unsupported server.protocol: {exc}") from exc
+
+
+def declares_jsonl_server(config: dict[str, Any], model_dir: Path) -> bool:
+    """Whether the model declares a server that speaks the JSONL framing.
+
+    The spelling comes from the one alias table, so a gate asking this question
+    cannot drift from the resolver that decides what "jsonl" means.
+    """
+    canonical = _server_protocol_module().JSONL_SERVER_PROTOCOL
+    return declared_server_protocol(config, model_dir) == canonical
 
 
 def resolve_evidence_path(raw: object, run_dir: Path, model_dir: Path) -> Path | None:

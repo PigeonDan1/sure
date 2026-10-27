@@ -35,6 +35,36 @@
 		"product_dir": { "type": "string" },
 		"failed_stage": { "type": "string" },
 		"input_digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+		"parallelism": {
+			"type": "object",
+			"required": ["requested_workers", "gpu_devices", "datasets", "recovery_available"],
+			"properties": {
+				"requested_workers": { "type": "integer", "minimum": 1, "maximum": 8 },
+				"worker_selection": { "enum": ["auto", "explicit"] },
+				"gpu_devices": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+				"recovery_available": { "type": "boolean" },
+				"datasets": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": ["dataset", "effective_workers", "expected", "generated", "status", "report_path"],
+						"properties": {
+							"dataset": { "type": "string" },
+							"planned_workers": { "type": "integer", "minimum": 1, "maximum": 8 },
+							"total_samples": { "type": "integer", "minimum": 0 },
+							"selected_samples": { "type": "integer", "minimum": 0 },
+							"effective_workers": { "type": "integer", "minimum": 0, "maximum": 8 },
+							"expected": { "type": "integer", "minimum": 0 },
+							"generated": { "type": "integer", "minimum": 0 },
+							"status": { "enum": ["pending", "running", "completed", "failed", "skipped"] },
+							"report_path": { "type": "string" }
+						},
+						"additionalProperties": false
+					}
+				}
+			},
+			"additionalProperties": false
+		},
 		"datasets": {
 			"type": "array",
 			"items": {

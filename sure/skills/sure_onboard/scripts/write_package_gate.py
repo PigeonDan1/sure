@@ -11,6 +11,7 @@ from typing import Any
 
 from check_package_gate import validate_model_runtime
 from deployment_contract import (
+    declares_jsonl_server,
     load_model_artifact,
     passed,
     read_json,
@@ -21,6 +22,7 @@ from deployment_contract import (
     validate_image_and_digest,
     validate_runtime_roles,
 )
+from write_runtime_inventory import load_config
 
 
 STAGE_RESULTS = {
@@ -109,6 +111,53 @@ def local_readiness(observed: dict[str, bool]) -> bool:
     return all(observed[name] for name in LOCAL_EVIDENCE_CHECKS)
 
 
+def validate_jsonl_server_smoke(run_dir: Path, model_dir: Path) -> None:
+    config = load_config(model_dir)
+    if not declares_jsonl_server(config, model_dir):
+        return
+    smoke_path = run_dir / "artifacts" / "server_smoke.json"
+    if not smoke_path.is_file():
+        raise ValueError("JSONL server requires server_smoke.json from this onboard run; rerun validate_infer")
+    smoke = read_json(smoke_path)
+    step = (smoke.get("steps") or {}).get("single_request") or {}
+    command = (config.get("server") or {}).get("command") or []
+    observed_command = smoke.get("server_command")
+    if (smoke.get("status") != "passed" or smoke.get("protocol") != "jsonl"
+            or smoke.get("list_only") is True or step.get("ok") is not True
+            or not isinstance(observed_command, list) or observed_command[1:] != command[1:]
+            or not isinstance(step.get("prediction"), dict)
+            or not isinstance(step.get("projection"), str)):
+        raise ValueError("JSONL server smoke did not prove a projected prediction; rerun validate_infer")
+    require_bound_server_file(smoke, model_dir)
+
+
+def require_bound_server_file(smoke: dict[str, Any], model_dir: Path) -> None:
+    """The receipt must describe the server file the bundle still ships.
+
+    A smoke proves what one file did when it answered. Tying the receipt to that
+    file's digest is what stops a server that was edited afterwards -- or
+    broken again -- from passing on a receipt written for a different file.
+    """
+    if "server_entry_path" not in smoke:
+        raise ValueError("JSONL server smoke does not record which server file it ran; rerun validate_infer")
+    entry = str(smoke.get("server_entry_path") or "")
+    if not entry:
+        # The command names no file (`python -m server`): there is nothing to bind.
+        return
+    path = Path(entry)
+    try:
+        path.resolve().relative_to(model_dir.resolve())
+    except ValueError:
+        raise ValueError(
+            "JSONL server smoke ran a server file outside the model bundle; "
+            "the bundle must ship the file its command drives"
+        )
+    if not path.is_file():
+        raise ValueError("JSONL server smoke names a server file the bundle no longer has; rerun validate_infer")
+    if str(smoke.get("server_entry_sha256") or "") != sha256_file(path):
+        raise ValueError("JSONL server smoke ran a different server file than the bundle ships; rerun validate_infer")
+
+
 def validate_local_container(build: dict[str, Any], validation: dict[str, Any]) -> tuple[str, str, str]:
     if not passed(build.get("status")) or not passed(validation.get("status")):
         raise ValueError("docker build and validation status must both pass")
@@ -140,6 +189,8 @@ def build_package_gate(run_dir: Path, model_dir: Path) -> dict[str, Any]:
 
     deployment_type = str(resolved.get("deployment_type") or "local")
     profile = str(resolved.get("package_profile") or "none")
+    if deployment_type == "local":
+        validate_jsonl_server_smoke(run_dir, model_dir)
     if deployment_type == "api" and profile != "none":
         raise ValueError("API deployment requires package_profile=none")
 

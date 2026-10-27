@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import re
+import os
 from pathlib import Path, PurePath, PurePosixPath, PureWindowsPath
 from typing import Any
 
@@ -248,9 +249,21 @@ def build_local_container_command(
     command = [docker_binary, "run", "--rm", "--init", "--entrypoint", harness_python]
     mounted_targets: dict[str, tuple[Path, bool]] = {}
     lowered = (device_request or "auto").lower()
-    if lowered != "cpu" and container.get("gpu_required") is True:
+    workers = int((eval_input.get("runtime") or {}).get("num_workers", 1))
+    if workers > 1 and lowered not in {"auto", "cuda"}:
+        raise ValueError("Multi-GPU inference requires device=auto or device=cuda")
+    if lowered != "cpu" and (container.get("gpu_required") is True or workers > 1):
         if lowered.startswith("cuda:"):
             command.extend(["--gpus", f"device={lowered.split(':', 1)[1]}"])
+        elif workers > 1:
+            visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+            if visible is None:
+                command.extend(["--gpus", str(workers)])
+            else:
+                devices = [device.strip() for device in visible.split(",")]
+                if not all(devices) or len(set(devices)) != len(devices) or len(devices) < workers:
+                    raise ValueError("CUDA_VISIBLE_DEVICES does not provide enough distinct GPUs")
+                command.extend(["--gpus", '"device=' + ",".join(devices[:workers]) + '"'])
         else:
             command.extend(["--gpus", "all"])
 
@@ -306,6 +319,12 @@ def build_local_container_command(
         value = _replace_prefix(value, model_source, model_target)
         env[key] = value
     env.update(extra_env or {})
+    if workers > 1:
+        # Docker device ids describe host GPUs; CUDA ordinals inside the
+        # restricted container are renumbered. Probe those in the entrypoint.
+        env.pop("CUDA_VISIBLE_DEVICES", None)
+        env["DEVICE"] = "cuda"
+        env["SURE_EVAL_DEVICE_ACTUAL"] = "cuda"
     env.update(
         {
             "MODEL_DIR": model_target,

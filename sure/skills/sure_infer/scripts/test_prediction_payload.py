@@ -591,7 +591,10 @@ class GenerationResumeTests(unittest.TestCase):
             actual_snapshot(**kwargs)
 
         def write_status(path, payload):
-            self.status_counts.append(payload["datasets"][-1]["num_generated_samples"])
+            row = (payload.get("datasets") or [{}])[-1]
+            if "num_generated_samples" in row:
+                # Only the dataset status carries the counter; the manifests do not.
+                self.status_counts.append(row["num_generated_samples"])
             actual_status_write(path, payload)
 
         argv = [
