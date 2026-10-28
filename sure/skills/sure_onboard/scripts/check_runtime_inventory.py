@@ -20,6 +20,7 @@ from deployment_contract import (
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 from sure.runtime.model.bootstrap import ModelRuntimeError, manifest_sha256, verify_runtime
+from sure.runtime.model.device_dtype import dtype_from_config
 from sure.runtime.model_server.launch import declared_server_command
 from sure.site.loader import SitePolicyError, load_site_policy
 from write_runtime_inventory import load_config
@@ -46,6 +47,20 @@ def main() -> int:
         )
         if data.get("schema") != "sure.onboard.runtime_inventory.v2":
             raise ValueError("runtime inventory schema must be sure.onboard.runtime_inventory.v2")
+        config_path = model_dir / "config.yaml"
+        if config_path.is_file() and resolved.get("deployment_type") != "api":
+            try:
+                import yaml
+                config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+                declared_dtype = dtype_from_config(config) if isinstance(config, dict) else None
+            except (ImportError, OSError, ValueError) as exc:
+                raise ValueError(f"invalid model dtype declaration: {exc}") from exc
+            model_record = data.get("model") if isinstance(data.get("model"), dict) else {}
+            if declared_dtype and model_record.get("dtype") != declared_dtype:
+                raise ValueError(
+                    "runtime inventory model.dtype must match the approved config dtype "
+                    f"{declared_dtype!r}"
+                )
         policy = data.get("policy") if isinstance(data.get("policy"), dict) else {}
         if policy.get("host_python_fallback") is not False or policy.get("image_override_allowed") is not False:
             raise ValueError("host Python fallback and image override must both be disabled")

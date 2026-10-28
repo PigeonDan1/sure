@@ -104,10 +104,34 @@ def import_wrapper_class():
     return getattr(module, WRAPPER_CLASS)
 
 
+def model_declared_dtype() -> str | None:
+    """Read the approved dtype without deriving it from the device."""
+    config_path = MODEL_DIR / "config.yaml"
+    if not config_path.is_file():
+        return None
+    try:
+        import yaml
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"cannot read model dtype from {config_path}: {exc}") from exc
+    model = config.get("model") if isinstance(config.get("model"), dict) else {}
+    value = model.get("dtype") or config.get("dtype")
+    if not value:
+        return None
+    value = str(value).strip().lower()
+    value = value[6:] if value.startswith("torch.") else value
+    if value not in {"bfloat16", "float16", "float32", "float64"}:
+        raise ValueError(f"unsupported declared model dtype: {value!r}")
+    return value
+
+
 def instantiate_wrapper() -> Any:
     wrapper_cls = import_wrapper_class()
     model_path = os.environ.get("MODEL_PATH", MODEL_ID)
     device = os.environ.get("DEVICE", os.environ.get("SURE_DEVICE", "auto"))
+    dtype = model_declared_dtype()
+    if dtype:
+        return wrapper_cls(model_path=model_path, device=device, dtype=dtype)
     attempts = [
         lambda: wrapper_cls(model_path=model_path, device=device),
         lambda: wrapper_cls({"model_path": model_path, "device": device}),
@@ -124,10 +148,38 @@ def instantiate_wrapper() -> Any:
     raise RuntimeError("failed to instantiate wrapper")
 
 
+def runtime_evidence(wrapper: Any) -> dict[str, Any]:
+    declared = model_declared_dtype()
+    if declared is None:
+        return {}
+    model = getattr(wrapper, "model", None)
+    parameters = getattr(model, "parameters", None)
+    loaded = str(getattr(wrapper, "dtype", "") or "").replace("torch.", "")
+    if callable(parameters):
+        dtypes = {
+            str(parameter.dtype).replace("torch.", "")
+            for parameter in parameters() if parameter.is_floating_point()
+        }
+        if dtypes != {declared}:
+            raise ValueError(f"loaded parameter dtypes {sorted(dtypes)} do not match declared dtype {declared}")
+        loaded = declared
+    if loaded != declared:
+        raise ValueError(f"loaded dtype {loaded!r} does not match declared dtype {declared!r}")
+    value: dict[str, Any] = {
+        "declared_dtype": declared,
+        "resolved_device": str(getattr(wrapper, "device", "") or "") or None,
+        "loaded_dtype": loaded,
+    }
+    device = str(value["resolved_device"] or "").lower()
+    value["device_map"] = device if device.startswith("cuda:") else None
+    return value
+
+
 def load_wrapper() -> Any:
     wrapper = instantiate_wrapper()
     if hasattr(wrapper, "load"):
         wrapper.load()
+    runtime_evidence(wrapper)
     return wrapper
 
 
@@ -326,13 +378,13 @@ def stage_import() -> bool:
 def stage_load() -> bool:
     started = time.time()
     try:
-        load_wrapper()
+        wrapper = load_wrapper()
     except Exception as exc:  # noqa: BLE001
         append_log("VALIDATE_LOAD", "failed", str(exc))
         write_stage_result("load", False, started, str(exc))
         return False
     append_log("VALIDATE_LOAD", "passed", "Wrapper load succeeded.")
-    write_stage_result("load", True, started)
+    write_stage_result("load", True, started, **runtime_evidence(wrapper))
     return True
 
 

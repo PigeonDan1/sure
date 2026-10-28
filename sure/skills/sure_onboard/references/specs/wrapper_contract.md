@@ -14,9 +14,25 @@
 
 **Responsibilities**:
 - Abstract model-specific API into unified interface
-- Handle device placement (CPU/GPU)
+- Handle device placement (CPU/GPU) using the normalized runtime value
 - Manage lazy loading
 - Provide `predict()` or task-specific entry point
+
+**Device/dtype contract**:
+- Accept `cpu`, `cuda`, `cuda:0`, and `cuda:N`; `cuda` means the first
+  process-visible GPU and an explicit index must be preserved.
+- Device placement and model dtype are independent decisions. Do not derive
+  dtype from a device string.
+- If `config.yaml:model.dtype` is present, the loader must use that approved
+  dtype or fail; silently changing dtype is not allowed.
+- With a declared dtype, the validation template calls
+  `ModelWrapper(model_path=..., device=..., dtype=...)`. These keyword arguments
+  must be accepted; constructor fallback that drops dtype is disabled.
+- After load, expose `device` and `dtype`. If `wrapper.model.parameters()` is
+  available, validation checks its floating parameter dtypes directly. Models
+  with intentionally mixed dtypes need a model-specific validator.
+- Bare `cuda` stays bare in validation and local inference environments;
+  `resolved_device=cuda:N` is an explicit process-visible validation target.
 
 **Must Provide**:
 ```python

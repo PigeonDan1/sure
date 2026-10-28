@@ -223,6 +223,40 @@ VC/HPC submission is not part of this core skill. If needed later, implement it 
 
 ## Backend Routing Rules (Phase 1)
 
+### Local device and declared dtype evidence
+
+- Preserve a selected bare `cuda` value in `DEVICE`, `SURE_DEVICE`, and
+  `SURE_EVAL_DEVICE_ACTUAL`, consistently with local `/sure_infer`. If
+  `env_compat_result.resolved_device` explicitly names `cuda:N`, use that
+  process-visible index. It is not a host GPU selection request; the inference
+  CLI's `device=cuda:N` selects a physical GPU and remaps it to process `cuda:0`.
+- For local models declaring `config.yaml:model.dtype` (or top-level `dtype`),
+  `env_compat_result.json` must record canonical `declared_dtype`, `loaded_dtype`,
+  `device`, and the selected Model Python `python_executable`. Supported dtypes
+  are `bfloat16`, `float16`, `float32`, and `float64`. CUDA evidence additionally
+  records `device_map` matching the concrete process-visible target, e.g. `cuda:0`.
+- The environment compatibility gate executes the shared `device_dtype.py`
+  probe with that interpreter (or the build-env interpreter), with a 60-second
+  deadline. For backend `docker`, it runs the helper read-only in the declared
+  `build_env_result.docker_image` using that image's Model Python; only CUDA
+  probes request GPUs. It writes `dtype_supported` and `probe` (`status`, `operation`,
+  `device`, `dtype`) into the artifact. Do not hand-author probe success. This
+  verifies hardware support; `loaded_dtype` must separately come from loading
+  the model. The gate never substitutes Harness Python or a different dtype.
+- When a dtype is declared, wrappers using the generated validation template
+  must accept `ModelWrapper(model_path=..., device=..., dtype=...)`. The template
+  does not retry constructors that drop `dtype`. After loading, expose `device`
+  and `dtype`; when `wrapper.model.parameters()` is available, the template
+  checks its floating parameter dtypes directly. Mixed parameter dtypes fail
+  this uniform-dtype contract and need an explicit model-specific validator.
+- Local validation commands use the selected dtype in `SURE_MODEL_DTYPE` and
+  `SURE_EVAL_APPROVED_DTYPE`. Use direct `docker run ...` / `podman run ...` argv
+  arrays for container validation; environment options are injected before the
+  image and unsupported run options fail explicitly. Shell strings are executed
+  as declared and are not parsed or rewritten for container options.
+- API deployments do not load local weights and are exempt from this dtype
+  gate. Models without a declared dtype retain their existing validation path.
+
 Rule-based backend selection (record the reason in `backend_choice.json`):
 
 1. API-only model → `api`.

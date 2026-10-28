@@ -8,6 +8,7 @@
 	"properties": {
 		"compat_ok": { "type": "boolean" },
 		"device": { "type": "string", "enum": ["cuda", "cpu", "mps", "auto"] },
+		"resolved_device": { "type": "string", "pattern": "^(cuda(:[0-9]+)?|cpu|mps)$" },
 		"model_dir": { "type": "string" },
 		"python_executable": { "type": "string" },
 		"python_version": { "type": "string" },
@@ -58,6 +59,13 @@
 		},
 		"python_version_match": { "type": "boolean" },
 		"weights_loadable": { "type": "boolean" },
+		"declared_dtype": { "type": "string", "enum": ["bfloat16", "float16", "float32", "float64"] },
+		"loaded_dtype": { "type": "string", "enum": ["bfloat16", "float16", "float32", "float64"] },
+		"dtype_supported": { "type": "boolean" },
+		"device_map": { "type": ["string", "null"] },
+		"cuda_device_name": { "type": "string" },
+		"cuda_capability": { "type": "string" },
+		"probe": { "type": "object", "additionalProperties": true },
 		"runtime": {
 			"type": "object",
 			"additionalProperties": true
