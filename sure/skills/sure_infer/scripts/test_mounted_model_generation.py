@@ -87,7 +87,7 @@ class MountedModelGenerationTests(unittest.TestCase):
                     "schema": "sure.onboard.runtime_inventory.v2", "status": "ready",
                     "model": {"name": "owner__demo"},
                     "policy": {"eval_runtime": "container_only", "host_python_fallback": False, "image_override_allowed": False},
-                    "container_runtime": {"server_command": ["python", "server.py"], "working_dir": str(model), "target_image_ref": image, "tool_names": ["detect"]},
+                    "container_runtime": {"server_command": ["python", "server.py"], "python_executable": "/opt/model_venv/bin/python", "working_dir": str(model), "target_image_ref": image, "tool_names": ["detect"]},
                 }))
                 dataset = root / "dataset.jsonl"
                 dataset.write_text(json.dumps({"key": "sample", "path": str(root / "audio.wav"), "task": "VAD", "language": "en"}) + "\n")
@@ -120,6 +120,26 @@ class MountedModelGenerationTests(unittest.TestCase):
                     manifest = json.loads((root / "result/predictions/manifest.json").read_text())
                     self.assertEqual(status["model_name"], "owner__demo")
                     self.assertEqual(manifest["model_name"], "owner__demo")
+
+    def test_container_launch_binds_the_approved_model_python(self):
+        # A bare `python` resolves against the image's PATH, which for older
+        # bundles is not the Model Python the approval probed (Fun-ASR's
+        # /opt/conda/bin/python has no funasr; /opt/model_venv/bin/python does).
+        image = "registry.example.com/demo@sha256:" + "b" * 64
+        inventory = {
+            "schema": "sure.onboard.runtime_inventory.v2", "status": "ready",
+            "policy": {"eval_runtime": "container_only", "host_python_fallback": False, "image_override_allowed": False},
+            "container_runtime": {
+                "server_command": ["python", "server.py"],
+                "python_executable": "/opt/model_venv/bin/python",
+                "target_image_ref": image,
+            },
+        }
+        with patch.dict("os.environ", {"SURE_EVAL_CONTAINER_IMAGE": image}):
+            self.assertEqual(
+                generation._resolve_server_command(Path("/model"), inventory),
+                ["/opt/model_venv/bin/python", "server.py"],
+            )
 
 
 if __name__ == "__main__":
