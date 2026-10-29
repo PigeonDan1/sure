@@ -32,6 +32,20 @@
 
 ---
 
+## Agent skill
+
+通过 `python -m pip install -e .` 安装引擎。仓库通过
+`.agents/skills/sure-eval` 暴露 [`sure-eval`](skills/sure-eval/SKILL.md)，
+在仓库中启动新的 agent 会话后可用 `$sure-eval` 调用。
+如需从其他项目调用，将 `skills/sure-eval` 的绝对路径链接到宿主的 skill
+目录（Codex 为 `~/.agents/skills/sure-eval`）。请保留仓库，skill 需要调用
+其中的引擎脚本和工作流契约。
+
+运行 `python -m sure_eval.cli doctor MODEL --json RUN_DIR/readiness.json` 检查
+就绪状态：退出码 0 表示静态检查通过，1 表示阻塞，具体原因写入 JSON。
+可通过[离线 smoke 评测](skills/sure-eval/references/offline-smoke.md)验证校验和
+评分流程，无需下载模型或数据集。
+
 ## 📋 概述
 
 SURE-EVAL 是一个面向音频工具和模型的**自动化评测框架**，核心设计原则非常简单：

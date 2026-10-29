@@ -318,7 +318,8 @@ def list_models() -> None:
     table.add_column("Task", style="magenta")
     table.add_column("Description", style="white")
     
-    for model in models:
+    for name in models:
+        model = registry.get_model(name)
         table.add_row(
             model.name,
             model.task or "N/A",
@@ -342,19 +343,56 @@ def inspect_model(
     table.add_row("Name", model.name)
     table.add_row("Task", model.task or "N/A")
     table.add_row("Description", model.description or "N/A")
-    table.add_row("Version", model.version or "N/A")
+    table.add_row("Version", str(model.config.get("version") or "N/A"))
     table.add_row("Model ID", model.model_id or "N/A")
-    table.add_row("Languages", ", ".join(model.languages) if model.languages else "N/A")
-    table.add_row("Config Path", str(model.config_path) if model.config_path else "N/A")
+    languages = model.config.get("languages") or []
+    table.add_row("Languages", ", ".join(languages) if languages else "N/A")
+    table.add_row("Config Path", str(model.path / "config.yaml"))
     
     console.print(table)
 
 
 @app.command()
 def doctor(
-    model_name: Optional[str] = typer.Option(None, "--model", "-m", help="Model name to check"),
+    model_name: Optional[str] = typer.Argument(None, help="Model name to check"),
+    model_option: Optional[str] = typer.Option(None, "--model", "-m", help="Model name to check"),
+    json_path: Optional[Path] = typer.Option(None, "--json", help="Write runtime readiness JSON"),
 ) -> None:
     """Run diagnostics on the evaluation environment."""
+    if model_name and model_option and model_name != model_option:
+        raise typer.BadParameter("Specify the model once, as an argument or --model.")
+    model_name = model_name or model_option
+    if json_path and not model_name:
+        raise typer.BadParameter("--json requires a model name.")
+    if model_name:
+        registry = get_model_registry()
+        model = registry.get_model(model_name)
+        readiness = get_runtime_readiness(
+            model, model_name=model_name, models_dir=registry.models_dir,
+        )
+        # Readiness internally carries the process environment for launching models.
+        # Reports must never serialize inherited credentials or configured secrets.
+        readiness["env"] = {key: "<redacted>" for key in model.env} if model else {}
+        if json_path:
+            json_path.parent.mkdir(parents=True, exist_ok=True)
+            json_path.write_text(json.dumps(readiness, indent=2) + "\n", encoding="utf-8")
+        table = Table(title=f"Runtime Readiness: {model_name}")
+        table.add_column("Check")
+        table.add_column("Result")
+        table.add_column("Details")
+        for check in readiness["checks"]:
+            table.add_row(
+                check["name"].replace("_", " ").title(),
+                "PASS" if check["passed"] else "FAIL",
+                check["details"],
+            )
+        console.print(table)
+        console.print(f"Status: {readiness['status']}")
+        if readiness["failure_class"]:
+            console.print(f"Failure: {readiness['failure_class']}")
+        console.print(readiness["action_hint"])
+        raise typer.Exit(0 if readiness["status"] == "ready" else 1)
+
     console.print("[bold]SURE-EVAL Diagnostics[/bold]\n")
     
     # Check Python version
@@ -376,20 +414,6 @@ def doctor(
     except ImportError:
         console.print("[yellow]PyTorch not installed[/yellow]")
     
-    # Check model if specified
-    if model_name:
-        console.print(f"\n[bold]Model Check: {model_name}[/bold]")
-        try:
-            model = get_model_or_exit(model_name)
-            console.print(f"Config: {model.config_path}")
-            if model.config_path and model.config_path.exists():
-                console.print("[green]Config file exists[/green]")
-            else:
-                console.print("[red]Config file not found[/red]")
-        except typer.Exit:
-            pass
-
-
 @app.command()
 def serve(
     model_name: str = typer.Argument(..., help="Model name"),
@@ -491,9 +515,7 @@ def predict(
         console.print(f"[green]Predictions written to {result['output_path']}[/green]")
 
     except InferenceSurfaceError as exc:
-        console.print(f"[bold red]Inference Error:[/bold red] {exc.message}")
-        if exc.hint:
-            console.print(f"[yellow]Hint:[/yellow] {exc.hint}")
+        console.print(f"[bold red]Inference Error:[/bold red] {exc}")
         raise typer.Exit(1) from exc
     except Exception as exc:
         console.print(f"[bold red]Error:[/bold red] {exc}")

@@ -30,6 +30,20 @@
 
 ---
 
+## Agent skill
+
+Install the engine with `python -m pip install -e .`. The checkout exposes
+[`sure-eval`](skills/sure-eval/SKILL.md) through `.agents/skills/sure-eval`.
+Start a new agent session in this checkout and invoke `$sure-eval`.
+For use from other projects, link the absolute path of `skills/sure-eval` into
+your agent's skill directory (Codex: `~/.agents/skills/sure-eval`). Keep the
+checkout available: the skill calls the engine's scripts and contracts.
+
+Check readiness with `python -m sure_eval.cli doctor MODEL --json RUN_DIR/readiness.json`.
+Exit 0 means static checks passed; exit 1 means blocked, with details in the JSON.
+Run the [offline smoke evaluation](skills/sure-eval/references/offline-smoke.md)
+to verify validation and scoring without downloading models or datasets.
+
 ## 📋 Overview
 
 SURE-EVAL is an **automated evaluation framework** for audio tools and models, built around a simple principle:
