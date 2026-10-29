@@ -516,7 +516,7 @@ def stage_smoke(ctx: Ctx) -> None:
     if ctx.num_workers > 1:
         smoke_ctx = replace(ctx, run_dir=ctx.run_dir / "parallel_inference" / "smoke",
                             child_env={**ctx.child_env, "CUDA_VISIBLE_DEVICES": ctx.gpu_devices[0],
-                                       "DEVICE": "cuda:0", "SURE_EVAL_DEVICE_ACTUAL": "cuda:0"}, device="cuda:0")
+                                       "DEVICE": "cuda", "SURE_EVAL_DEVICE_ACTUAL": "cuda"}, device="cuda")
     worker_flags = ["--worker-mode"] if ctx.num_workers > 1 else []
     existing_snapshot = not ctx.no_resume and (ctx.run_dir / "predictions" / f"{dataset}.jsonl").is_file()
     workspace = TemporaryDirectory(prefix="sure-smoke-", dir=ctx.run_dir) if existing_snapshot else nullcontext(smoke_ctx.run_dir)

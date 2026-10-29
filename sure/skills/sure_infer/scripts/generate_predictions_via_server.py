@@ -906,6 +906,16 @@ def _process_device(requested: str | None) -> str:
     return request
 
 
+def _worker_model_device(requested: str | None) -> str:
+    """Return a model-facing device token for a single-GPU Worker."""
+    value = str(requested or "").strip().lower()
+    if value in {"", "auto", "cuda"}:
+        return value or "auto"
+    if re.fullmatch(r"cuda:\d+", value):
+        return "cuda"
+    raise ValueError(f"Worker mode requires device=auto or device=cuda, got {requested!r}")
+
+
 def _load_existing_predictions(path: Path, *, exclude_keys: set[str] | None = None) -> dict[str, str]:
     predictions: dict[str, str] = {}
     if not path.exists():
@@ -1335,8 +1345,9 @@ def main() -> int:
     if args.worker_mode:
         # The Worker owns the GPU; an approved server env must not widen it.
         env["CUDA_VISIBLE_DEVICES"] = os.environ["CUDA_VISIBLE_DEVICES"]
-        env["DEVICE"] = "cuda:0"
-        env["SURE_EVAL_DEVICE_ACTUAL"] = "cuda:0"
+        worker_device = _worker_model_device(args.device or env.get("DEVICE"))
+        env["DEVICE"] = worker_device
+        env["SURE_EVAL_DEVICE_ACTUAL"] = worker_device
     protocol_id = args.protocol
     protocol_resolution = _resolve_protocol_parameters(protocol_id, model_dir, env)
 

@@ -307,7 +307,7 @@ class ParallelTests(unittest.TestCase):
         calls = [json.loads(line) for path in Path(self.ctx.child_env["SERVER_CALLS"]).glob("*.jsonl")
                  for line in path.read_text().splitlines()]
         self.assertEqual({row["key"] for row in calls}, {"k0", "k2", "k3"})
-        self.assertTrue(all(row["device"] == "cuda:0" and row["gpu"] in {"2", "4"} for row in calls))
+        self.assertTrue(all(row["device"] == "cuda" and row["gpu"] in {"2", "4"} for row in calls))
 
     def test_actual_jsonl_server_uses_the_same_parallel_controller(self) -> None:
         config = yaml.safe_load((self.model / "config.yaml").read_text())
