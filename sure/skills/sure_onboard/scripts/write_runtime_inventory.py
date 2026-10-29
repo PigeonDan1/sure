@@ -368,7 +368,7 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
             "model_core_sha256": {
                 name: digest
                 for name, digest in hashes.items()
-                if name in CORE_FILES
+                if name in (*CORE_FILES, *GATE_OPTIONAL_FILES)
                 or name == "artifacts/weights_manifest.json"
                 or name == ADAPTER_NAME
             },
