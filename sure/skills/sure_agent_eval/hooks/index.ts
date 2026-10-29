@@ -131,8 +131,9 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	if (typeof args.dataset_source_key === "string" && args.dataset_source_key.length > 0) {
 		resolveArgs.push("--dataset-source-key", args.dataset_source_key);
 	}
-	if (typeof args.output_dir === "string" && args.output_dir.length > 0) {
-		resolveArgs.push("--output-dir", args.output_dir);
+	const outputDir = ctx.run.outputDir ?? args.output_dir;
+	if (typeof outputDir === "string" && outputDir.length > 0) {
+		resolveArgs.push("--output-dir", outputDir);
 	}
 	// Recorded in the plan's runtime block: agent_runner.py and run_agent_eval.py
 	// read them from there instead of depending on the agent repeating them.

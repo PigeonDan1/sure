@@ -37,8 +37,12 @@ artifact mirror. The native site policy validates the path. Initialization and
 resume instead use their native manifest/run locations; their invocation logs
 and receipt still get a fresh directory under `.sure/agent-invocations/`.
 
-The wrapper exits 0 only with current persisted success evidence. A process that
+The wrapper exits 0 only with current correlated native success evidence. A process that
 exits 0 without a result is reported as `incomplete`; an old success file is never
 accepted for a new invocation. If the harness blocks on missing prerequisites,
 auth, runtime setup or an approval gate, read the receipt and logs, report the
 concrete blocker, and continue only within the user's authorization.
+
+Use `trace_summary` and the receipt snapshots to explain tool calls, retries,
+repairs and state transitions. Deterministic metrics remain in SURE's native
+evaluation artifacts.

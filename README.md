@@ -29,9 +29,9 @@ python /path/to/sure/skills/sure/scripts/run.py feed --arguments 'url=<model-url
 ```
 
 After setup, replace `--dry-run` with `--trust` to invoke the native harness in
-JSON print mode. `--trust` explicitly trusts this checkout for that invocation;
+JSON print mode through the structured native bridge. `--trust` explicitly trusts this checkout for that invocation;
 without it the harness keeps its project-trust check. The helper returns JSON,
-checks persisted terminal evidence and exits nonzero for non-success outcomes.
+checks correlated persisted terminal evidence and exits nonzero for non-success outcomes.
 It keeps the native state machines, runtime locks and human approval gates.
 Read the [skill's workflow examples](skills/sure/references/workflows.md) for
 initialization, handoffs, inference, scoring, approval and recovery. Provider

@@ -41,10 +41,21 @@ harness retains its project-trust check. Use `--args-file PATH` instead of
 `--arguments` for long inputs. Supply credentials through native login/auth
 storage or environment variables, never through arguments or prompt files.
 
-The helper runs the native CLI in JSON print mode, preserving hooks,
+The helper first asks the native bridge for the installed, validated command
+manifest, including `.sure/skills` project overrides. It then sends one
+structured JSON request through native `/sure_invoke`. Arguments remain an
+opaque native string and `output_dir` is a typed field, preserving Unicode,
+quotes, apostrophes and Windows paths. The native command preserves hooks,
 `sure_update_state`, `sure_finish`, runtime locks and human gates. It checks
-persisted terminal evidence rather than interpreting fluent text as success.
-Logs and the invocation receipt are under `.sure/agent-invocations/<id>/`.
+correlated terminal records, manifests and products rather than interpreting
+fluent text as success.
+
+Every call receives an invocation ID, request and code hashes, append-only
+invocation events, a live receipt, native stdout/stderr, run snapshots and a
+trace summary of tool calls, blocks, errors, finish repairs, continuations and
+provider retries under `.sure/agent-invocations/<id>/`. Timeout and cancellation
+terminate the native process group; competing init, resume and output paths are
+locked.
 Do not run the internal Python scoring/onboarding scripts as a replacement for
 the harness: doing so omits its gate enforcement.
 
