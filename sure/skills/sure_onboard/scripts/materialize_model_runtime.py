@@ -50,7 +50,10 @@ def atomic_json(path: Path, value: dict[str, Any]) -> None:
     os.replace(temporary, path)
 
 
-def materialize(run_dir: Path, draft_path: Path, produces: Path) -> dict[str, Any]:
+def materialize(
+    run_dir: Path, draft_path: Path, produces: Path, *,
+    uv_cache_dir: Path | None = None, uv_config: Path | None = None,
+) -> dict[str, Any]:
     repo_root = repo_root_for(run_dir)
     resolved = read_json(run_dir / "artifacts" / "model_input_resolved.json")
     if resolved.get("deployment_type") != "local" or resolved.get("package_profile") != "none":
@@ -81,6 +84,8 @@ def materialize(run_dir: Path, draft_path: Path, produces: Path) -> dict[str, An
         runtime_root=Path(policy["policy"]["storage"]["runtime_root"]) / "models",
         source_python=source_python,
         lock_path=lock_path,
+        uv_cache_dir=uv_cache_dir,
+        uv_config=uv_config,
     )
     manifest = {
         key: value
@@ -123,12 +128,16 @@ def main() -> int:
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--input", required=True, type=Path)
     parser.add_argument("--produces", required=True, type=Path)
+    parser.add_argument("--uv-cache-dir", type=Path, help="existing cache selected for this invocation; missing packages may be fetched")
+    parser.add_argument("--uv-config", type=Path, help="uv.toml used for compile and sync; credentials stay outside portable artifacts")
     args = parser.parse_args()
     try:
         result = materialize(
             args.run_dir.expanduser().resolve(),
             args.input.expanduser().resolve(),
             args.produces.expanduser().resolve(),
+            uv_cache_dir=args.uv_cache_dir,
+            uv_config=args.uv_config,
         )
     except (OSError, ValueError, ModelRuntimeError, SitePolicyError) as exc:
         print(f"materialize_model_runtime failed: {exc}", file=sys.stderr)

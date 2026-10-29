@@ -196,6 +196,20 @@ function normalizeRoot(root: string): string {
 	return trimmed.replace(/\/+$/, "") || "/";
 }
 
+// Install-class commands in build_env must stay observable through the
+// supervised helper; unambiguous detach tokens combined with an install
+// command are blocked instead of silently tolerated.
+const DETACHED_PROCESS_TOKEN = /\b(?:nohup|setsid|disown)(?:\s|$)/;
+const INSTALL_CLASS_COMMAND =
+	/(?:uv\s+(?:pip|venv|sync|tool\s+install|python\s+install)\b|\bpip3?\s+install\b|\b(?:conda|mamba|micromamba)\b[^;&|\n]*\b(?:create|install)\b|\bpixi\s+install\b|\bdocker\s+build\b|materialize_model_runtime\b)/;
+
+function detachedInstallTarget(command: string): string | undefined {
+	const detach = command.match(DETACHED_PROCESS_TOKEN);
+	if (!detach) return undefined;
+	const install = command.match(INSTALL_CLASS_COMMAND);
+	return install ? `${detach[0].trim()} ${install[0]}` : undefined;
+}
+
 function discoverHeavyOperation(command: string): string | undefined {
 	const lower = command.toLowerCase();
 	if (/\bsnapshot_download\s*\(/.test(command) || /\bhuggingface-cli\s+download\b/.test(lower)) {
@@ -776,6 +790,31 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 			};
 		}
 	}
+	if (currentUnit?.id === "build_env") {
+		const detachedInstall = detachedInstallTarget(command);
+		if (detachedInstall) {
+			const repair =
+				"Run the install in the foreground, or for long installs run " +
+				'"$HARNESS_PYTHON_BIN" scripts/run_env_command.py start/status/stop ' +
+				"from the skill package with a bounded --wait; inline attempt commands must stay in the managed process group.";
+			return {
+				ok: false,
+				repair,
+				state_patch: {
+					phase: phaseFor(currentUnit, "blocked"),
+					message: `Blocked detached background install: ${detachedInstall}`,
+					counters: countersFor(checkpoint.data, 1),
+					diagnostics: [
+						{
+							severity: "error",
+							message: `build_env install commands must not be detached (nohup/setsid/disown): ${detachedInstall}.`,
+							repair,
+						},
+					],
+				},
+			};
+		}
+	}
 	const invokedScripts = invokedSkillScripts(command);
 	if (invokedScripts.length === 0) {
 		return { ok: true };
@@ -793,7 +832,18 @@ export function preToolCall(ctx: SureHookContext): SureHookResult {
 	const disallowed = invokedScripts.find((script) => !allowed.has(script));
 	const invokedScript = disallowed ?? invokedScripts[0];
 	if (!disallowed) {
-		if (command.includes(".venv/bin/python")) {
+		// Omit only the quoted payload after the sole helper occurrence; keep
+		// surrounding shell text and use the original check for nested scripts.
+		const wrappedCommand =
+			invokedScripts.length === 1 &&
+			invokedScript === "scripts/run_env_command.py" &&
+			command.indexOf(invokedScript) === command.lastIndexOf(invokedScript)
+				? command.match(
+						/^([\s\S]*?\bscripts\/run_env_command\.py\b[^;&|\r\n]*?\s--command(?:=|\s+))('[^']*'|"(?:\\.|[^"\\])*")([\s\S]*)$/,
+					)
+				: null;
+		const interpreterCommand = wrappedCommand ? wrappedCommand[1] + wrappedCommand[3] : command;
+		if (interpreterCommand.includes(".venv/bin/python")) {
 			const repair = skillScriptRepair(ctx, currentUnit, invokedScript);
 			return {
 				ok: false,

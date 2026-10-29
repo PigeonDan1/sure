@@ -147,7 +147,7 @@ export const MODEL_TOOL_UNITS: Unit[] = [
 		schemaRef: "build_env_result.schema.json",
 		requiredFields: ["env_ready"],
 		gateScript: "check_env.py",
-		helperScripts: ["materialize_model_runtime.py"],
+		helperScripts: ["materialize_model_runtime.py", "run_env_command.py"],
 	},
 	{
 		id: "fetch_weights",

@@ -79,6 +79,18 @@ record:
 - which fallback path was chosen
 - how runtime code should still locate the checkpoint on this host
 
+## Long Downloads
+
+Long weight downloads may run in the background through the normal shell. Write
+the target log and the exit-code file into a directory unique to this download
+attempt, and confirm the exit-code file belongs to this attempt (created after
+its start) before trusting it; a file left by an earlier attempt is not this
+attempt's result. Judge completion by that exit code and progress by log
+growth, never by process lists; process disappearance alone is not success. The
+discover-only prohibition on long sleep polling does not apply here. Background
+execution does not override the CAS/Xet failure and retry rules in the
+`fetch_weights` unit (SKILL.md).
+
 ## Must Not Do
 
 - must not rely only on an implicit Hugging Face cache outside the model

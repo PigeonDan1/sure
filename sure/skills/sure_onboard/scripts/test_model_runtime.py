@@ -77,11 +77,17 @@ class ModelRuntimeOnboardTests(unittest.TestCase):
 
     def test_materializer_emits_gate_ready_runtime_binding(self) -> None:
         output = self.artifacts / "build_env_result.json"
-        result = materialize(self.run_dir, self.draft, output)
+        cache = self.root / "shared-cache"
+        cache.mkdir()
+        config = self.root / "uv.toml"
+        config.write_text("no-index = true\n")
+        result = materialize(self.run_dir, self.draft, output, uv_cache_dir=cache, uv_config=config)
 
         self.assertTrue(result["model_runtime"]["runtime_id"].startswith("sure-model-python-v1-"))
         self.assertEqual(result["lockfile_path"], "requirements.lock")
         self.assertNotIn(str(self.root), (self.artifacts / "model_runtime_manifest.json").read_text())
+        self.assertNotIn("uv_cache_dir", result)
+        self.assertNotIn("uv_config", result)
         environment = os.environ.copy()
         environment["SURE_SITE_POLICY"] = str(self.policy)
         completed = subprocess.run(
@@ -100,6 +106,14 @@ class ModelRuntimeOnboardTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
+        reused = subprocess.run(
+            [sys.executable, str(Path(__file__).with_name("materialize_model_runtime.py")),
+             "--run-dir", str(self.run_dir), "--input", str(self.draft), "--produces", str(output),
+             "--uv-cache-dir", str(self.root / "missing-cache"), "--uv-config", str(self.root / "missing-config")],
+            cwd=self.root, env=environment, capture_output=True, text=True, check=False,
+        )
+        self.assertEqual(reused.returncode, 0, reused.stderr)
+        self.assertEqual(json.loads(output.read_text())["model_runtime"], result["model_runtime"])
 
 
 if __name__ == "__main__":

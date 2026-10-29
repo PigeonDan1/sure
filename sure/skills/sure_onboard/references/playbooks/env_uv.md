@@ -2,324 +2,128 @@
 
 ## 何时使用 UV
 
-| 条件 | 使用 UV |
-|------|---------|
-| 纯 Python 依赖 | ✅ 推荐 |
-| 主要依赖为 PyPI 包 | ✅ 推荐 |
-| 无复杂 C++ 扩展 | ✅ 推荐 |
-| 无系统库依赖 | ✅ 推荐 |
-| 无 CUDA 编译需求 | ✅ 推荐 |
+沿用 backend_choice.json 的选择。适合可由 Python 包满足的依赖；需要系统库、
+CUDA 编译或特殊工具链时按当前模型证据选择 backend，不把历史模型配置当通用默认。
 
 ## 环境创建方式
 
+只补查尚不确定且影响当前选择的条件：Python/依赖/设备兼容性、所选来源可获取性、
+锁文件在最终 runtime 中可物化性、安装与物化缓存衔接。复用已知证据；不全面测速、
+扫描所有镜像或预下载大文件，不新增 gate。版本、代理、来源及目录由当前任务确定。
+
+已有环境按原入口规则使用，不新增跨模型复用禁令或每次重建要求。
+匹配的 sealed runtime 经原 verify_runtime 校验直接复用，未命中才物化；普通 .venv
+不能替代 local package=none 的 sealed 绑定。复用不附带额外检查层，原有 gate 照常执行。
+
+本次缓存是本次明确选择的目录，可以是已有共享缓存或其他 run 的缓存；helper 不自动搜索。
+需要新选位置时，构建包缓存放在模型发布目录之外，记录实际绝对路径，不强制迁移旧缓存。
+managed Python 是持久解释器安装，可能被 .venv 和 sealed runtime 引用，不能当缓存删除。
+通过现有 site loader 获取站点 runtime root；不猜固定站点路径，不自动移动解释器或改链接。
+权重/provider cache 与构建包缓存分开，仍遵守原权重记录和发布契约。
+
+以下变量均取自本次 build_plan 的实际选择，在当前 shell 明确设置；不是预设值：
+`MODEL_DIR`、`SELECTED_PYTHON`、`MODEL_PYTHON`、`BUILD_CACHE`、`DEPENDENCY_FILE`、
+`LOCK_FILE`，以及需要显式配置时的 `UV_CONFIG`（现有 uv.toml）。
+
 ```bash
-cd sure/models/{model_name}
-
-# 每个模型使用 model-local cache，避免污染全局环境或被其它 run 影响
-export UV_CACHE_DIR="$PWD/.runtime/uv-cache"
-export UV_PYTHON_INSTALL_DIR="$PWD/.runtime/uv-python"
-# 不要设 UV_LINK_MODE。uv 默认用硬链接装包；上面的 cache 和 .venv 在同一个目录树下，
-# 同一个文件系统，硬链接不搬任何字节。设成 copy 会强制逐文件全量拷贝，在共享存储上
-# 每个文件一次同步往返：torch 那一档实测 59 秒 vs 55 分钟。详见「常见失败」第 5 条。
-export MPLCONFIGDIR="$PWD/.runtime/matplotlib"
-mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR" "$MPLCONFIGDIR"
-
-# 自检：确认 uv 真的用了这个 cache。环境变量设了不等于生效，没生效就会落回
-# ~/.cache/uv，跟 .venv 未必同盘，硬链接就用不上了。
-uv cache dir   # 应当输出上面的 $UV_CACHE_DIR
-
-# 创建环境
-uv venv --python=python3.10
-
-# 激活环境
-source .venv/bin/activate
-
-# 安装依赖
-uv pip install -r requirements.txt
-# 或
-uv pip install -e .
+cd "$MODEL_DIR"
+export UV_CACHE_DIR="$BUILD_CACHE"
+uv cache dir                       # 核对实际生效路径
+# 仅在需要创建验证环境时执行；已有环境沿用原规则
+uv venv --python "$SELECTED_PYTHON" .venv
 ```
 
-脚本中如果使用 `uv pip install ... | tee build.log`、`uv pip install ... | tail ...`
-或任何管道，必须启用 `set -o pipefail`，否则 uv 的失败退出码可能被 `tee`/`tail`
-掩盖成成功。安装完成后必须用 `.venv/bin/python` 做短 runtime probe，并把
-`python_executable`、`runtime_checks.required_imports`、`runtime_probe` 写入
-`build_env_result.json`；对于已经存在 `model.py` 的 repair flow，`import model`
-必须通过后才能写 `env_ready=true`。
+`MODEL_PYTHON` 指向实际选择的验证解释器；平台路径按现场确定。
+若需要 uv 下载 Python，事先选定持久 `UV_PYTHON_INSTALL_DIR`，不要放进短期 run 清理目录。
+需要 matplotlib 时设置本次 `MPLCONFIGDIR`，不向无关模型强加此配置。
 
 ## Lock/Sync 约定
 
-```bash
-# 从项目依赖生成带哈希的可复现锁文件
-uv pip compile \
-  --python .venv/bin/python \
-  --generate-hashes \
-  requirements.txt \
-  -o requirements.lock
+在同一工作目录使用同一 Python、依赖输入、来源和必要解析配置。已有项目配置可直接复用；
+配置发现可能因 cwd 改变时，通过 uv 原生 `--config-file` 和物化的 `--uv-config` 显式传递
+同一 uv.toml，不新建配置格式。示例中无须显式配置时省略对应参数：
 
-# 严格按 lock 恢复，删除未声明包并校验每个分发包哈希
-uv pip sync \
-  --python .venv/bin/python \
-  --require-hashes \
-  --strict \
-  requirements.lock
+```bash
+uv pip compile --python "$MODEL_PYTHON" --generate-hashes \
+  --config-file "$UV_CONFIG" "$DEPENDENCY_FILE" -o "$LOCK_FILE"
+uv pip sync --python "$MODEL_PYTHON" --require-hashes --strict \
+  --config-file "$UV_CONFIG" --cache-dir "$BUILD_CACHE" "$LOCK_FILE"
 ```
 
-若项目以 `pyproject.toml` 声明依赖，将 `requirements.txt` 换成
-`pyproject.toml`。`uv pip freeze` 只记录已安装版本，不记录分发包哈希，不能作为
-`package=none` 的可提升锁文件。完成模型本地验证后，由 Harness Python 运行
-`scripts/materialize_model_runtime.py`；不要把 `.venv` 本身当作 Eval runtime。
+`uv pip freeze` 不是 hash lock。选择与当前模型兼容的 Python/依赖/来源；不得默认切换
+unsafe-best-match、镜像、CPU 或依赖版本。环境变量和命令行参数可以覆盖 uv 配置文件，
+必须在各调用中保持所需有效设置一致；不依赖另一次 shell 的 export 自动延续。
+代理、认证仍由当前调用的既有机制提供，不保存整份环境，不把凭据写进命令文本、锁文件
+或可移植配置。便携配置中的来源应无凭据，路径应可重定位；站点路径只留在本次执行证据。
+若诊断后修改配置，在现有 steps/evidence/repairs 中记录原因，必要时重新 compile/sync。
+
+local package=none 由 Harness Python 运行 `scripts/materialize_model_runtime.py`，
+显式传 `--uv-cache-dir "$BUILD_CACHE"`，需要时传 `--uv-config "$UV_CONFIG"`。
+它从锁文件所在目录执行严格 sync：保持该目录与初装配置解析一致。
+缓存缺包正常获取；实际物化需要的指定缓存不可访问时报错，不静默换空缓存。
+未传缓存保留站点默认；已命中且验证通过的 runtime 不因未使用的缓存不可访问而失败。
+缓存路径和控制字段不写进 build_env_result.json 或 portable runtime manifest。
+
+uv 的默认链接策略与文件系统/平台有关；不固定 hardlink、copy、cp-al 或 symlink。
+跨文件系统可使用 uv 的可用回退；仅在确有问题时检查文件系统与权限，按诊断调整并记录。
+不要用单台机器的历史耗时保证收益，也不要因为链接回退就重装或清空缓存。
+
+安装/探测失败必须保留原退出码，管道使用 `set -o pipefail`。完成后按原契约记录
+python_executable、runtime_checks.required_imports、runtime_probe 和 repairs；
+已有 model.py 的 repair flow 仍须通过原 import 检查，命令成功不等于 gate 通过。
 
 ## 常见失败和修复
 
-### 1. 系统 PyTorch 与虚拟环境冲突
+- Python、torch/torchaudio/torchvision 与设备不兼容：根据当前上游约束、发行包和运行证据
+  选择匹配组合；不按 host CUDA 数字直接猜 wheel，不照搬某个旧模型的 pin。
+- NumPy、transformers、datasets/pyarrow 或 ModelScope 导入错误：读取实际版本要求和错误。
+  例如旧代码的 PyExtensionType 错误可能需评估 pyarrow<21，不能无条件给所有任务降级。
+- `sacrebleu` 缺失属于相应 evaluation 环境依赖：定位实际 metric runtime 修复，复用已有
+  推理结果，不把曾用过的环境目录写成通用安装目标。
+- 下载失败（例如 download-r2.pytorch.org 超时）：区分 DNS/连接/认证、HTTP 超时、缺少
+  兼容 wheel 和来源解析策略；只检查影响当前选择的未知项，不自动切源或重装。
+- 半安装状态：先确认原任务及受管理子进程结束，再诊断修复；需要重装时依据损坏证据
+  使用安装器的 reinstall，不只凭包目录存在或 Checked 输出判断成功。
 
-**症状**: `ModuleNotFoundError: No module named 'torch._utils'`
+### 前台安装被 timeout 杀掉，留下装了一半的包
 
-**原因**: UV 环境隔离导致无法访问系统已安装的 PyTorch
-
-**修复**:
-```bash
-# 在虚拟环境中重新安装 PyTorch
-uv pip install torch==2.4.0 torchaudio==2.4.0 --index-url https://download.pytorch.org/whl/cpu
-```
-
-### 2. NumPy 版本冲突
-
-**症状**: `AttributeError: np.sctypes was removed in the NumPy 2.0`
-
-**原因**: NeMo 等库不支持 NumPy 2.0
-
-**修复**:
-```bash
-uv pip install numpy==1.26.4
-```
-
-### 3. Torchvision 版本不匹配
-
-**症状**: `RuntimeError: operator torchvision::nms does not exist`
-
-**修复**:
-```bash
-# 安装与 PyTorch 匹配的 torchvision
-uv pip install torchvision==0.19.0 --index-url https://download.pytorch.org/whl/cpu
-```
-
-### 4. S2TT metric 缺少 sacrebleu
-
-**症状**: speech-understanding 或 S2TT metric runner 报：
-
-```text
-No module named 'sacrebleu'
-```
-
-**原因**: S2TT BLEU / chrF metric 依赖 `sacrebleu`。这是 evaluation 环境依赖缺失，
-不是模型推理失败。
-
-**修复**: 使用 uv 安装到当前 SURE/evaluation 环境，不要改模型 wrapper 或重跑模型推理：
+不要猜短的命令总时限，也不要按“预计十分钟”机械切换后台。需要交还控制权的 build_env
+命令通过现有 shell 调用薄辅助；短命令可直接返回终态，长命令保留同一 attempt 回看：
 
 ```bash
-env UV_CACHE_DIR=src/sure_eval/evaluation/nodes/scoring/sacrebleu/.cache/uv \
-uv pip install \
-  -p .venv.hostbak/bin/python \
-  -i https://pypi.org/simple \
-  sacrebleu
+# 从 skill package 以 Harness Python 调用；cwd 是被执行命令的目录
+"$HARNESS_PYTHON_BIN" scripts/run_env_command.py start \
+  --run-dir "$RUN_DIR" --cwd "$MODEL_DIR" \
+  --command 'uv pip sync --python .venv/bin/python --require-hashes --strict requirements.lock'
+"$HARNESS_PYTHON_BIN" scripts/run_env_command.py status \
+  --run-dir "$RUN_DIR" --attempt <start返回的attempt> --wait 30
+"$HARNESS_PYTHON_BIN" scripts/run_env_command.py stop \
+  --run-dir "$RUN_DIR" --attempt <同一attempt> --wait 30
 ```
 
-安装后重跑同一个 metric runner，复用已有 `ref_*.txt` / `hyp_*.txt`。
+示例中的 Python/lock 路径按本次选择替换，缓存/配置按上述规则在这次调用中提供。
+传入内联命令，保留脚本名可见，不借包装执行其他 unit 的受限脚本；Harness 脚本仍用
+Harness Python。辅助不替代 bash 工具，不改变业务 gate，不用来启动脱离进程组的守护程序。
+安装类命令不得以 nohup/setsid 等方式脱离后台执行，hook 会拦截并要求改走 helper 或前台。
 
-### 5. CUDA torch wheel 下载超时
+start/status/stop 的 `--wait` 默认最多30秒，只限制查询等待，不是杀进程时限。
+返回 `running`、`succeeded`、`failed` 或 `unknown`；shell 调用返回0也可能只是 running，
+必须读 status。日志及状态在 `<run_dir>/evidence/env-commands/<attempt>/`，不使用旧 rc、
+全局 grep/pgrep 或成功产物判断本次任务。start 每次创建新 attempt，不能当作查询或自动重试。
+启动长命令后按时回看同一 attempt（如 status --wait 循环），不要长时间静默等待。
 
-**症状**: 本地 uv 环境安装 CUDA 版 PyTorch 报：
+先读日志和终态，再决定修复。stop 请求由本次持有身份的进程处理，确认受管理子进程均已
+结束才返回 `processes_ended=true`；请求停止不等于已经停止。该标记仅确认本 attempt；共享目录须确认所有相关尝试结束。仍运行或状态不明时不得清理
+工作目录、重启替代任务或凭保存的 PID 杀进程。失联不自动恢复，原有重试规则不变。
+此辅助首版支持 POSIX 进程组（Linux/macOS）；不支持的平台明确报错，沿用已有前台 shell。
+它只管理本次进程组，命令不得自行 daemonize/setsid 脱离管理；不建常驻服务或自动强杀策略。
 
-```text
-Failed to fetch https://download-r2.pytorch.org/...torch-*.whl
-operation timed out
-```
-
-**原因**: `download.pytorch.org` / `download-r2.pytorch.org` 在当前网络下可能不稳定。
-
-**修复原则**:
-
-- 先根据 host driver/CUDA 选择匹配 wheel，例如 CUDA 12.8 host 优先尝试 cu128。
-- 使用模型本地 `.venv`，不要切回 base Python。
-- 外网下载可临时开代理；Docker、GPU、registry、ModelScope mirror 操作仍应清代理。
-- CPU fallback 只能在记录 CUDA-first 失败和至少三次 CUDA 环境修复尝试后进入。
-
-示例：
-
-```bash
-set -o pipefail
-bash -lc '. <proxy-on-script> && \
-  UV_CACHE_DIR="$PWD/.runtime/uv-cache" \
-  uv pip install \
-    --python .venv/bin/python \
-    --index-url https://download.pytorch.org/whl/cu128 \
-    torch==2.8.0+cu128 torchaudio==2.8.0+cu128; \
-  status=$?; \
-  . <proxy-off-script>; \
-  exit $status' 2>&1 | tee artifacts/cuda_torch_install.log
-```
-
-如果 uv 报：
-
-```text
-Failed to hardlink files; falling back to full copy
-```
-
-不要设 `UV_LINK_MODE=copy` 把它压掉。这条提示说明 uv 退回了全量拷贝，安装会慢一个
-数量级，先查是不是真的跨文件系统：
-
-```bash
-stat -c '%d' "$UV_CACHE_DIR" "$PWD/.venv"
-```
-
-两个值相同就是同盘，硬链接本来可用，不要动 `UV_LINK_MODE`。共享存储上强制 copy 的代价
-是每个文件一次同步往返。torch 2.8.0 + torchaudio 2.8.0 这一档（26 个包、约 2.7 万个
-文件、6.9G）在同一台调试机、同一个共享盘上的实测：
-
-| `UV_LINK_MODE` | `Installed` 耗时 | 数据来源 |
-|---|---|---|
-| 默认（硬链接） | 59.42 秒 | 热缓存下重测 |
-| `copy` | 55 分 26 秒 | Voxtral-Mini-4B onboarding 实跑 |
-
-慢 56 倍。copy 那次的 `Prepared` 只用了 436ms，包早就在缓存里，55 分钟全花在往 `.venv`
-逐个文件搬，跟下载无关。
-
-两个值不同才是真跨盘。这时的正确做法是把 `UV_CACHE_DIR` 挪到和 `.venv` 同一个文件系统上，
-让硬链接重新可用，而不是设 copy。
-
-顺带：`Failed to hardlink` 确实不是安装失败，别把它当错误去 retry。
-
-### 6. TTS 本地 uv 依赖 pinning
-
-F5-TTS / IndexTTS-2 re-onboarding 经验：
-
-- CUDA host 可见时，优先 pin `torch==2.8.0+cu128`、`torchaudio==2.8.0+cu128`
-  或与当前 driver 匹配的 CUDA wheel。
-- 如果出现 `torch.cuda.is_available() == False`，不要直接改 CPU；先检查 wheel CUDA
-  tag、driver、`LD_LIBRARY_PATH` 和模型 `.venv`。
-- 如果复用 host 已验证的 CUDA torch（例如 system-site-packages 中的
-  `torch==2.3.1+cu121`），不能再安装要求更高 torch 的 `transformers>=5`
-  或模型依赖。二选一：
-  1. 保持该 torch，并 pin 与它兼容的 transformers/模型代码版本；
-  2. 更推荐在模型 `.venv` 内安装与 host driver 匹配的 CUDA torch，例如
-     `torch==2.8.0+cu128` + `torchaudio==2.8.0+cu128`，再安装
-     `transformers>=5`。
-  任何 `transformers` import 报 “PyTorch >= X is required” 都是 build_env 失败，
-  不允许进入后续 validate 节点。
-- 装 `transformers` 之前先读 checkpoint 自己声明的版本，不要直接装源上的最新版：
-
-```bash
-python3 -c "import json;print(json.load(open('checkpoints/config.json')).get('transformers_version'))"
-```
-
-  读到 `5.2.0.dev0` 就 pin `transformers==5.2.0`。装成更新的版本，模型代码往往要到
-  `validate_load` / `validate_infer` 才报错，那时 docker image 已经建过一次，
-  返工要重装依赖再重建镜像。Voxtral-Mini-4B 那次就是装了 5.15.0，checkpoint 要 5.2.0，
-  多花约 25 分钟。
-- `datasets` 与新版 pyarrow 可能出现 `AttributeError: module 'pyarrow' has no attribute
-  'PyExtensionType'`，应 pin `pyarrow<21`。
-- ModelScope 依赖可能要求不可解的旧包；已验证组合可以从 `modelscope==1.27.0` 加
-  显式音频依赖开始，例如 `descript-audiotools==0.7.2`。
-- uv 安装 PyPI 依赖默认走官方源 `https://pypi.org/simple`；本机访问它 DNS/连接失败时，
-  把 `--index-url` 换成自己可用的本地镜像，其余参数不变。本文档其余安装命令同理：
-
-```bash
-UV_CACHE_DIR="$PWD/.runtime/uv-cache" \
-UV_PYTHON_INSTALL_DIR="$PWD/.runtime/uv-python" \
-uv pip install --python .venv/bin/python \
-  --index-url https://pypi.org/simple \
-  -r requirements.txt
-```
-
-TTS/VC 等模型 import 阶段可能触发 matplotlib cache；每个模型本地验证脚本应设置：
-
-```bash
-export MPLCONFIGDIR="$PWD/.runtime/matplotlib"
-mkdir -p "$MPLCONFIGDIR"
-```
-
-### 7. 前台安装被 timeout 杀掉，留下装了一半的包
-
-**症状**: 安装看着「失败」了，之后 import 报
-
-```text
-AttributeError: module 'torch' has no attribute '__version__'
-```
-
-或某个包目录存在但内容不全。
-
-**原因**: 在前台用 `timeout N` 跑 `uv pip install`，N 猜短了，进程在写文件的中途被杀。
-torch/CUDA 这一档就算一切正常也可能十几分钟以上，猜不准。
-
-**修复原则**: 预计超过 10 分钟的安装和下载一律放后台，不要在前台猜时长。
-
-```bash
-nohup bash -c 'set -o pipefail; \
-  uv pip install --python .venv/bin/python \
-    -i https://pypi.org/simple \
-    -r requirements.txt > artifacts/build_env.log 2>&1; \
-  echo $? > artifacts/build_env.rc' > /dev/null 2>&1 &
-```
-
-轮询等 `build_env.rc` 出现，再按退出码判断成败。不能只看进程没了就当成功：
-
-```bash
-while [ ! -f artifacts/build_env.rc ]; do sleep 30; done
-rc=$(cat artifacts/build_env.rc)
-tail -5 artifacts/build_env.log
-[ "$rc" = 0 ] || { echo "build_env failed rc=$rc"; exit 1; }
-```
-
-已经被杀出半个包的，重装要带 `--reinstall`。不带的话 uv 只看包元数据，认为已安装就跳过，
-只打印一行 `Checked N packages in ...`，看着像成功，其实什么都没干。
-
-`SKILL.md` 里 “no long `sleep` polling” 只约束 `discover` 阶段（不许用轮询等权重下载），
-`build_env` / `fetch_weights` 的长任务不在此列，应当后台加轮询。
+物化日志显示锁等待、复用验证、venv、sync、freeze、发布等阶段和增量输出。
+静默只触发检查，不自动判失败、杀进程、切源或换依赖。HTTP 请求超时、物化既有命令
+总时限和查询等待是不同层次；本轮保留原有物化总时限，不叠加短杀进程时限。
 
 ## 集群网络限制
 
-### 常见环境约束
-
-在部分集群环境中，以下网络限制可能影响模型 onboarding：
-
-- **HuggingFace 被封锁**：无法访问 `https://huggingface.co`，必须使用 **ModelScope** 作为模型/数据下载源。
-- **PyTorch CDN 被封锁**：`https://download.pytorch.org` 可能无法访问，改从 PyPI 索引安装 torch：
-  ```bash
-  uv pip install torch==2.4.0 --index-url https://pypi.org/simple
-  ```
-- **torchvision 版本兼容性**：安装依赖后必须验证 torchvision 与 torch 版本匹配：
-  ```bash
-  .venv/bin/python -c "import torch, torchvision; print(f'torch {torch.__version__} + torchvision {torchvision.__version__}')"
-  ```
-  若 torchvision 主版本号与 torch 不匹配（例如 torch 2.4.0 + torchvision 0.26.0），必须降级 torchvision 到匹配版本。参考对应关系：
-  | torch | torchvision |
-  |-------|-------------|
-  | 2.4.0 | 0.19.0 |
-  | 2.5.0 | 0.20.0 |
-  | 2.6.0 | 0.21.0 |
-
-### 验证清单（onboarding 后必做）
-
-```bash
-# 1. 验证 torchvision 兼容性
-.venv/bin/python -c "import torch, torchvision; tv_major = int(torchvision.__version__.split('.')[1]); torch_major = int(torch.__version__.split('.')[1]); assert tv_major == torch_major - 5, f'torchvision {torchvision.__version__} incompatible with torch {torch.__version__}'"
-
-# 2. 验证 ModelScope 可达
-.venv/bin/python -c "from modelscope.hub.api import HubApi; api = HubApi(); print('ModelScope OK')"
-
-# 3. 验证模型可加载（不触发下载）
-.venv/bin/python -c "from model import ModelWrapper; m = ModelWrapper(); m.load(); print('Model load OK')"
-```
-
-## 验证命令
-
-```bash
-# 验证 Python 版本
-.venv/bin/python --version
-
-# 验证关键包
-.venv/bin/python -c "import torch; print(torch.__version__)"
-.venv/bin/python -c "import numpy; print(numpy.__version__)"
-```
+只依据当前站点证据判断可达性和认证要求，不预设封锁、代理或替代源。
+首次获取慢、重复获取和终态发现延迟分别诊断；缓存与状态改进不保证消除全部耗时。
+冷启动隔离仅用于明确指定的对照实验，生产运行不要求清空缓存或每次重建环境。
