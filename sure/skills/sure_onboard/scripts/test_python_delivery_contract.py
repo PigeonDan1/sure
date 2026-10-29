@@ -14,7 +14,7 @@ import stage_model_artifacts
 from finalize_model_bundle import finalize
 from materialize_model_runtime import materialize
 from write_package_gate import write_package_gate
-from write_runtime_inventory import write_inventory
+from write_runtime_inventory import install_fallback_adapter, write_inventory
 from write_verdict import write_verdict
 
 
@@ -139,6 +139,29 @@ class PythonDeliveryContractTests(unittest.TestCase):
         self.assertNotEqual(check.returncode, 0)
         self.assertIn("requires passing server smoke evidence", check.stderr)
 
+    def test_package_none_with_installed_adapter_passes_the_inventory_gate(self) -> None:
+        # A commandless ModelWrapper model: the surface check installs the
+        # bundle-local adapter and the inventory carries the adapter command,
+        # which the gate must accept with the same passing smoke evidence a
+        # declared server needs.
+        (self.model_dir / "config.yaml").write_text(
+            "task: asr\ntools:\n  - name: predict\nresources:\n  gpu: false\n", encoding="utf-8"
+        )
+        (self.model_dir / "server.py").unlink()
+        (self.model_dir / "model.py").write_text("class ModelWrapper:\n    pass\n", encoding="utf-8")
+        # The onboard run installs the adapter during VALIDATE_INFER, before
+        # SAVE_ARTIFACTS stages the bundle; reproduce that order here.
+        install_fallback_adapter(self.model_dir, "python")
+        self._verify_python_delivery(True)
+        inventory_path = self.run_artifacts / "runtime_inventory.json"
+        inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+        self.assertEqual(inventory["model_runtime"]["server_source"], "harness_fallback")
+        command = inventory["model_runtime"]["server_command"]
+        self.assertEqual(command[1:], ["model_wrapper_mcp_server.py", "--model-dir", "."])
+        self.assertTrue((self.model_dir / "model_wrapper_mcp_server.py").is_file())
+        inventory_check = self.run_gate("check_runtime_inventory.py", inventory_path)
+        self.assertEqual(inventory_check.returncode, 0, inventory_check.stderr)
+
     def _verify_python_delivery(self, fallback: bool) -> None:
         draft = self.run_artifacts / "build_env_draft.json"
         write_json(
@@ -200,11 +223,19 @@ class PythonDeliveryContractTests(unittest.TestCase):
         }
         for name, value in passing_artifacts.items():
             write_json(self.run_artifacts / name, value)
-        if not fallback:
+        if not fallback or (self.model_dir / "model_wrapper_mcp_server.py").is_file():
+            # A declared server and an adapter-installed fallback are both
+            # driven by VALIDATE_INFER's smoke; the surfaceless fallback is
+            # the only shape that has nothing to drive.
+            smoke_command = (
+                [str(self.model_dir / ".venv/bin/python"), "model_wrapper_mcp_server.py", "--model-dir", "."]
+                if (self.model_dir / "model_wrapper_mcp_server.py").is_file()
+                else [str(self.model_dir / ".venv/bin/python"), "server.py"]
+            )
             write_json(
                 self.run_artifacts / "server_smoke.json",
                 {
-                    "status": "passed", "server_command": [str(self.model_dir / ".venv/bin/python"), "server.py"],
+                    "status": "passed", "server_command": smoke_command,
                     "tool": "predict", "protocol": "mcp",
                 },
             )
@@ -233,10 +264,15 @@ class PythonDeliveryContractTests(unittest.TestCase):
         self.assertFalse(inventory["container_runtime"]["required"])
         self.assertEqual(inventory["model_runtime"]["server_source"], "harness_fallback" if fallback else "declared")
         if fallback:
-            self.assertEqual(inventory["model_runtime"]["server_command"], [])
+            # The adapter-installed shape carries the adapter command (with the
+            # manifest's interpreter spelling); the surfaceless shape keeps the
+            # upstream empty command.
+            self.assertIn(
+                inventory["model_runtime"]["server_command"],
+                ([], [".venv/bin/python", "model_wrapper_mcp_server.py", "--model-dir", "."], ["bin/python", "model_wrapper_mcp_server.py", "--model-dir", "."]),
+            )
         inventory_check = self.run_gate("check_runtime_inventory.py", self.run_artifacts / "runtime_inventory.json")
         self.assertEqual(inventory_check.returncode, 0, inventory_check.stderr)
-
         verdict = write_verdict(
             self.run_dir,
             self.run_artifacts / "verdict.json",

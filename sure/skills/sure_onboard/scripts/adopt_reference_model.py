@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from deployment_contract import timestamp_after
+from write_runtime_inventory import core_files_for
 
 SKIP_TOP_LEVEL = {"artifacts", "__pycache__", "eval_runs", "eval_runs_old", ".venv"}
 ASSET_LINK_DIRS = {"checkpoints", ".runtime"}
@@ -392,11 +393,16 @@ def write_artifact_manifest(target_dir: Path, model_id: str, model_name: str) ->
     required: dict[str, Any] = {
         "spec": {"path": "model.spec.yaml"},
         "model_py": {"path": "model.py"},
-        "server_py": {"path": "server.py"},
         "package_init": {"path": "__init__.py"},
         "validate_py": {"path": "validate.py"},
         "config": {"path": "config.yaml"},
     }
+    # The serving surface is server.py or, for a commandless ModelWrapper model,
+    # the harness fallback adapter the inventory installed into the bundle.
+    if (target_dir / "model_wrapper_mcp_server.py").is_file():
+        required["fallback_adapter"] = {"path": "model_wrapper_mcp_server.py"}
+    else:
+        required["server_py"] = {"path": "server.py"}
     for name in [
         "build_plan.json",
         "weights_manifest.json",
@@ -548,7 +554,7 @@ def main() -> int:
     if not reference_dir.exists() or not reference_dir.is_dir():
         print(f"adopt_reference_model failed: reference dir not found: {reference_dir}", file=sys.stderr)
         return 1
-    missing_core = [name for name in CORE_FILES if not (reference_dir / name).exists()]
+    missing_core = [name for name in core_files_for(reference_dir) if not (reference_dir / name).exists()]
     if missing_core:
         print("adopt_reference_model failed: reference missing core files: " + ", ".join(missing_core), file=sys.stderr)
         return 1

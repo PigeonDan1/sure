@@ -31,10 +31,30 @@ from deployment_contract import (
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 from sure.runtime.model.bootstrap import manifest_sha256
 from sure.runtime.model.device_dtype import dtype_from_config
+from sure.runtime.model_server.launch import declared_server_command
 
 
 SCHEMA = "sure.onboard.runtime_inventory.v2"
-CORE_FILES = ("model.spec.yaml", "model.py", "server.py", "__init__.py", "validate.py", "config.yaml", "Dockerfile")
+# Dockerfile is hashed when present but only the inventory's own consumers
+# require it, so the shared core set the gates check excludes it.
+CORE_FILES = ("model.spec.yaml", "model.py", "server.py", "__init__.py", "validate.py", "config.yaml")
+GATE_OPTIONAL_FILES = ("Dockerfile",)
+ADAPTER_NAME = "model_wrapper_mcp_server.py"
+ADAPTER_SOURCE = Path(__file__).resolve().parents[2] / "sure_infer" / "scripts" / ADAPTER_NAME
+
+
+def core_files_for(model_dir: Path) -> tuple[str, ...]:
+    """The core file set a bundle must carry, adapter exemption included.
+
+    `server.py` is required only when the bundle does not carry the harness
+    fallback adapter: wrapper_contract.md's scope exemption says a ModelWrapper
+    model needs no serving surface of its own, and the adapter installed for
+    it is that surface. Every CORE_FILES check funnels through here so the
+    exemption is one rule, not five divergent lists.
+    """
+    if (model_dir / ADAPTER_NAME).is_file():
+        return tuple(name for name in CORE_FILES if name != "server.py")
+    return CORE_FILES
 
 
 def write_json(path: Path, value: dict[str, Any]) -> None:
@@ -68,7 +88,7 @@ def load_config(model_dir: Path) -> dict[str, Any]:
 
 def core_identity(model_dir: Path, extra_files: tuple[str, ...] = ()) -> tuple[dict[str, str], str]:
     hashes: dict[str, str] = {}
-    for name in CORE_FILES:
+    for name in (*CORE_FILES, *GATE_OPTIONAL_FILES):
         path = model_dir / name
         if path.is_file():
             hashes[name] = sha256_file(path)
@@ -84,7 +104,41 @@ def normalize_command(value: object) -> list[str]:
     return [str(item) for item in value] if isinstance(value, list) else []
 
 
-def model_runtime_command(config: dict[str, Any], python_executable: str) -> tuple[list[str], list[str]]:
+def _declares_model_surface(path: Path, pattern: str) -> bool:
+    """Whether a Python source textually declares the named callable surface.
+
+    A regex over the source, not an import: importing model code here would run
+    it at inventory time, and the import itself is what the import gate proves.
+    """
+    try:
+        return bool(__import__("re").search(pattern, path.read_text(encoding="utf-8")))
+    except OSError:
+        return False
+
+
+def install_fallback_adapter(model_dir: Path, python_executable: str) -> list[str]:
+    """Serve a create_model()/ModelWrapper model with the harness MCP adapter.
+
+    A config.yaml that omits `server.command` describes a model with no server
+    of its own. Copying the harness adapter into the bundle keeps the approved
+    directory self-contained -- a command that pointed back at the harness
+    checkout would break the moment the bundle was published elsewhere -- and
+    the copy is hashed into the bundle identity so integrity follows it.
+    """
+    if not ADAPTER_SOURCE.is_file():
+        raise ValueError(f"harness fallback adapter is missing: {ADAPTER_SOURCE}")
+    target = model_dir / ADAPTER_NAME
+    if not target.is_file() or target.read_bytes() != ADAPTER_SOURCE.read_bytes():
+        target.write_bytes(ADAPTER_SOURCE.read_bytes())
+    return [python_executable, ADAPTER_NAME, "--model-dir", "."]
+
+
+def model_runtime_command(
+    config: dict[str, Any],
+    python_executable: str,
+    model_dir: Path | None = None,
+    wrapper_path: str | None = None,
+) -> tuple[list[str], list[str]]:
     server = config.get("server") if isinstance(config.get("server"), dict) else {}
     command = normalize_command(server.get("command"))
     if command:
@@ -93,6 +147,27 @@ def model_runtime_command(config: dict[str, Any], python_executable: str) -> tup
             command[0] = python_executable
         else:
             raise ValueError("package=none server.command must start with a Python executable")
+    elif model_dir is not None and python_executable:
+        # A config with no server.command is served by the harness fallback
+        # wrapper when the model exposes a callable surface; the boundary and
+        # the scope exemption are stated in wrapper_contract.md. The wrapper
+        # manifest names the file the import gate actually proved, so a surface
+        # check that trusts it does not re-import model code here. A surface
+        # check is also advisory: when nothing matches the inventory keeps the
+        # upstream `server_source: harness_fallback` shape (empty command, the
+        # eval site resolves the adapter at run time), and the server smoke
+        # gate still has to prove the model is actually callable.
+        surfaces = []
+        for candidate in ("server.py", wrapper_path or "model.py"):
+            if candidate and (model_dir / candidate).is_file():
+                surfaces.append(model_dir / candidate)
+        has_surface = any(
+            _declares_model_surface(path, pattern)
+            for path in surfaces
+            for pattern in (r"^\s*def\s+create_model\s*\(", r"^\s*class\s+ModelWrapper\b")
+        )
+        if has_surface:
+            command = install_fallback_adapter(model_dir, python_executable)
     tools = [
         str(tool["name"])
         for tool in config.get("tools", [])
@@ -119,7 +194,13 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
     lockfile = relative_existing(build_env.get("lockfile_path"), model_dir)
     identity_files = tuple(
         name
-        for name in (lockfile, "artifacts/model_runtime_manifest.json" if profile == "none" else None)
+        for name in (
+            lockfile,
+            "artifacts/model_runtime_manifest.json" if profile == "none" else None,
+            # An adapter installed for a commandless config is part of the served
+            # surface, so integrity covers it like any model core file.
+            ADAPTER_NAME if (model_dir / ADAPTER_NAME).is_file() else None,
+        )
         if name
     )
     hashes, bundle_identity = core_identity(model_dir, identity_files)
@@ -198,7 +279,11 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
         eval_runtime = "container_only"
     elif profile == "none" and readiness.get("bundle_ready") is True:
         manifest = load_model_artifact(model_dir, "model_runtime_manifest.json")
-        command, tool_names = model_runtime_command(config, str(manifest.get("python_executable") or ""))
+        wrapper = load_model_artifact(model_dir, "wrapper_manifest.json") if (model_dir / "artifacts" / "wrapper_manifest.json").is_file() else {}
+        wrapper_path = str(wrapper.get("wrapper_path") or "")
+        command, tool_names = model_runtime_command(
+            config, str(manifest.get("python_executable") or ""), model_dir, wrapper_path or None
+        )
         lockfile = relative_existing(build_env.get("lockfile_path"), model_dir)
         if not lockfile or sha256_file(model_dir / lockfile) != manifest.get("lock_sha256"):
             raise ValueError("sealed Model Runtime lock does not match the promoted model lockfile")
@@ -219,7 +304,11 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
             "lock_sha256": manifest.get("lock_sha256"),
             "working_dir": ".",
             "server_command": command,
-            "server_source": "declared" if command else "harness_fallback",
+            # The source of the serving surface is what the config declares, not
+            # whether the command list happens to be filled: a commandless
+            # ModelWrapper model is served by the installed adapter, which is
+            # the harness fallback surface as much as the empty-command shape.
+            "server_source": "declared" if declared_server_command(config) else "harness_fallback",
             "tool_names": tool_names,
             "required_imports": [
                 str(item)
@@ -279,7 +368,9 @@ def build_inventory(model_dir: Path, run_dir: Path) -> dict[str, Any]:
             "model_core_sha256": {
                 name: digest
                 for name, digest in hashes.items()
-                if name in CORE_FILES or name == "artifacts/weights_manifest.json"
+                if name in (*CORE_FILES, *GATE_OPTIONAL_FILES)
+                or name == "artifacts/weights_manifest.json"
+                or name == ADAPTER_NAME
             },
             "model_runtime_manifest": "artifacts/model_runtime_manifest.json" if profile == "none" else None,
         },

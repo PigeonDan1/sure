@@ -9,6 +9,7 @@ import unittest
 from pathlib import Path
 
 import stage_model_artifacts
+import write_runtime_inventory
 from write_runtime_inventory import model_runtime_command, write_inventory
 
 
@@ -203,6 +204,64 @@ class RuntimeInventoryTests(unittest.TestCase):
         )
         self.assertEqual(rc, 0)
         self.assertFalse((self.artifacts / "runtime_inventory.json").exists())
+
+
+class ModelRuntimeCommandTests(unittest.TestCase):
+    """The package=none command resolution, including the adapter fallback."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.model_dir = Path(self.tmp.name)
+        self.config = {
+            "server": {},
+            "tools": [{"name": "enhance", "input_schema": {"type": "object", "properties": {"audio_path": {"type": "string"}}, "required": ["audio_path"]}}],
+        }
+
+    def test_declared_command_is_kept(self) -> None:
+        self.config["server"] = {"command": [".venv/bin/python", "server.py"]}
+        command, tools = write_runtime_inventory.model_runtime_command(self.config, "py310", self.model_dir)
+        self.assertEqual(command, ["py310", "server.py"])
+        self.assertEqual(tools, ["enhance"])
+
+    def test_commandless_create_model_installs_the_adapter(self) -> None:
+        (self.model_dir / "server.py").write_text("def create_model(config=None):\n    return None\n", encoding="utf-8")
+        command, _ = write_runtime_inventory.model_runtime_command(self.config, "py310", self.model_dir)
+        self.assertEqual(command, ["py310", "model_wrapper_mcp_server.py", "--model-dir", "."])
+        self.assertTrue((self.model_dir / write_runtime_inventory.ADAPTER_NAME).is_file())
+        # The adapter copy is byte-identical to the harness source.
+        self.assertEqual(
+            (self.model_dir / write_runtime_inventory.ADAPTER_NAME).read_bytes(),
+            write_runtime_inventory.ADAPTER_SOURCE.read_bytes(),
+        )
+
+    def test_commandless_model_wrapper_installs_the_adapter(self) -> None:
+        (self.model_dir / "model.py").write_text("class ModelWrapper:\n    pass\n", encoding="utf-8")
+        command, _ = write_runtime_inventory.model_runtime_command(self.config, "py310", self.model_dir)
+        self.assertEqual(command, ["py310", "model_wrapper_mcp_server.py", "--model-dir", "."])
+
+    def test_commandless_with_no_surface_keeps_the_upstream_fallback_shape(self) -> None:
+        # A commandless config with no callable surface keeps the upstream
+        # inventory shape (empty command, server_source: harness_fallback);
+        # the server smoke gate refuses to drive such a model, so nothing is
+        # guessed into the bundle here either.
+        command, _ = write_runtime_inventory.model_runtime_command(self.config, "py310", self.model_dir)
+        self.assertEqual(command, [])
+        self.assertFalse((self.model_dir / write_runtime_inventory.ADAPTER_NAME).exists())
+
+    def test_adapter_is_hashed_into_the_bundle_identity(self) -> None:
+        for name in write_runtime_inventory.CORE_FILES:
+            (self.model_dir / name).write_text("# test\n", encoding="utf-8")
+        (self.model_dir / "server.py").write_text("def create_model(config=None):\n    return None\n", encoding="utf-8")
+        write_runtime_inventory.model_runtime_command(self.config, "py310", self.model_dir)
+        # build_inventory hashes the installed adapter the same way it hashes
+        # the lockfile: as an extra identity file, so approve's integrity check
+        # follows the copy through publish and relocation.
+        digests, identity = write_runtime_inventory.core_identity(
+            self.model_dir, (write_runtime_inventory.ADAPTER_NAME,)
+        )
+        self.assertIn(write_runtime_inventory.ADAPTER_NAME, digests)
+        self.assertTrue(identity)
 
 
 if __name__ == "__main__":
