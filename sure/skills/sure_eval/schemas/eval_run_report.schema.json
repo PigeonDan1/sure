@@ -12,6 +12,11 @@
 		"datasets": { "type": "array", "items": { "type": "string" } },
 		"metrics": { "type": "array", "items": { "type": "string" } },
 		"pipeline_ids": { "type": "array", "items": { "type": "string" } },
+		"pipeline_ids_by_dataset": { "type": "object", "additionalProperties": { "type": "array", "minItems": 1, "items": { "type": "string" } } },
+		"metric_selection_mode": {
+			"type": "string",
+			"enum": ["explicit_pipeline_id", "explicit_metrics", "inherited_inference", "engine_default"]
+		},
 		"evaluation_only": { "type": "boolean" },
 		"old_evaluation_reused": { "type": "boolean" },
 		"require_nonempty_predictions": { "type": "boolean" },

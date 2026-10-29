@@ -14,7 +14,7 @@ import tempfile
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 try:  # POSIX only
     import fcntl
@@ -30,6 +30,7 @@ sys.path.insert(0, str(SCRIPT_DIR.parent / "src"))
 sys.path.insert(0, str(HARNESS_ROOT))
 
 from import_prediction_source import import_predictions
+from evaluation_capabilities import default_metrics_for_task_language
 from generate_report_snapshot import build_snapshot
 from resolve_evaluation_engine import git_environment, git_repo_root, resolve_engine_root
 from resolve_prediction_source import (
@@ -63,6 +64,15 @@ def _split_values(values: list[str] | None) -> list[str]:
     return out
 
 
+def _dedupe(values: Iterable[str]) -> list[str]:
+    out: list[str] = []
+    for value in values:
+        item = str(value).strip()
+        if item and item not in out:
+            out.append(item)
+    return out
+
+
 def _user_path(value: str | None, *, base: Path = HARNESS_ROOT) -> Path | None:
     if not value:
         return None
@@ -74,6 +84,60 @@ def _read_json(path: Path) -> dict[str, Any]:
     with path.open(encoding="utf-8") as handle:
         value = json.load(handle)
     return value if isinstance(value, dict) else {}
+
+
+def _dataset_metric_rows(source_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    source_dir_text = str(source_payload.get("source_results_dir") or "").strip()
+    if not source_dir_text:
+        return []
+    source_dir = Path(source_dir_text)
+    selection_file = source_dir / "artifacts" / "inference_metric_selection.json"
+    if not selection_file.is_file():
+        return []
+    payload = _read_json(selection_file)
+    rows = payload.get("datasets")
+    return [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+
+
+def _dataset_metric_selection(
+    source_payload: dict[str, Any], imported: list[dict[str, Any]]
+) -> dict[str, list[str]]:
+    """Return the per-dataset metric intent persisted by /sure_infer.
+
+    Inference stores two-segment dataset names in inference_metric_selection.json while
+    the source resolver may expand them to projection stems. Match both forms
+    without collapsing the selection into a global metric list.
+    """
+    rows = _dataset_metric_rows(source_payload)
+    selection: dict[str, list[str]] = {}
+    for item in imported:
+        dataset = str(item.get("dataset") or "")
+        matches: list[dict[str, Any]] = []
+        for row in rows:
+            name = str(row.get("name") or "")
+            if name and (dataset == name or dataset.startswith(f"{name}__") or name.startswith(f"{dataset}__")):
+                matches.append(row)
+        if len(matches) != 1:
+            continue
+        metrics = _split_values(matches[0].get("default_metrics"))
+        if metrics:
+            selection[dataset] = metrics
+    return selection
+
+
+def _engine_default_metric_selection(
+    imported: list[dict[str, Any]], engine_root: Path
+) -> dict[str, list[str]]:
+    selection: dict[str, list[str]] = {}
+    for item in imported:
+        dataset = str(item.get("dataset") or "")
+        task = str(item.get("task") or "")
+        language = str(item.get("language") or "")
+        metrics = _split_values(default_metrics_for_task_language(engine_root, task, language))
+        if not metrics:
+            raise ValueError(f"no default evaluation metric for {dataset} ({task}/{language})")
+        selection[dataset] = metrics
+    return selection
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -904,7 +968,13 @@ def _pipeline_hints(engine_root: Path, task: str, language: str) -> list[str]:
     return list(dict.fromkeys(selected))[:8]
 
 
-def _pipeline_ids_for_metrics(metrics: list[str], *, engine_root: Path, imported: list[dict[str, Any]]) -> list[str]:
+def _pipeline_ids_for_metrics(
+    metrics: list[str],
+    *,
+    engine_root: Path,
+    imported: list[dict[str, Any]],
+    metrics_by_dataset: dict[str, list[str]] | None = None,
+) -> tuple[list[str], dict[str, list[str]]]:
     """Resolve --metric to the exact default pipeline ids evaluate_predictions.py would run for it."""
     from evaluate_predictions import _describe_external_pipeline, _effective_audio_task, _metric_task_hint, _summarize_bridge_error
     from evaluation_runtime import EvaluationRuntimeError
@@ -912,13 +982,15 @@ def _pipeline_ids_for_metrics(metrics: list[str], *, engine_root: Path, imported
     timeout = int(os.environ.get("SURE_EVALUATION_TIMEOUT", "600"))
     task_hint = _metric_task_hint(list(metrics))
     pipeline_ids: list[str] = []
+    pipeline_ids_by_dataset: dict[str, list[str]] = {}
     for item in imported:
         dataset = str(item.get("dataset") or "")
         task = _effective_audio_task(str(item.get("task") or ""), task_hint)
         language = str(item.get("language") or "auto").lower()
+        dataset_metrics = metrics_by_dataset.get(dataset, metrics) if metrics_by_dataset is not None else metrics
         resolved: list[str] = []
         failures: list[str] = []
-        for metric in metrics:
+        for metric in dataset_metrics:
             try:
                 pipeline = _describe_external_pipeline(
                     engine_root=engine_root, task=task, language=language, metric=metric, timeout=timeout
@@ -942,7 +1014,8 @@ def _pipeline_ids_for_metrics(metrics: list[str], *, engine_root: Path, imported
                 f"requested metrics did not all resolve for {dataset} ({task}/{language}); "
                 f"resolved={resolved or 'none'} failures={failures}"
             )
-    return pipeline_ids
+        pipeline_ids_by_dataset[dataset] = resolved
+    return pipeline_ids, pipeline_ids_by_dataset
 
 
 def _ensure_ffmpeg(run_dir: Path, env: dict[str, str]) -> None:
@@ -980,8 +1053,8 @@ def run_eval(
     pipeline_ids = _split_values(args.pipeline_id)
     metrics = _split_values(getattr(args, "metric", None))
     require_nonempty = getattr(args, "require_nonempty_predictions", False) is True
-    if bool(pipeline_ids) == bool(metrics):
-        raise ValueError("/sure_eval requires exactly one of --pipeline-id or --metric")
+    if pipeline_ids and metrics:
+        raise ValueError("/sure_eval accepts at most one of --pipeline-id or --metric")
     if approved_models_root is None or approved_results_root is None:
         resolved_policy = load_site_policy(required=True)
         storage = resolved_policy["policy"]["storage"]
@@ -1044,6 +1117,25 @@ def run_eval(
         )
     )
 
+    metric_selection_mode = "explicit_pipeline_id" if pipeline_ids else "explicit_metrics"
+    metrics_by_dataset: dict[str, list[str]] | None = None
+    pipeline_ids_by_dataset: dict[str, list[str]] | None = None
+    if not pipeline_ids and not metrics:
+        imported = reuse_manifest.get("imported") or []
+        metrics_by_dataset = _dataset_metric_selection(source_payload, imported)
+        if len(metrics_by_dataset) != len(imported):
+            if (Path(str(source_payload["source_results_dir"])) / "artifacts" / "inference_metric_selection.json").is_file():
+                raise ValueError("source inference metric selection is incomplete or ambiguous for the imported datasets")
+            metrics_by_dataset = _engine_default_metric_selection(imported, engine_root)
+            metric_selection_mode = "engine_default"
+        else:
+            metric_selection_mode = "inherited_inference"
+        metrics = _dedupe(
+            metric
+            for dataset_metrics in metrics_by_dataset.values()
+            for metric in dataset_metrics
+        )
+
     datasets = [str(item) for item in source_payload.get("datasets") or []]
     validate_cmd = [
         sys.executable,
@@ -1062,9 +1154,14 @@ def run_eval(
     _run(validate_cmd)
 
     if metrics:
-        pipeline_ids = _pipeline_ids_for_metrics(
-            metrics, engine_root=engine_root, imported=reuse_manifest.get("imported") or []
+        pipeline_ids, resolved_by_dataset = _pipeline_ids_for_metrics(
+            metrics,
+            engine_root=engine_root,
+            imported=reuse_manifest.get("imported") or [],
+            metrics_by_dataset=metrics_by_dataset,
         )
+        if metrics_by_dataset is not None:
+            pipeline_ids_by_dataset = resolved_by_dataset
     eval_cmd = [
         sys.executable,
         str(SCRIPT_DIR / "evaluate_predictions.py"),
@@ -1098,6 +1195,10 @@ def run_eval(
     eval_cmd.extend(["--evaluation-engine-root", str(engine_root)])
     for pipeline_id in pipeline_ids:
         eval_cmd.extend(["--pipeline-id", pipeline_id])
+    if pipeline_ids_by_dataset is not None:
+        selection_path = run_dir / "evaluation_pipeline_selection.json"
+        _write_json(selection_path, pipeline_ids_by_dataset)
+        eval_cmd.extend(["--dataset-pipeline-ids", str(selection_path)])
     eval_env = os.environ.copy()
     eval_env.update(
         {
@@ -1246,6 +1347,8 @@ def run_eval(
         "datasets": datasets,
         "metrics": metrics,
         "pipeline_ids": pipeline_ids,
+        **({"pipeline_ids_by_dataset": pipeline_ids_by_dataset} if pipeline_ids_by_dataset is not None else {}),
+        "metric_selection_mode": metric_selection_mode,
         "evaluation_only": True,
         "old_evaluation_reused": False,
         "artifacts": scratch_artifacts,

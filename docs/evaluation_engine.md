@@ -129,7 +129,7 @@ export SURE_EVAL_DATASETS_ROOT=/path/to/data/datasets
 
 ## Route 选择
 
-`/sure_eval` 指定链路只有两种方式,二选一:`metrics` 传一个 reported metric,按它当前的默认链路跑;`pipeline_id` 选精确链路。两个都传或都不传,在 preStart 第一关就被拒。`/sure_infer` 不跑任何 metric,它的 `metrics` 只是记进 resolved input 供后面的 `/sure_eval` 参考。完整参数契约见 [`/sure_eval`](../sure/skills/sure_eval/SKILL.md) 文档。
+`/sure_eval` 指定链路有两种显式方式:`metrics` 传一个 reported metric,按它当前的默认链路跑;`pipeline_id` 选精确链路。两个显式选择器不能同时传；两个都不传时,继承 prediction source 按数据集记录的指标选择,旧 bundle 才回退到当前锁定引擎的默认指标。`/sure_infer` 不跑任何 metric,推理结束后将解析出的 per-dataset defaults 以 `artifacts/inference_metric_selection.json` 写入 product bundle,供后面的 `/sure_eval` 继承。完整参数契约见 [`/sure_eval`](../sure/skills/sure_eval/SKILL.md) 文档。
 
 同一 dataset 和 metric 想比多条链路,就用逗号一次传多条:
 

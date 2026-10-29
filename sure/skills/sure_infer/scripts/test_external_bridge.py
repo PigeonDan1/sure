@@ -17,6 +17,80 @@ from evaluation_runtime import EvaluationRuntimeError  # noqa: E402
 import run_eval as reval  # noqa: E402
 
 
+class InheritedMetricSelectionTests(unittest.TestCase):
+    def test_uses_per_dataset_metrics_from_inference_input(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source_dir = Path(temp_dir)
+            resolved_input = source_dir / "artifacts" / "inference_metric_selection.json"
+            resolved_input.parent.mkdir(parents=True)
+            resolved_input.write_text(
+                json.dumps(
+                    {
+                        "datasets": [
+                            {"name": "zh__v1", "default_metrics": ["cer"]},
+                            {"name": "en__v1", "default_metrics": ["wer", "cer"]},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            selection = reval._dataset_metric_selection(
+                {"source_results_dir": str(source_dir)},
+                [
+                    {"dataset": "zh__v1__asr"},
+                    {"dataset": "en__v1__asr"},
+                ],
+            )
+
+        self.assertEqual(selection, {"zh__v1__asr": ["cer"], "en__v1__asr": ["wer", "cer"]})
+
+    def test_engine_defaults_cover_legacy_sources(self) -> None:
+        with mock.patch.object(reval, "default_metrics_for_task_language") as defaults:
+            defaults.side_effect = lambda _root, task, language: [
+                "wer" if task == "ASR" and language == "en" else "cer"
+            ]
+            selection = reval._engine_default_metric_selection(
+                [
+                    {"dataset": "zh__v1__asr", "task": "ASR", "language": "zh"},
+                    {"dataset": "en__v1__asr", "task": "ASR", "language": "en"},
+                ],
+                Path("/engine"),
+            )
+
+        self.assertEqual(selection, {"zh__v1__asr": ["cer"], "en__v1__asr": ["wer"]})
+
+    def test_resolves_only_each_datasets_inherited_metrics(self) -> None:
+        def describe(**kwargs: object) -> dict[str, object]:
+            return {"pipeline_id": f"asr.{kwargs['language']}.{kwargs['metric']}.v1"}
+
+        with mock.patch.object(ep, "_describe_external_pipeline", side_effect=describe):
+            pipeline_ids, by_dataset = reval._pipeline_ids_for_metrics(
+                ["cer", "wer"],
+                engine_root=Path("/engine"),
+                imported=[
+                    {"dataset": "zh__v1__asr", "task": "ASR", "language": "zh"},
+                    {"dataset": "en__v1__asr", "task": "ASR", "language": "en"},
+                ],
+                metrics_by_dataset={"zh__v1__asr": ["cer"], "en__v1__asr": ["wer"]},
+            )
+
+        self.assertEqual(pipeline_ids, ["asr.zh.cer.v1", "asr.en.wer.v1"])
+        self.assertEqual(by_dataset, {"zh__v1__asr": ["asr.zh.cer.v1"], "en__v1__asr": ["asr.en.wer.v1"]})
+
+    def test_explicit_metrics_keep_the_requested_subset(self) -> None:
+        with mock.patch.object(ep, "_describe_external_pipeline") as describe:
+            describe.side_effect = lambda **kwargs: {"pipeline_id": f"asr.zh.{kwargs['metric']}.v1"}
+            pipeline_ids, by_dataset = reval._pipeline_ids_for_metrics(
+                ["cer", "wer"],
+                engine_root=Path("/engine"),
+                imported=[{"dataset": "zh__v1__asr", "task": "ASR", "language": "zh"}],
+            )
+
+        self.assertEqual(pipeline_ids, ["asr.zh.cer.v1", "asr.zh.wer.v1"])
+        self.assertEqual(by_dataset, {"zh__v1__asr": pipeline_ids})
+
+
 class BridgeFailureReportingTests(unittest.TestCase):
     def setUp(self) -> None:
         self.original = ep._describe_external_pipeline
