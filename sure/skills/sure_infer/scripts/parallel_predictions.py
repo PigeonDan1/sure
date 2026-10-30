@@ -372,13 +372,16 @@ def run_dataset(ctx: Any, dataset: str) -> dict[str, Any]:
                 attempt_dir.mkdir()
                 keys_path = attempt_dir / "keys.txt"
                 keys_path.write_text("".join(f"{key}\n" for key in pending_shard), encoding="utf-8")
+                worker_request = ctx.child_env.get("SURE_EVAL_DEVICE_REQUEST") or ctx.device
+                worker_device = generation._worker_model_device(worker_request)
                 env = {**ctx.child_env, "CUDA_VISIBLE_DEVICES": ctx.gpu_devices[rank],
-                       "DEVICE": "cuda:0", "SURE_EVAL_DEVICE_ACTUAL": "cuda:0",
-                       "SURE_EVAL_DEVICE_REQUEST": "cuda:0", "SURE_INFER_WORKER_RANK": str(rank)}
+                       "DEVICE": worker_device, "SURE_EVAL_DEVICE_ACTUAL": worker_device,
+                       "SURE_EVAL_DEVICE_REQUEST": worker_request or worker_device,
+                       "SURE_INFER_WORKER_RANK": str(rank)}
                 command = [sys.executable, str(ctx.repo_root / "scripts" / "generate_predictions_via_server.py"),
                            "--model-dir", str(ctx.model_dir), "--dataset", dataset, "--run-dir", str(attempt_dir),
                            "--tool-name", ctx.tool_name, "--protocol", ctx.protocol_id,
-                           "--device", "cuda:0", "--keys-file", str(keys_path), "--worker-mode"]
+                           "--device", worker_device, "--keys-file", str(keys_path), "--worker-mode"]
                 if ctx.max_samples:
                     command += ["--max-samples", str(ctx.max_samples)]
                 if ctx.languages.get(dataset):

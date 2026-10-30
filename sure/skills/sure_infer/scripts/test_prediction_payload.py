@@ -242,6 +242,13 @@ class AsrPayloadNormalizationTests(unittest.TestCase):
         with patch.dict(gp.os.environ, {"CUDA_VISIBLE_DEVICES": "2,3"}, clear=False):
             self.assertEqual(gp._process_device("cuda:1"), "cuda:1")
 
+    def test_worker_device_uses_a_model_compatible_token(self) -> None:
+        self.assertEqual(gp._worker_model_device("auto"), "auto")
+        self.assertEqual(gp._worker_model_device("cuda"), "cuda")
+        self.assertEqual(gp._worker_model_device("cuda:0"), "cuda")
+        with self.assertRaisesRegex(ValueError, "device=auto or device=cuda"):
+            gp._worker_model_device("cpu")
+
     def test_text_newlines_are_folded_to_spaces_for_single_line_projections(self) -> None:
         prediction, normalized = gp._normalize_prediction_payload(
             {"text": "first\r\nsecond\nthird\rfourth"}, task="ASR"

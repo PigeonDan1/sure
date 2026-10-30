@@ -235,7 +235,7 @@ every dataset.
 Local uses that many GPUs available to the approved runtime. The entrypoint probes
 CUDA in Model Python before loading a model.
 Each Worker sees only its assigned GPU through `CUDA_VISIBLE_DEVICES` and uses
-`cuda:0`. Model configuration cannot widen that visibility.
+`cuda`. Model configuration cannot widen that visibility.
 
 The sample cap applies once per dataset before splitting. Samples are divided
 into contiguous shards whose sizes differ by at most one; a small dataset uses
