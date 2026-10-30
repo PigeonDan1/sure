@@ -1,0 +1,64 @@
+{
+  "schema": "sure.fixture_provenance.v2",
+  "task": "tta",
+  "dataset": {
+    "repository": "PigeonDan1/sure",
+    "revision": "synthetic TTA smoke fixture",
+    "configuration": "tta_smoke",
+    "split": "test",
+    "license": "MIT",
+    "license_url": "https://github.com/PigeonDan1/sure/blob/harness-tui-agent/LICENSE",
+    "source_url": "https://github.com/PigeonDan1/sure/tree/harness-tui-agent/fixtures/tasks/tta/tta_smoke",
+    "citation_url": "https://github.com/PigeonDan1/sure/blob/harness-tui-agent/fixtures/tasks/tta/README.md",
+    "source_id": "sure_tta_smoke",
+    "metadata_sha256": "5d747bf3ba66eba87223adf6403bf277bf02265fda926bc75a9e89708d918fb5",
+    "metadata_hash_basis": "canonical selected key/task/annotation projection"
+  },
+  "selection": {
+    "rule": "deterministic smoke subset with task-native labels and at most five inference samples",
+    "sample_ids": [
+      "tta_smoke_001",
+      "tta_smoke_002"
+    ]
+  },
+  "annotations": {
+    "source": "dataset metadata or deterministic fixture transform",
+    "ground_truth_path": "gt.jsonl",
+    "ground_truth_sha256": "1f5e8f5d7a2feac04d027c574d6de5b633f91fb3d01bf8e22acddfb1b7abdd67"
+  },
+  "transforms": [
+    {
+      "id": "source_media_copy",
+      "command": "copy source media bytes without modification; verify SHA-256"
+    }
+  ],
+  "files": [
+    {
+      "path": "ref_dog_park.wav",
+      "roles": [
+        "reference_audio"
+      ],
+      "sha256": "879c2bfe1e6b44b554295c08ccd573e86eb090f98d2aa4f5ee4bea2598bc0650",
+      "transform_id": "source_media_copy",
+      "source_sha256": "879c2bfe1e6b44b554295c08ccd573e86eb090f98d2aa4f5ee4bea2598bc0650"
+    },
+    {
+      "path": "ref_rain_roof.wav",
+      "roles": [
+        "reference_audio"
+      ],
+      "sha256": "aa49f3efc7db9cc4596862d2fe8027705037ac3bdd98044f38629e5cd30d8d9f",
+      "transform_id": "source_media_copy",
+      "source_sha256": "aa49f3efc7db9cc4596862d2fe8027705037ac3bdd98044f38629e5cd30d8d9f"
+    },
+    {
+      "path": "gt.jsonl",
+      "roles": [
+        "ground_truth"
+      ],
+      "sha256": "1f5e8f5d7a2feac04d027c574d6de5b633f91fb3d01bf8e22acddfb1b7abdd67",
+      "source_sha256": "1f5e8f5d7a2feac04d027c574d6de5b633f91fb3d01bf8e22acddfb1b7abdd67",
+      "transform_id": "source_media_copy"
+    }
+  ]
+}

@@ -626,7 +626,7 @@ def _fallback_default_metrics(task: str, language: str) -> list[str]:
         if language_lower == "cs":
             return ["mer"]
         return ["wer"] if language_lower == "en" else ["cer"]
-    if task_upper in {"TTS", "VC"}:
+    if task_upper in {"TTS", "VC", "TTA"}:
         return []
     if task_upper == "VAD":
         return ["f1"]
@@ -945,7 +945,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "evaluation_tasks": tasks,
             "languages": languages,
             "single_task": len([task for task in tasks if task != "UNKNOWN"]) <= 1,
-            "audio_evaluation_required": any(task in {"TTS", "VC"} for task in tasks),
+            "audio_evaluation_required": any(task in {"TTS", "VC", "TTA"} for task in tasks),
             "metrics": metric_list,
         },
         "runtime": {

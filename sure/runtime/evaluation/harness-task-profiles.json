@@ -131,6 +131,14 @@
 			"tool_name": "extract_speaker",
 			"io_contract": { "input_type": "audio_pair", "primary_field": "audio_path" }
 		},
+		"tta": {
+			"engine_task": "tta",
+			"default_language": "any",
+			"fixture_root": "fixtures/tasks/tta/tta_smoke",
+			"evaluation_bridge": "samples_jsonl",
+			"tool_name": "generate_audio",
+			"io_contract": { "input_type": "text", "primary_field": "audio_path" }
+		},
 		"tts": {
 			"engine_task": "tts",
 			"default_language": "en",

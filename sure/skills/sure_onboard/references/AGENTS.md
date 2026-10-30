@@ -309,6 +309,7 @@ references/templates/
 | ASR / Streaming ASR 接入手册 | `task_playbooks/ASR.md`，仅 ASR 路由命中时读取 |
 | 语音理解多任务接入手册 | `task_playbooks/SPEECH_UNDERSTANDING.md`，仅多任务语音理解路由命中时读取 |
 | TTS 接入手册 | `task_playbooks/TTS.md`，仅 TTS 路由命中时读取 |
+| TTA 接入手册 | `task_playbooks/TTA.md`，仅 TTA 路由命中时读取 |
 | VC 接入手册 | `task_playbooks/VC.md`，仅 VC 路由命中时读取 |
 | KWS 接入手册 | `task_playbooks/KWS.md`，仅 KWS 路由命中时读取 |
 | 环境 playbook 路由 | `playbooks/env_ROUTING.md` |

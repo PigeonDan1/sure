@@ -50,6 +50,7 @@ TASK_CASES = {
     "slu": ({"answer": "activate_lights"}, "activate_lights", {"answer": "activate_lights", "text": "activate_lights"}),
     "sv": ({"embedding": [0, 0.5]}, [0, 0.5], {"embedding": [0, 0.5]}),
     "tse": ({"audio_path": "generated.wav"}, "generated.wav", {"audio_path": "generated.wav", "prediction_audio": "generated.wav"}),
+    "tta": ({"audio_path": "generated.wav"}, "generated.wav", {"audio_path": "generated.wav", "prediction_audio": "generated.wav"}),
     "tts": ({"audio_path": "generated.wav", "sample_rate": 16000}, "generated.wav", {"audio_path": "generated.wav", "sample_rate": 16000}),
     "vad": ({"speech_segments": []}, {"speech_segments": []}, {"speech_segments": []}),
     "vc": ({"audio_path": "generated.wav"}, "generated.wav", {"audio_path": "generated.wav", "converted_audio": "generated.wav"}),
@@ -395,6 +396,7 @@ class AsrPayloadNormalizationTests(unittest.TestCase):
         cases = [
             ("SE", "enhanced_audio"),
             ("TSE", "prediction_audio"),
+            ("TTA", "prediction_audio"),
             ("VC", "converted_audio"),
         ]
         for task, field in cases:
