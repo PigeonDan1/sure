@@ -43,7 +43,7 @@ again for the next dataset rather than held across the whole run.
 ## Execution
 
 Each Worker is a separate process pinned to one device through
-`CUDA_VISIBLE_DEVICES`, and uses `cuda:0` inside that process. Model configuration
+`CUDA_VISIBLE_DEVICES`, and uses `cuda` inside that process. Model configuration
 cannot widen that visibility.
 
 Keys are split into contiguous shards whose sizes differ by at most one, in source
