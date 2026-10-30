@@ -14,10 +14,12 @@ as `prediction.rir_path`, `prediction.prediction_rir`, or
 `binaural_lr` when the layout is known. IACC requires exactly two channels;
 ITD, ILD, IPD, and DOA accept two or more channels.
 
-The smoke fixture is metadata-only for capability registration. End-to-end
-audio tests create temporary deterministic WAV pairs so model checkpoints,
-private paths, and generated audio never enter the repository. The canonical
-row shape is:
+The smoke fixture ships one small synthetic mono 16 kHz `reference.wav`
+(like the TTA smoke fixture) so fixture staging can validate the row
+contract; the smoke row stays mono per the RIR playbook. Model checkpoints
+and private dataset audio never enter the repository. End-to-end audio
+tests still create temporary deterministic WAV pairs. The canonical row
+shape is:
 
 ```json
 {"key":"rir_mono_001","reference_rir":"reference_mono.wav","sample_rate":16000,"channel_layout":"mono"}

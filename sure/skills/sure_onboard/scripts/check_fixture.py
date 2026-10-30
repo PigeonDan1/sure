@@ -23,6 +23,7 @@ AUDIO_FIELDS = (
     "audio_path",
     "source_audio",
     "reference_audio",
+    "reference_rir",
     "noisy_audio",
     "mixed_audio",
     "enrollment_audio",
@@ -178,6 +179,8 @@ def main() -> int:
         ]
         if task == "se":
             annotation_fields.append("reference_audio")
+        if task == "rir":
+            annotation_fields.append("reference_rir")
         if not annotation_fields:
             return fail(
                 f"{gt_jsonl}:{line_no} must contain at least one annotation field "
