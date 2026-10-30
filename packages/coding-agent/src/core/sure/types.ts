@@ -76,6 +76,8 @@ export interface SureRunRecord {
 	runDir: string;
 	args: string;
 	outputDir?: string;
+	/** External skill invocation identity, retained in run/result evidence. */
+	invocationId?: string;
 	startedAt: string;
 	updatedAt: string;
 	finishedAt?: string;

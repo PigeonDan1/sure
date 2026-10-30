@@ -119,6 +119,11 @@ function insideNfs(dir: string): boolean {
  */
 export function resolveOutputDir(args: string): OutputDirResolution {
 	const { requested } = splitOutputDir(args);
+	return resolveOutputDirPath(requested);
+}
+
+/** Validate a structured path through the same site-policy gate as slash commands. */
+export function resolveOutputDirPath(requested?: string): OutputDirResolution {
 	if (!requested) {
 		return { ok: true, dir: undefined };
 	}
