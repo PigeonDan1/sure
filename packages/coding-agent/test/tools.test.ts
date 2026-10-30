@@ -27,7 +27,6 @@ import {
 	createWriteTool,
 } from "../src/index.ts";
 import * as shellModule from "../src/utils/shell.ts";
-import { ensureTool } from "../src/utils/tools-manager.ts";
 
 const readTool = createReadTool(process.cwd());
 const writeTool = createWriteTool(process.cwd());
@@ -909,14 +908,6 @@ describe("Coding Agent Tools", () => {
 		});
 
 		it("should surface fd glob parse errors", async () => {
-			if (!(await ensureTool("fd"))) {
-				const result = await findTool.execute("test-call-15", {
-					pattern: "[",
-					path: testDir,
-				});
-				expect(getTextOutput(result)).toBe("No files found matching pattern");
-				return;
-			}
 			await expect(
 				findTool.execute("test-call-15", {
 					pattern: "[",
