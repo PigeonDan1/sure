@@ -2296,6 +2296,7 @@ def main() -> int:
         action="append",
         help="Exact standalone sure-evaluation pipeline_id to run. Repeat to compare multiple pipelines for the same metric.",
     )
+    parser.add_argument("--dataset-pipeline-ids", type=str, help="JSON mapping from canonical dataset name to selected pipeline IDs")
     parser.add_argument(
         "--evaluation-backend",
         choices=("auto", "external", "legacy"),
@@ -2425,6 +2426,19 @@ def main() -> int:
                 pipeline_overrides.append(item)
     if pipeline_overrides and args.evaluation_backend == "legacy":
         raise ValueError("--pipeline-id requires --evaluation-backend external or auto with an external engine")
+    dataset_pipeline_ids: dict[str, list[str]] | None = None
+    if args.dataset_pipeline_ids:
+        if not pipeline_overrides or metric_overrides:
+            raise ValueError("--dataset-pipeline-ids requires --pipeline-id and cannot be combined with --metric")
+        selected = json.loads(Path(args.dataset_pipeline_ids).read_text(encoding="utf-8"))
+        expected = {dataset_manager.normalize_dataset_name(name) for name in args.dataset}
+        if not isinstance(selected, dict) or set(selected) != expected or any(
+            not isinstance(value, list) or not value or any(
+                not isinstance(pipeline, str) or pipeline not in pipeline_overrides for pipeline in value
+            ) for value in selected.values()
+        ):
+            raise ValueError("--dataset-pipeline-ids must map each requested dataset to nonempty selected pipeline IDs")
+        dataset_pipeline_ids = selected
     if not metric_overrides:
         metric_overrides = [None]
     task_hint = _metric_task_hint(metric_overrides)
@@ -2448,10 +2462,14 @@ def main() -> int:
             raise FileNotFoundError(f"Prediction file not found: {prediction_path}")
 
         request_failures: list[str] = []
+        dataset_requests = (
+            [(None, pipeline_id) for pipeline_id in dataset_pipeline_ids[canonical_name]]
+            if dataset_pipeline_ids is not None else evaluation_requests
+        )
         if args.evaluation_backend != "legacy" and resolved_engine is not None:
             applicable_requests = [
                 (metric_override, pipeline_id_override)
-                for metric_override, pipeline_id_override in evaluation_requests
+                for metric_override, pipeline_id_override in dataset_requests
                 if _external_metric_applies_to_task_language(
                     engine_root=resolved_engine[1],
                     metric=None if pipeline_id_override else metric_override,
@@ -2465,7 +2483,7 @@ def main() -> int:
         else:
             applicable_requests = [
                 (metric_override, None)
-                for metric_override, pipeline_id_override in evaluation_requests
+                for metric_override, pipeline_id_override in dataset_requests
                 if pipeline_id_override is None
                 if _legacy_metric_applies_to_task_language(metric_override, effective_task, dataset_language)
             ]

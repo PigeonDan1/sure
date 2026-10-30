@@ -288,16 +288,16 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	const missing = ["model", "datasets"].filter((key) => !args[key]);
 	if (missing.length > 0) {
 		return failure(
-			`Missing required /sure_eval parameter(s): ${missing.join(", ")}. Usage: /sure_eval model=<exact-model-id> datasets=<dataset__version[,...]> [source=<run_id|abs_dir>] (pipeline_id=<exact-pipeline-id,...> | metrics=<metric,...>) [require_nonempty_predictions=true|false] [protocol=standard_system|strict_core] [device=cpu|cuda[:index]] [output_dir=<abs_dir>]`,
+			`Missing required /sure_eval parameter(s): ${missing.join(", ")}. Usage: /sure_eval model=<exact-model-id> datasets=<dataset__version[,...]> [source=<run_id|abs_dir>] [pipeline_id=<exact-pipeline-id,...> | metrics=<metric,...>] [require_nonempty_predictions=true|false] [protocol=standard_system|strict_core] [device=cpu|cuda[:index]] [output_dir=<abs_dir>]`,
 			"Missing required parameters.",
 		);
 	}
 	const hasPipeline = typeof args.pipeline_id === "string" && args.pipeline_id.length > 0;
 	const hasMetrics = typeof args.metrics === "string" && args.metrics.length > 0;
-	if (hasPipeline === hasMetrics) {
+	if (hasPipeline && hasMetrics) {
 		return failure(
-			"/sure_eval takes exactly one of pipeline_id=<exact-pipeline-id,...> (route variants) or metrics=<metric,...> (default routes).",
-			"Metric selection missing or ambiguous.",
+			"/sure_eval accepts at most one of pipeline_id=<exact-pipeline-id,...> (route variants) or metrics=<metric,...> (default routes); when neither is given, inherit the per-dataset metrics from the prediction source.",
+			"Metric selectors are mutually exclusive.",
 		);
 	}
 	for (const deprecated of [

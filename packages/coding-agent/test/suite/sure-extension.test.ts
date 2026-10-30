@@ -342,7 +342,7 @@ describe("Sure extension", () => {
 		expect(existsSync(join(harness.tempDir, "sure", "models", "rednote-hilab__dots.tts-base"))).toBe(false);
 	});
 
-	it("discovers the real /sure_eval repository skill and its pre-start refuses a run without pipeline_id or metrics", async () => {
+	it("discovers the real /sure_eval repository skill and its pre-start refuses conflicting metric selectors", async () => {
 		// The parameter checks in sure_eval's preStart run before any site policy or
 		// python spawn, so this is the one end-to-end path that behaves the same on
 		// every host: the skill is found, the hook rejects, the run is recorded as
@@ -356,19 +356,19 @@ describe("Sure extension", () => {
 		linkRepositorySkill(harness.tempDir, "sure_eval");
 		harness.setResponses([fauxAssistantMessage("should not run")]);
 
-		await harness.session.prompt("/sure_eval model=demo_model datasets=demo_dataset__v1");
+		await harness.session.prompt("/sure_eval model=demo_model datasets=demo_dataset__v1 pipeline_id=p1 metrics=wer");
 		await harness.session.agent.waitForIdle();
 
 		const runId = getOnlyRunId(harness.tempDir);
 		const run = JSON.parse(readFileSync(join(harness.tempDir, ".sure", "runs", runId, "run.json"), "utf-8"));
 		expect(run.command).toBe("sure_eval");
 		expect(run.status).toBe("failed");
-		expect(run.lastRepair).toContain("exactly one of pipeline_id");
+		expect(run.lastRepair).toContain("at most one of");
 		expect(JSON.parse(readFileSync(run.manifestPath, "utf-8"))).toMatchObject({
 			status: "failed",
 			validation: { gate: "system_failure", status: "failed" },
 		});
-		expect(notifications.some((entry) => entry.type === "error" && entry.message.includes("exactly one of"))).toBe(
+		expect(notifications.some((entry) => entry.type === "error" && entry.message.includes("at most one of"))).toBe(
 			true,
 		);
 		expect(getUserTexts(harness)).toHaveLength(0);

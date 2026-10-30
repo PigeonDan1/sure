@@ -86,6 +86,6 @@ describe("/sure_eval output_dir", () => {
 		const result = evalPreStart(evalCtx("eval-both-selectors", `${VALID} metrics=wer`));
 
 		expect(result.ok).toBe(false);
-		expect(result.repair ?? "").toContain("exactly one of");
+		expect(result.repair ?? "").toContain("at most one of");
 	});
 });

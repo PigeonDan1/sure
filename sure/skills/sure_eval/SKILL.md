@@ -31,8 +31,8 @@ At `pre_start` the hook also writes `artifacts/runtime_binding.json`: the exact 
 | `model` | ✅ | Exact approved model directory name. No aliases or paths. |
 | `datasets` | ✅ | Complete comma-separated dataset set covering the source bundle. Prefer the short source id `<name>__<version>` (flat: `<name>__unversioned`). For a local `/sure_infer` bundle this expands to the unique completed projection stem when the bundle only has one task projection (e.g. `…__v1.0.2` → `…__v1.0.2__tts`); if several tasks share the source, pass the full `<name>__<version>__<task>`. Writing the full 3-seg id is always accepted. Subsets/supersets are rejected. |
 | `source` | — | A `/sure_infer` run id below `sure/results/<model>/<protocol>/` or an absolute bundle directory. Omitted: the unique matching local run, else the approved result. |
-| `pipeline_id` | one of | Comma-separated exact sure-evaluation pipeline IDs (route variants). |
-| `metrics` | one of | Comma-separated metrics, e.g. `metrics=cer`; each is resolved to the engine's default pipeline for the dataset's task and language before anything runs, and the resolved ids are recorded in `pipeline_ids`. Exactly one of `pipeline_id` / `metrics` must be given. |
+| `pipeline_id` | optional | Comma-separated exact sure-evaluation pipeline IDs (route variants). Exclusive with `metrics`. |
+| `metrics` | optional | Comma-separated metrics, e.g. `metrics=cer`; each is resolved to the engine's default pipeline for the dataset's task and language before anything runs, and the resolved ids are recorded in `pipeline_ids`. Exclusive with `pipeline_id`. When both selectors are omitted, inherit the per-dataset metric selection from the source bundle's `artifacts/inference_metric_selection.json`; only legacy bundles without that artifact fall back to locked engine defaults. |
 | `protocol` | — | `standard_system` (default) or `strict_core`; must equal the source bundle's protocol. |
 | `device` | — | Evaluation device (`cpu` default). Never changes prediction identity. |
 | `output_dir` | — | Absolute directory where the harness collects this invocation's `result.json` and control artifacts. Consumed at `pre_start`; the evaluation batch itself always lands in the source bundle. Must be outside every configured `forbidden_output_roots` entry and writable. Quote the value when the path contains spaces: `output_dir="/data/My Runs/job"`. |
@@ -113,7 +113,7 @@ Advance happens **only** when the current unit's `produces` artifact is complian
   --model <model> \
   --datasets <dataset__version,...> \
   --protocol-id <standard_system|strict_core> \
-  --metric <metric> ... | --pipeline-id <exact-pipeline-id> ... \
+  [--metric <metric> ... | --pipeline-id <exact-pipeline-id> ...] \
   [--source-run <run_id|abs_dir>] \
   [--device <cpu|cuda[:index]>] \
   [--require-nonempty-predictions] \
@@ -140,6 +140,7 @@ Advance happens **only** when the current unit's `produces` artifact is complian
 - `source_identity` equals `prediction_source_resolved.json`;
 - `validation_payload.is_valid=true`;
 - `pipeline_ids` equals the pipelines that actually ran (metrics are resolved before the run);
+- `metric_selection_mode` records whether the routes came from explicit pipeline IDs, explicit metrics, inference selection or engine defaults; inherited selections also record `pipeline_ids_by_dataset`;
 - the protocol reuse policy is `reused_predictions_no_inference`;
 - `staging_append`: `staging_result_dir` is the source bundle (local) or its mirror below `sure/results` (approved), `batch_id` is `sure_eval_<24-hex>`, the batch manifest covers every scratch evaluation file exactly once, every requested `record_id` exists in the aggregate report and points into the batch, and the aggregate report and snapshot hashes match the receipt.
 

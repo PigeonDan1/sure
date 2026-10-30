@@ -136,8 +136,8 @@ class InferEntrypointTests(unittest.TestCase):
             json.dumps(
                 {
                     "datasets": [
-                        {"name": "ds_a__v1", "language": "zh"},
-                        {"name": "ds_b__v1", "language": "en"},
+                        {"name": "ds_a__v1", "language": "zh", "default_metrics": ["cer"]},
+                        {"name": "ds_b__v1", "language": "en", "default_metrics": ["wer"]},
                     ]
                 }
             ),
@@ -210,8 +210,14 @@ class InferEntrypointTests(unittest.TestCase):
             "references/sure_benchmark/jsonl/ds_a__v1.jsonl",
             "references/sure_benchmark/jsonl/ds_b__v1.jsonl",
             "artifact_path_localization.json",
+            "artifacts/inference_metric_selection.json",
         ):
             self.assertTrue((self.run_dir / relative).is_file(), relative)
+        selection = json.loads((self.run_dir / "artifacts" / "inference_metric_selection.json").read_text())
+        self.assertEqual(selection["datasets"], [
+            {"name": "ds_a__v1", "default_metrics": ["cer"]},
+            {"name": "ds_b__v1", "default_metrics": ["wer"]},
+        ])
         # The tool name came from the model config because TOOL_NAME was not injected.
         self.assertIn("tool: transcribe_audio", (self.run_dir / "protocol.yaml").read_text(encoding="utf-8"))
         calls = self.generate_calls()
@@ -219,6 +225,11 @@ class InferEntrypointTests(unittest.TestCase):
         for call in calls:
             self.assertEqual(call[call.index("--tool-name") + 1], "transcribe_audio")
             self.assertIn("--resume", call)
+
+    def test_direct_entrypoint_without_resolved_input_still_runs(self) -> None:
+        completed = self.run_entrypoint(SURE_EVAL_INPUT_RESOLVED=None)
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        self.assertFalse((self.run_dir / "artifacts" / "inference_metric_selection.json").exists())
 
     def test_automatic_single_worker_keeps_existing_path_and_records_plan(self) -> None:
         payload = json.loads(self.input_resolved.read_text())
@@ -335,8 +346,8 @@ class InferEntrypointTests(unittest.TestCase):
             json.dumps(
                 {
                     "datasets": [
-                        {"name": "ds_a__v1", "language": "zh", "jsonl_path": str(jsonl_dir / "ds_a__v1__asr.jsonl")},
-                        {"name": "ds_b__v1", "language": "en", "jsonl_path": str(jsonl_dir / "ds_b__v1__asr.jsonl")},
+                        {"name": "ds_a__v1", "language": "zh", "default_metrics": ["cer"], "jsonl_path": str(jsonl_dir / "ds_a__v1__asr.jsonl")},
+                        {"name": "ds_b__v1", "language": "en", "default_metrics": ["wer"], "jsonl_path": str(jsonl_dir / "ds_b__v1__asr.jsonl")},
                     ]
                 }
             ),

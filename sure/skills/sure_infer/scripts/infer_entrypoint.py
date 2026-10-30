@@ -634,6 +634,30 @@ def stage_references(ctx: Ctx) -> None:
 def stage_finalize(ctx: Ctx) -> None:
     published = _env("SURE_EVAL_PUBLISHED_RUN_DIR") or str(ctx.run_dir)
     _run(ctx, "finalize", "finalize_result_bundle.py", "--run-dir", str(ctx.run_dir), "--published-run-dir", published, "--model-dir", str(ctx.model_dir))
+    input_path = _env("SURE_EVAL_INPUT_RESOLVED")
+    if not input_path:
+        return
+    resolved_input = _read_json(Path(input_path))
+    rows = resolved_input.get("datasets")
+    if not isinstance(rows, list) or any(
+        not isinstance(row, dict) or not isinstance(row.get("name"), str)
+        or not isinstance(row.get("default_metrics"), list) or not row["default_metrics"]
+        for row in rows
+    ):
+        raise StageError("finalize", "resolved input does not contain per-dataset metric selection")
+    selection_path = ctx.run_dir / "artifacts" / "inference_metric_selection.json"
+    selection_path.parent.mkdir(parents=True, exist_ok=True)
+    selection_path.write_text(
+        json.dumps(
+            {
+                "schema": "sure.infer.metric_selection.v1",
+                "datasets": [{"name": row["name"], "default_metrics": row["default_metrics"]} for row in rows],
+            },
+            indent=2,
+            ensure_ascii=False,
+        ) + "\n",
+        encoding="utf-8",
+    )
 
 
 def main() -> int:
