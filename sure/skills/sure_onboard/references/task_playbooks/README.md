@@ -13,6 +13,7 @@
 | SE | [SE.md](SE.md) | 单通道语音增强、降噪，带参考音频的评测 |
 | TTS | [TTS.md](TTS.md) | F5-TTS、IndexTTS-2、带音色参考的语音合成 |
 | TTA | [TTA.md](TTA.md) | 文本生成音频/音效,caption-only 输入 |
+| RIR | [RIR.md](RIR.md) | 房间脉冲响应估计,audio 输入、生成 rir_path |
 | VC | [VC.md](VC.md) | Seed-VC、音频到音频的 voice conversion |
 | KWS | [KWS.md](KWS.md) | keyword spotting、WekWS、唤醒词模型 |
 

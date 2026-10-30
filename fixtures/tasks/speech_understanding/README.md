@@ -24,6 +24,7 @@ sure/models/<model>/fixture/
 | SA-ASR | `fixtures/tasks/sa_asr/README.md` | `fixtures/tasks/sa_asr/librispeech_2spk_smoke/` |
 | SD | `fixtures/tasks/sd/README.md` | `fixtures/tasks/sd/librispeech_2spk_smoke/` |
 | SE | `fixtures/tasks/se/README.md` | `fixtures/tasks/se/librispeech_noise_smoke/` |
+| RIR | `fixtures/tasks/rir/README.md` | `fixtures/tasks/rir/rir_smoke/` |
 | SER | `fixtures/tasks/ser/README.md` | `fixtures/tasks/ser/crema_d_smoke/` |
 | SLU | `fixtures/tasks/slu/README.md` | `fixtures/tasks/slu/fluent_speech_commands_smoke/` |
 | SV | `fixtures/tasks/sv/README.md` | `fixtures/tasks/sv/librispeech_trials_smoke/` |

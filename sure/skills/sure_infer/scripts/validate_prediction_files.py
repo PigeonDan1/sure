@@ -202,7 +202,18 @@ def _task_contract_violations(
             value = value or prediction.get("text") or prediction.get("label")
         elif primary_field == "segments":
             value = value or prediction.get("annotation")
-        if primary_field == "audio_path":
+        if task == "rir":
+            rir_path = (
+                prediction.get("rir_path")
+                or prediction.get("prediction_rir")
+                or prediction.get("audio_path")
+                or row.get("rir_path")
+                or row.get("prediction_rir")
+                or normalized
+            )
+            if not rir_path or not _resolve_audio_path(rir_path, base_dir).exists():
+                violations.append(key)
+        elif primary_field == "audio_path":
             audio_path = value or normalized
             if not audio_path or not _resolve_audio_path(audio_path, base_dir).exists():
                 violations.append(key)
@@ -273,7 +284,10 @@ def validate_prediction_file(
         key for key, prediction in predictions.items() if key in expected_key_set and prediction.strip() == ""
     )
     structured_key_set = set(structured_predictions.keys())
-    structured_required = any(normalize_task(str(sample.get("task") or "")) == "kws" for sample in samples)
+    structured_required = any(
+        normalize_task(str(sample.get("task") or "")) in {"kws", "rir"}
+        for sample in samples
+    )
     structured_missing_keys = (
         sorted(expected_key_set - structured_key_set) if structured_path.exists() or structured_required else []
     )

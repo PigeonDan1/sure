@@ -24,6 +24,7 @@ PATH_FIELDS = (
     "audio_path",
     "source_audio",
     "reference_audio",
+    "reference_rir",
     "noisy_audio",
     "mixed_audio",
     "enrollment_audio",

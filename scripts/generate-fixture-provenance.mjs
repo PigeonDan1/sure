@@ -16,6 +16,7 @@ const taskSources = {
 	lid: ["librispeech", "aishell1"],
 	gr: "librispeech",
 	kws: "librispeech",
+	rir: "sure_rir_smoke",
 	s2tt: "covost2",
 	sa_asr: "librispeech",
 	sd: "librispeech",
@@ -162,7 +163,7 @@ for (const [task, profile] of Object.entries(profiles.tasks)) {
 			if (!(error instanceof Error) || !error.message.includes("ENOENT")) throw error;
 		}
 	}
-	if (task === "tta") {
+	if (task === "rir" || task === "tta") {
 		payload.files.push({
 			path: "gt.jsonl",
 			roles: ["ground_truth"],

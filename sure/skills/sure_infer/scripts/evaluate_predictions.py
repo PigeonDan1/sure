@@ -57,6 +57,38 @@ LOWER_IS_BETTER_METRICS = {
     "tts_cer",
     "vc_wer",
     "vc_cer",
+    "rir_npm",
+    "rt30_mae",
+    "rt60_mae",
+    "rir_drr_mae",
+    "rir_c50_mae",
+    "rir_c80_mae",
+    "rir_edc_mae",
+    "rir_iacc_mae",
+    "rir_iacc_full_mae",
+    "rir_iacc_early_mae",
+    "rir_iacc_late_mae",
+    "rir_itd_mae",
+    "rir_ild_mae",
+    "rir_ipd_mae",
+    "rir_doa_mae",
+}
+RIR_METRIC_UNITS = {
+    "rir_npm": "dB",
+    "rt30_mae": "s",
+    "rt60_mae": "s",
+    "rir_drr_mae": "dB",
+    "rir_c50_mae": "dB",
+    "rir_c80_mae": "dB",
+    "rir_edc_mae": "dB",
+    "rir_iacc_mae": "coefficient",
+    "rir_iacc_full_mae": "coefficient",
+    "rir_iacc_early_mae": "coefficient",
+    "rir_iacc_late_mae": "coefficient",
+    "rir_itd_mae": "ms",
+    "rir_ild_mae": "dB",
+    "rir_ipd_mae": "rad",
+    "rir_doa_mae": "degrees",
 }
 
 
@@ -367,6 +399,38 @@ def _sample_source_audio(sample: dict[str, Any]) -> str:
     )
 
 
+def _sample_reference_rir(sample: dict[str, Any]) -> str:
+    return str(
+        sample.get("reference_rir")
+        or sample.get("reference_rir_path")
+        or sample.get("ground_truth_rir")
+        or ""
+    )
+
+
+def _prediction_rir_path(structured: dict[str, Any], prediction: dict[str, Any]) -> Any:
+    return (
+        prediction.get("rir_path")
+        or prediction.get("prediction_rir")
+        or prediction.get("audio_path")
+        or structured.get("rir_path")
+        or structured.get("prediction_rir")
+        or structured.get("normalized_prediction")
+    )
+
+
+def _rir_metadata(sample: dict[str, Any], structured: dict[str, Any]) -> dict[str, Any]:
+    metadata = sample.get("metadata")
+    result = dict(metadata) if isinstance(metadata, dict) else {}
+    for key in ("sample_rate", "channel_layout", "microphone_spacing_m", "sound_speed_mps"):
+        value = sample.get(key)
+        if value is None:
+            value = structured.get(key)
+        if value is not None:
+            result[key] = value
+    return result
+
+
 def _write_external_audio_samples_jsonl(
     *,
     task: str,
@@ -386,6 +450,31 @@ def _write_external_audio_samples_jsonl(
         if structured is None:
             raise ValueError(f"Missing structured prediction row for {task_upper} sample: {key}")
         prediction = structured.get("prediction") if isinstance(structured.get("prediction"), dict) else {}
+        if task_upper == "RIR":
+            rir_path = _prediction_rir_path(structured, prediction)
+            reference_rir = _localize_sample_audio_path(_sample_reference_rir(sample), dataset_jsonl_path)
+            if not rir_path:
+                raise ValueError(f"Missing prediction RIR path for {task_upper} sample: {key}")
+            generated_rir = _resolve_existing_prediction_path(rir_path, structured_prediction_path.parent)
+            row = {
+                "sample_id": key,
+                "prediction_rir": generated_rir,
+                "reference_rir": reference_rir,
+                "metadata": _rir_metadata(sample, structured),
+            }
+            for field in ("sample_rate", "channel_layout"):
+                value = sample.get(field)
+                if value is None:
+                    value = structured.get(field)
+                if value is not None:
+                    row[field] = value
+            missing_roles = [role for role in ("prediction_rir", "reference_rir") if not row.get(role)]
+            if missing_roles:
+                raise ValueError(
+                    f"{task_upper} sample {key} is missing required role(s): {', '.join(missing_roles)}"
+                )
+            rows.append(row)
+            continue
         audio_path = prediction.get("audio_path") or structured.get("normalized_prediction")
         if not audio_path:
             raise ValueError(f"Missing prediction audio_path for {task_upper} sample: {key}")
@@ -1501,6 +1590,8 @@ def _is_lower_better_metric(metric: str) -> bool:
 
 def _metric_unit(metric: str) -> str:
     metric_name = str(metric or "").lower()
+    if metric_name in RIR_METRIC_UNITS:
+        return RIR_METRIC_UNITS[metric_name]
     if _is_lower_better_metric(metric_name):
         return "fraction"
     if metric_name in {"accuracy", "acc"}:
@@ -1515,6 +1606,9 @@ def _metric_unit(metric: str) -> str:
 def _metric_display(metric: str, score: Any) -> str:
     if not isinstance(score, (int, float)) or not math.isfinite(float(score)):
         return "N/A"
+    metric_name = str(metric or "").lower()
+    if metric_name in RIR_METRIC_UNITS:
+        return f"{float(score):.6f} {RIR_METRIC_UNITS[metric_name]}"
     if _is_lower_better_metric(metric):
         return f"{float(score) * 100:.2f}%"
     return f"{float(score):.6f}"

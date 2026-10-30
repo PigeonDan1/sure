@@ -41,6 +41,16 @@
 			"source_url": "https://www.openslr.org/12",
 			"citation_url": "https://www.danielpovey.com/files/2015_icassp_librispeech.pdf"
 		},
+		"sure_rir_smoke": {
+			"repository": "PigeonDan1/sure",
+			"revision": "synthetic RIR smoke fixture",
+			"configuration": "rir_smoke",
+			"split": "test",
+			"license": "MIT",
+			"license_url": "https://github.com/PigeonDan1/sure/blob/harness-tui-agent/LICENSE",
+			"source_url": "https://github.com/PigeonDan1/sure/tree/harness-tui-agent/fixtures/tasks/rir/rir_smoke",
+			"citation_url": "https://github.com/PigeonDan1/sure/blob/harness-tui-agent/fixtures/tasks/rir/README.md"
+		},
 		"sure_tta_smoke": {
 			"repository": "PigeonDan1/sure",
 			"revision": "synthetic TTA smoke fixture",

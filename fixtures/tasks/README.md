@@ -30,6 +30,7 @@ all model directories.
 | SA-ASR | `sa_asr/README.md` | `sa_asr/librispeech_2spk_smoke/` |
 | SD | `sd/README.md` | `sd/librispeech_2spk_smoke/` |
 | SE | `se/README.md` | `se/librispeech_noise_smoke/` |
+| RIR | `rir/README.md` | `rir/rir_smoke/` |
 | SER | `ser/README.md` | `ser/crema_d_smoke/` |
 | SLU | `slu/README.md` | `slu/fluent_speech_commands_smoke/` |
 | SV | `sv/README.md` | `sv/librispeech_trials_smoke/` |
