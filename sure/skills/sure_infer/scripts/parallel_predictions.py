@@ -10,8 +10,16 @@ import subprocess
 import sys
 import time
 import uuid
+from contextlib import contextmanager
+from dataclasses import replace
+from collections.abc import Generator
 from pathlib import Path
 from typing import Any
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 import generate_predictions_via_server as generation
 from finalize_result_bundle import localize_prediction_row
@@ -32,9 +40,36 @@ def atomic_json(path: Path, payload: dict[str, Any]) -> None:
     generation._write_status_file(path, payload)
 
 
-def discover_gpus(workers: int, env: dict[str, str]) -> list[str]:
+@contextmanager
+def output_lock(path: Path):
+    """Reject a second writer; OS locks are released even after a crash."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as handle:
+        if os.name == "nt":
+            if path.stat().st_size == 0:
+                handle.write(b"0")
+                handle.flush()
+            handle.seek(0)
+        try:
+            if os.name == "nt":
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as exc:
+            raise RuntimeError(f"Another inference controller owns {path}") from exc
+        try:
+            yield
+        finally:
+            if os.name == "nt":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def discover_gpus(workers: int, env: dict[str, str], *, single: bool = False) -> list[str]:
     """Keep the allocation's visibility; prove CUDA availability in Model Python."""
-    if type(workers) is not int or not 2 <= workers <= 8:
+    if type(workers) is not int or not (1 if single else 2) <= workers <= 8:
         raise ValueError("Parallel controller requires num_workers to be an integer between 2 and 8")
     visible = env.get("CUDA_VISIBLE_DEVICES")
     devices = [value.strip() for value in visible.split(",")] if visible is not None else []
@@ -49,7 +84,12 @@ def discover_gpus(workers: int, env: dict[str, str]) -> list[str]:
     except (OSError, subprocess.SubprocessError):
         gpu_ids = {}
     if devices and gpu_ids:
-        identities = [gpu_ids.get(device, device) for device in devices]
+        identities = []
+        for device in devices:
+            matches = [value for value in gpu_ids.values() if value.startswith(device)]
+            if len(matches) > 1:
+                raise ValueError("CUDA_VISIBLE_DEVICES contains an ambiguous GPU UUID")
+            identities.append(gpu_ids.get(device, matches[0] if matches else device))
         if len(set(identities)) != len(identities):
             raise ValueError("CUDA_VISIBLE_DEVICES aliases the same GPU more than once")
     probe = subprocess.run(
@@ -243,8 +283,12 @@ def _error_kind(text: str, exit_code: int) -> str:
     return "runtime_error" if exit_code else "none"
 
 
-def run_dataset(ctx: Any, dataset: str) -> dict[str, Any]:
-    """Process one dataset to completion (or bounded failure) before the next."""
+def _dataset_steps(ctx: Any, dataset: str, payload: dict[str, Any]) -> Generator[int | None, list[str] | None, dict[str, Any]]:
+    """Yield the verified GPU demand, then cooperate while attempts are running.
+
+    Only the single controller advances these generators. Recovery, attempts and
+    publication retain one implementation for serial and backfill execution.
+    """
     if type(ctx.num_workers) is not int or not 1 <= ctx.num_workers <= 8:
         raise ValueError("Dataset controller requires num_workers to be an integer between 1 and 8")
     if len(ctx.gpu_devices) < ctx.num_workers:
@@ -255,11 +299,12 @@ def run_dataset(ctx: Any, dataset: str) -> dict[str, Any]:
     samples = all_samples[:ctx.max_samples] if ctx.max_samples > 0 else all_samples
     audit = {
         "worker_selection": getattr(ctx, "worker_selection", "explicit"),
+        "dataset": dataset,
         "planned_workers": ctx.num_workers,
         "total_samples": len(all_samples), "selected_samples": len(samples),
     }
     planned = getattr(ctx, "worker_plans", {}).get(dataset)
-    if planned and planned != audit:
+    if planned and any(audit.get(key) != planned.get(key) for key in ("worker_selection", "planned_workers", "total_samples", "selected_samples")):
         raise ValueError("Dataset sample scope or Workers changed after planning")
     model_config = generation._load_yaml(ctx.model_dir / "config.yaml")
     samples = [{**sample, "task": generation._effective_generation_task(
@@ -274,6 +319,8 @@ def run_dataset(ctx: Any, dataset: str) -> dict[str, Any]:
     previous = read_json(root / "plan.json")
     if previous and previous.get("identity") != identity:
         raise ValueError("Parallel recovery identity differs; use a new output directory")
+    if previous and previous.get("planned_workers", previous.get("requested_workers")) != ctx.num_workers:
+        raise ValueError("Dataset Worker plan changed; use a new output directory")
     session = uuid.uuid4().hex
     reuse_sessions = [*previous.get("reuse_sessions", []), previous["session"]] if previous and not ctx.no_resume else []
     records: dict[str, dict[str, Any]] = {}
@@ -321,15 +368,20 @@ def run_dataset(ctx: Any, dataset: str) -> dict[str, Any]:
             attempt_statuses.append(read_json(attempt_path / "prediction_generation_status.json"))
     pending = [key for key in keys if key not in records]
     shards = split_keys(pending, ctx.num_workers)
+    # Pause before writing a new session or launching any worker. The scheduler
+    # prepares every dataset first, so an identity conflict starts no models.
+    devices = yield len(shards)
+    if devices is None or len(devices) != len(shards) or len(set(devices)) != len(devices):
+        raise ValueError("GPU lease differs from verified pending shards")
     initial_completed = len(records)
     plan = {
         **audit,
         "schema": "sure.infer.parallel_plan.v1", "session": session,
         "reuse_sessions": reuse_sessions,
         "identity": identity, "requested_workers": ctx.num_workers,
-        "effective_workers": len(shards), "gpu_devices": ctx.gpu_devices,
+        "effective_workers": len(shards), "gpu_devices": devices,
         "expected": len(keys), "reused": initial_completed,
-        "shards": [{"rank": rank, "gpu": ctx.gpu_devices[rank], "keys": shard}
+        "shards": [{"rank": rank, "gpu": devices[rank], "keys": shard}
                    for rank, shard in enumerate(shards)],
         "execution": {"path": ctx.child_env.get("SURE_EVAL_EXECUTION_PATH", "unknown"),
                       "job_id": ctx.child_env.get("SURE_EVAL_EXECUTION_JOB_ID", ""),
@@ -338,8 +390,7 @@ def run_dataset(ctx: Any, dataset: str) -> dict[str, Any]:
     }
     atomic_json(root / "plan.json", plan)
     atomic_json(root / "sessions" / f"{session}.json", plan)
-    default = _default_status(ctx)
-    default["worker_selection"] = audit["worker_selection"]
+    default = payload
     status_path = ctx.run_dir / "prediction_generation_status.json"
     dataset_status = {
         **audit,
@@ -349,16 +400,13 @@ def run_dataset(ctx: Any, dataset: str) -> dict[str, Any]:
         "requested_workers": ctx.num_workers, "effective_workers": len(shards),
         "log_path": str(root), "error": None,
     }
-    payload, row_status = generation._upsert_dataset_status(status_path, default, dataset_status)
-    payload.update({key: value for key, value in default.items() if key != "datasets"})
+    row_status = next(row for row in payload["datasets"] if row["dataset"] == dataset)
+    row_status.update(dataset_status)
     atomic_json(status_path, payload)
     attempts: list[dict[str, Any]] = []
     started = time.monotonic()
     blocked: set[str] = set()
     active: list[tuple[subprocess.Popen[str], Any, Path, dict[str, Any]]] = []
-    def interrupted(signum: int, _frame: Any) -> None:
-        raise InterruptedError(f"Parallel inference interrupted by signal {signum}")
-    handlers = {sig: signal.signal(sig, interrupted) for sig in (signal.SIGINT, signal.SIGTERM)}
     try:
         for round_index in range(3):
             for rank, shard in enumerate(shards):
@@ -388,7 +436,7 @@ def run_dataset(ctx: Any, dataset: str) -> dict[str, Any]:
                     command += ["--language", ctx.languages[dataset]]
                 attempt = {
                     "identity": identity, "session": session, "rank": rank, "round": round_index,
-                    "gpu": ctx.gpu_devices[rank], "keys_sha256": generation._sha256(keys_path),
+                    "gpu": devices[rank], "keys_sha256": generation._sha256(keys_path),
                     "expected": len(pending_shard), "command": command, "status": "running",
                     "started_at": generation._utc_now(), "started_monotonic": time.monotonic(),
                 }
@@ -401,44 +449,50 @@ def run_dataset(ctx: Any, dataset: str) -> dict[str, Any]:
                     log.close()
                     raise
                 active.append((process, log, attempt_dir, attempt))
-            # All attempts have started before any wait. A failed process cannot
-            # terminate its peers; cancellation always cleans their sessions.
-            for process, log, attempt_dir, attempt in active:
-                exit_code = process.wait()
-                _stop_group(process)
-                log.close()
-                worker_status = read_json(attempt_dir / "prediction_generation_status.json")
-                attempt_statuses.append(worker_status)
-                subset = set((attempt_dir / "keys.txt").read_text(encoding="utf-8").splitlines())
-                rows = _valid_records(_journal_records(attempt_dir / "completed.jsonl"),
-                                      [sample for sample in samples if str(sample["key"]) in subset], dataset, attempt_dir)
-                if set(records) & set(rows):
-                    raise ValueError("Worker produced a duplicate completed key")
-                records.update(rows)
-                text = (attempt_dir / "worker.log").read_text(encoding="utf-8", errors="replace")
-                for model_log in (attempt_dir / "predictions" / "logs").glob("*.log"):
-                    text += model_log.read_text(encoding="utf-8", errors="replace")
-                kind = _error_kind(text, exit_code)
-                for dataset_row in worker_status.get("datasets", []):
-                    for error in dataset_row.get("sample_errors", []):
-                        if error.get("error_type") in {"ValueError", "FileNotFoundError", "PermissionError", "ModuleNotFoundError"}:
-                            blocked.add(str(error.get("key")))
-                attempt.update({"exit_code": exit_code, "error_kind": kind,
-                                "generated": len(rows), "missing_keys": sorted(subset - set(rows)),
-                                "status": "completed" if subset == set(rows) else "failed",
-                                "ended_at": generation._utc_now(),
-                                "duration_seconds": time.monotonic() - attempt.pop("started_monotonic")})
-                atomic_json(attempt_dir / "attempt.json", attempt)
-                attempts.append({"path": str(attempt_dir), **attempt})
-                if kind == "input_or_config":
-                    blocked.update(subset - set(rows))
-                row_status["num_generated_samples"] = len(records)
-                atomic_json(status_path, payload)
-            active = []
+            # Collect any exited attempt, never block on a lower rank. A yield
+            # returns control to the same-process scheduler, not another writer.
+            while active:
+                for item in list(active):
+                    process, log, attempt_dir, attempt = item
+                    exit_code = process.poll()
+                    if exit_code is None:
+                        continue
+                    _stop_group(process)
+                    log.close()
+                    worker_status = read_json(attempt_dir / "prediction_generation_status.json")
+                    attempt_statuses.append(worker_status)
+                    subset = set((attempt_dir / "keys.txt").read_text(encoding="utf-8").splitlines())
+                    rows = _valid_records(_journal_records(attempt_dir / "completed.jsonl"),
+                                          [sample for sample in samples if str(sample["key"]) in subset], dataset, attempt_dir)
+                    if set(records) & set(rows):
+                        raise ValueError("Worker produced a duplicate completed key")
+                    records.update(rows)
+                    text = (attempt_dir / "worker.log").read_text(encoding="utf-8", errors="replace")
+                    for model_log in (attempt_dir / "predictions" / "logs").glob("*.log"):
+                        text += model_log.read_text(encoding="utf-8", errors="replace")
+                    kind = _error_kind(text, exit_code)
+                    for dataset_row in worker_status.get("datasets", []):
+                        for error in dataset_row.get("sample_errors", []):
+                            if error.get("error_type") in {"ValueError", "FileNotFoundError", "PermissionError", "ModuleNotFoundError"}:
+                                blocked.add(str(error.get("key")))
+                    attempt.update({"exit_code": exit_code, "error_kind": kind,
+                                    "generated": len(rows), "missing_keys": sorted(subset - set(rows)),
+                                    "status": "completed" if subset == set(rows) else "failed",
+                                    "ended_at": generation._utc_now(),
+                                    "duration_seconds": time.monotonic() - attempt.pop("started_monotonic")})
+                    atomic_json(attempt_dir / "attempt.json", attempt)
+                    attempts.append({"path": str(attempt_dir), **attempt})
+                    if kind == "input_or_config":
+                        blocked.update(subset - set(rows))
+                    row_status["num_generated_samples"] = len(records)
+                    atomic_json(status_path, payload)
+                    active.remove(item)
+                if active:
+                    yield None
             if len(records) == len(keys):
                 break
     except BaseException as exc:
-        row_status.update({"status": "failed", "error": str(exc), "num_generated_samples": len(records)})
+        row_status.update({"status": "failed", "error": str(exc) or type(exc).__name__, "num_generated_samples": len(records)})
         atomic_json(status_path, payload)
         atomic_json(root / "merge_report.json", {
             **audit,
@@ -463,8 +517,6 @@ def run_dataset(ctx: Any, dataset: str) -> dict[str, Any]:
             if interrupted_report.get("session") == session and interrupted_report.get("status") == "failed":
                 interrupted_report["attempts"] = attempts
                 atomic_json(root / "merge_report.json", interrupted_report)
-        for sig, handler in handlers.items():
-            signal.signal(sig, handler)
     missing = [key for key in keys if key not in records]
     report = {
         **audit,
@@ -478,13 +530,17 @@ def run_dataset(ctx: Any, dataset: str) -> dict[str, Any]:
             _publish(ctx, dataset, samples, records, default, row_status, report)
     except BaseException as exc:
         report.update({"status": "failed", "error": str(exc)})
-        row_status.update({"status": "failed", "error": str(exc), "num_generated_samples": len(records)})
+        row_status.update({"status": "failed", "error": str(exc) or type(exc).__name__, "num_generated_samples": len(records)})
         atomic_json(root / "merge_report.json", report)
         atomic_json(status_path, payload)
         raise
     for worker_status in reversed(attempt_statuses):
         if worker_status.get("generation"):
-            payload["generation"] = worker_status["generation"]
+            row_status["generation"] = worker_status["generation"]
+            # Keep the top-level provenance deterministic (input order), not
+            # dependent on whichever dataset happens to finish last.
+            if dataset == payload["datasets"][0]["dataset"]:
+                payload["generation"] = worker_status["generation"]
             payload["server_protocol"] = worker_status.get("server_protocol")
             break
     row_status.update({"status": report["status"], "num_generated_samples": len(records),
@@ -519,3 +575,135 @@ def _publish(ctx: Any, dataset: str, samples: list[dict[str, Any]], records: dic
     row_status.update({"prediction_manifest": str(manifest), "conversion_manifest": str(conversion)})
     report["txt_sha256"] = generation._sha256(prediction_dir / f"{dataset}.txt")
     report["jsonl_sha256"] = generation._sha256(prediction_dir / f"{dataset}.jsonl")
+
+
+def run_dataset(ctx: Any, dataset: str) -> dict[str, Any]:
+    return _run_datasets(ctx, [dataset], backfill=False, record_schedule=False)[0]
+
+
+def run_datasets_backfill(ctx: Any) -> list[dict[str, Any]]:
+    return _run_datasets(ctx, ctx.datasets, backfill=True, record_schedule=True)
+
+
+def run_datasets_serial(ctx: Any) -> list[dict[str, Any]]:
+    return _run_datasets(ctx, ctx.datasets, backfill=False, record_schedule=True)
+
+
+def _run_datasets(ctx: Any, datasets: list[str], *, backfill: bool, record_schedule: bool) -> list[dict[str, Any]]:
+    budget = ctx.num_workers
+    if (type(budget) is not int or not 1 <= budget <= 8 or len(ctx.gpu_devices) < budget
+            or len(set(ctx.gpu_devices)) != len(ctx.gpu_devices)):
+        raise ValueError("Invalid run GPU budget or duplicate GPU devices")
+    if not datasets or len(set(datasets)) != len(datasets):
+        raise ValueError("Dataset schedule must be nonempty and unique")
+    devices = ctx.gpu_devices[:budget]
+    with output_lock(ctx.run_dir / ".generation.lock"):
+        previous_schedule = read_json(ctx.run_dir / "parallel_inference" / "schedule.json")
+        if record_schedule and previous_schedule and (
+                previous_schedule.get("gpu_budget") != budget
+                or previous_schedule.get("dataset_order", [row["dataset"] for row in previous_schedule.get("datasets", [])]) != datasets):
+            raise ValueError("Run Worker budget or dataset scope changed; use a new output directory")
+        payload = _default_status(ctx)
+        payload["worker_selection"] = ctx.worker_selection
+        payload["cuda_visible_devices"] = ",".join(devices)
+        payload["datasets"] = [{"dataset": name, "status": "pending"} for name in datasets]
+        if not record_schedule:
+            previous_status = read_json(ctx.run_dir / "prediction_generation_status.json")
+            payload["datasets"] = [row for row in previous_status.get("datasets", [])
+                                   if row.get("dataset") not in datasets] + payload["datasets"]
+        steps = {}
+        demands = {}
+        active: dict[str, list[str]] = {}
+        reports = {}
+        session = uuid.uuid4().hex
+        schedule = {
+            "schema": "sure.infer.backfill_schedule.v1", "session": session,
+            "strategy": "first_fit_backfill" if backfill else "serial",
+            "run_id": ctx.run_id, "gpu_budget": budget, "gpu_devices": devices,
+            "dataset_order": datasets,
+            "datasets": [], "events": [], "status": "preparing",
+        }
+        schedule_path = ctx.run_dir / "parallel_inference" / "schedule.json"
+
+        def save_schedule() -> None:
+            if record_schedule:
+                atomic_json(schedule_path, schedule)
+                atomic_json(schedule_path.parent / "sessions" / f"{session}.schedule.json", schedule)
+
+        def advance(dataset: str, lease: list[str] | None = None) -> None:
+            try:
+                if lease is None:
+                    next(steps[dataset])
+                else:
+                    steps[dataset].send(lease)
+            except StopIteration as completed:
+                reports[dataset] = completed.value
+                next(row for row in schedule["datasets"] if row["dataset"] == dataset)["session"] = completed.value["session"]
+                released = active.pop(dataset)
+                schedule["events"].append({
+                    "event": "finished", "dataset": dataset, "gpu_devices": released,
+                    "status": completed.value["status"], "at": generation._utc_now(),
+                })
+                save_schedule()
+
+        def interrupted(signum: int, _frame: Any) -> None:
+            raise InterruptedError(f"Parallel inference interrupted by signal {signum}")
+
+        handlers = {sig: signal.signal(sig, interrupted) for sig in (signal.SIGINT, signal.SIGTERM)}
+        try:
+            for dataset in datasets:
+                planned = ctx.worker_plans.get(dataset, {}).get("planned_workers", budget)
+                if type(planned) is not int or not 1 <= planned <= budget:
+                    raise ValueError("Dataset Workers exceed the task allocation")
+                iterator = _dataset_steps(replace(ctx, num_workers=planned), dataset, payload)
+                steps[dataset] = iterator
+                demands[dataset] = next(iterator)
+                schedule["datasets"].append({"dataset": dataset, "planned_workers": planned,
+                                             "effective_workers": demands[dataset]})
+            # No model starts before all scopes and recovery identities pass.
+            schedule["status"] = "running"
+            save_schedule()
+            atomic_json(ctx.run_dir / "prediction_generation_status.json", payload)
+            pending = list(datasets)
+            while pending or active:
+                for dataset in list(pending):
+                    occupied = {gpu for lease in active.values() for gpu in lease}
+                    free = [gpu for gpu in devices if gpu not in occupied]
+                    if (active and not backfill) or demands[dataset] > len(free):
+                        continue
+                    lease = free[:demands[dataset]]
+                    active[dataset] = lease
+                    pending.remove(dataset)
+                    # Persist the lease before starting any subprocess.
+                    schedule["events"].append({"event": "started", "dataset": dataset,
+                                               "gpu_devices": lease, "at": generation._utc_now()})
+                    save_schedule()
+                    advance(dataset, lease)
+                if pending and not active:
+                    raise RuntimeError("Pending dataset cannot fit the GPU budget")
+                for dataset in list(active):
+                    advance(dataset)
+                if active:
+                    time.sleep(0.05)
+            schedule["status"] = "completed" if all(row["status"] == "completed" for row in reports.values()) else "failed"
+            save_schedule()
+            return [reports[dataset] for dataset in datasets]
+        except BaseException as exc:
+            # Ignore further cancellation while reaping every worker/server group.
+            for sig in handlers:
+                signal.signal(sig, signal.SIG_IGN)
+            for dataset, iterator in steps.items():
+                try:
+                    iterator.close()
+                except BaseException as cleanup_error:
+                    schedule.setdefault("cleanup_errors", []).append(f"{dataset}: {cleanup_error}")
+                finally:
+                    if dataset in active:
+                        schedule["events"].append({"event": "finished", "dataset": dataset,
+                            "gpu_devices": active[dataset], "status": "failed", "at": generation._utc_now()})
+            schedule.update(status="failed", error=str(exc) or type(exc).__name__)
+            save_schedule()
+            raise
+        finally:
+            for sig, handler in handlers.items():
+                signal.signal(sig, handler)

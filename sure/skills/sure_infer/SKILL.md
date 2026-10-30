@@ -22,7 +22,7 @@ Control principle: **agent decides scope, scripts execute.** You (the agent) con
 | `protocol` | — | `standard_system` (default) follows the approved model's upstream configuration. `strict_core` requires every conservative parameter to be mapped to an MCP argument or explicitly proven not applicable. |
 | `device` | — | `auto \| cpu \| cuda \| cuda:<index>`. Default `auto`; resolved by `scripts/resolve_eval_input.py` and handed to `scripts/infer_entrypoint.py` by `scripts/run_infer.py`. `cuda:<index>` selects the local host GPU by setting `CUDA_VISIBLE_DEVICES=<index>`; because the process then sees one GPU, model code receives `DEVICE=cuda:0`. The original request and the process-visible device are recorded separately. |
 | `max_samples` | — | Sample cap for bounded validation runs. Omitted or `0` means full dataset. |
-| `num_workers` | — | Optional integer `1`–`8` overriding automatic per-dataset selection. When omitted, select 1/2/4/8 Workers for fewer than 1000/2000/4000/otherwise samples in the task projection, after applying `max_samples`, then cap the result at the number of GPUs this node provides (`CUDA_VISIBLE_DEVICES` when set, otherwise `nvidia-smi`), so automatic selection never asks for hardware the node lacks. An explicit value above that count is rejected at input resolution. Allocate the maximum across all datasets before execution, then process datasets sequentially with their own Worker counts. Multiple Workers require `device=auto` or `cuda`; no silent fallback. Model calls remain single-sample. |
+| `num_workers` | — | Optional integer `1`–`8` overriding automatic per-dataset selection. By default, omission selects `ceil(selected_samples / 1000)` after `max_samples`, capped at eight and visible GPUs; automatic mixed runs use the capped sum budget and first-fit backfill. A model may explicitly opt into legacy planning with `inference.worker_policy: legacy`. Explicit counts above available GPUs are rejected. Multiple Workers require `device=auto` or `cuda`; CPU/pinned-device auto stays serial. Model calls remain single-sample. |
 | `execution` | — | `auto \| local`. Both resolve to `local_docker` or approved `local_python`; a remote cluster surface is not available here. |
 | `execution_path` | — | Legacy alias: `auto \| local_docker \| local_python`. `local_bash` is normalized to the approved local runtime; arbitrary host inference is forbidden. |
 | `metrics` | — | Comma-separated metrics the later `/sure_eval` run should report, e.g. `metrics=cer`. Recorded in the resolved input; inference itself does not evaluate. |
@@ -223,9 +223,16 @@ the prediction snapshots every 25 completed samples.
 
 ## Optional multi-GPU inference
 
+The rule below is the default. A model that cannot safely handle changed shard
+boundaries or concurrent dataset servers may explicitly declare
+`inference.worker_policy: legacy` in its normal model configuration and retain the
+old automatic 1/2/4/8 thresholds, maximum budget and serial dataset order. This is
+an exception for compatibility, not a requirement for enabling the optimization.
+Explicit counts keep their existing meaning.
+
 Omitting `num_workers` selects Workers per dataset from the projected sample count,
-limited by `max_samples`: 1–999 → 1, 1000–1999 → 2, 2000–3999 → 4, ≥4000 → 8,
-then capped at the GPUs this node provides. The cap is the allocation a local run
+limited by `max_samples`: `ceil(selected_samples / 1000)`, capped at eight and then
+at the GPUs this node provides. The cap is the allocation a local run
 will actually get: `CUDA_VISIBLE_DEVICES` when it is set, otherwise the `nvidia-smi`
 device list. A 4000-sample dataset on a two-GPU node plans two Workers, not eight,
 so automatic selection never asks for hardware the node lacks. An explicit
@@ -239,16 +246,20 @@ Each Worker sees only its assigned GPU through `CUDA_VISIBLE_DEVICES` and uses
 
 The sample cap applies once per dataset before splitting. Samples are divided
 into contiguous shards whose sizes differ by at most one; a small dataset uses
-fewer Workers. All Workers for a dataset start before waiting, and the next
-dataset starts after the current dataset's attempts finish. Smoke outputs are
-isolated under `parallel_inference/smoke/`.
+fewer Workers. All Workers for a dataset start before waiting. In automatic mixed
+runs, the run-level controller uses first-fit backfill: it scans the fixed input
+order, starts every dataset that fits the currently free GPU lease, and revisits
+skipped datasets after a lease is released. Smoke outputs are isolated under
+`parallel_inference/smoke/`.
 
 For a mixed run, each dataset uses its own planned Worker count, including a
 one-Worker dataset handled by the same isolated controller. Processes exit after
 each dataset; models are loaded again for the next. Planning and execution record
-selection mode, full and selected sample counts, planned Workers and actual shard
-count. Changed sample counts or execution evidence inconsistent with the plan are
-rejected.
+selection mode, the run GPU budget, full and selected sample counts, planned Workers
+and actual shard count. Changed sample counts or execution evidence inconsistent
+with the plan are rejected. `parallel_inference/schedule.json` records backfill
+leases and lifecycle; workers write only isolated attempt directories and the
+run-level controller publishes shared status and manifests.
 
 A Worker records each successful sample durably in its own `completed.jsonl`.
 Sample errors leave other samples running when the server remains usable.

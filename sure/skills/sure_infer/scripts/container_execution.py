@@ -12,6 +12,7 @@ from harness_runtime import harness_runtime_from_eval_input
 from deployment_binding import DEPLOYMENT_BINDING_V1, DEPLOYMENT_BINDING_V2
 from docker_runtime import resolve_docker_binary
 from evaluation_runtime import evaluation_runtime_from_eval_input
+from sure.site.loader import load_site_policy
 from execution_provenance import (
     build_execution_provenance,
     execution_provenance_env,
@@ -249,13 +250,16 @@ def build_local_container_command(
     command = [docker_binary, "run", "--rm", "--init", "--entrypoint", harness_python]
     mounted_targets: dict[str, tuple[Path, bool]] = {}
     lowered = (device_request or "auto").lower()
-    workers = int((eval_input.get("runtime") or {}).get("num_workers", 1))
+    runtime = eval_input.get("runtime") or {}
+    workers = int(runtime.get("num_workers", 1))
+    bounded_plan = bool(runtime.get("worker_policy"))
+    planned_cpu = bounded_plan and lowered == "auto" and runtime.get("device", {}).get("resolved") == "cpu"
     if workers > 1 and lowered not in {"auto", "cuda"}:
         raise ValueError("Multi-GPU inference requires device=auto or device=cuda")
-    if lowered != "cpu" and (container.get("gpu_required") is True or workers > 1):
+    if lowered != "cpu" and not planned_cpu and (container.get("gpu_required") is True or workers > 1 or bounded_plan):
         if lowered.startswith("cuda:"):
             command.extend(["--gpus", f"device={lowered.split(':', 1)[1]}"])
-        elif workers > 1:
+        elif workers > 1 or bounded_plan:
             visible = os.environ.get("CUDA_VISIBLE_DEVICES")
             if visible is None:
                 command.extend(["--gpus", str(workers)])
@@ -288,6 +292,24 @@ def build_local_container_command(
             read_only=False,
         )
 
+    # Dataset preparation runs inside the container and must use the same
+    # site policy that resolved the input on the host. Mount the explicitly
+    # selected policy read-only and pass its container-visible path through.
+    site_policy = os.environ.get("SURE_SITE_POLICY")
+    if not site_policy:
+        resolved_site = load_site_policy(repository_root=repo_root, required=False)
+        site_policy = resolved_site.get("path") if resolved_site else None
+    if site_policy:
+        site_policy_path = Path(site_policy).expanduser().resolve()
+        if site_policy_path.is_file():
+            _mount(
+                command,
+                mounted_targets,
+                site_policy_path,
+                container_path(site_policy_path),
+                read_only=True,
+            )
+
     for item in eval_input.get("datasets", []):
         if not isinstance(item, dict):
             continue
@@ -319,12 +341,16 @@ def build_local_container_command(
         value = _replace_prefix(value, model_source, model_target)
         env[key] = value
     env.update(extra_env or {})
-    if workers > 1:
+    if site_policy:
+        env["SURE_SITE_POLICY"] = container_path(Path(site_policy).expanduser().resolve())
+    if workers > 1 or (bounded_plan and "--gpus" in command):
         # Docker device ids describe host GPUs; CUDA ordinals inside the
         # restricted container are renumbered. Probe those in the entrypoint.
         env.pop("CUDA_VISIBLE_DEVICES", None)
-        env["DEVICE"] = "cuda"
-        env["SURE_EVAL_DEVICE_ACTUAL"] = "cuda"
+        env["DEVICE"] = "cuda" if workers > 1 else "cuda:0"
+        env["SURE_EVAL_DEVICE_ACTUAL"] = env["DEVICE"]
+    elif planned_cpu:
+        env.update(DEVICE="cpu", SURE_EVAL_DEVICE_ACTUAL="cpu", CUDA_VISIBLE_DEVICES="")
     env.update(
         {
             "MODEL_DIR": model_target,

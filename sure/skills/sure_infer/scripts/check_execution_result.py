@@ -22,6 +22,7 @@ from typing import Any
 import check_execution_surface_compliance as compliance
 from dataset_identity import projection_stems
 from execution_result_checks import validation_errors
+from check_worker_schedule import schedule_errors
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
@@ -111,6 +112,41 @@ def gate_errors(run_dir: Path, result_path: Path) -> list[str]:
     # rows report the canonical id. eval_input_resolved.json carries the
     # authoritative per-run mapping between the two.
     stems = projection_stems(eval_input.get("datasets"))
+    runtime = eval_input.get("runtime", {})
+    selected = runtime.get("worker_datasets")
+    if selected is not None and [row.get("dataset") for row in rows] != selected:
+        errors.append("Execution datasets differ from the final Worker scope")
+    if workers > 1 and runtime.get("worker_policy"):
+        if surface.get("inference_runtime", {}).get("num_workers") != workers:
+            errors.append("Execution surface differs from final Worker budget")
+        schedule_path = product_dir / "parallel_inference" / "schedule.json"
+        schedule = _read_json(schedule_path) or {}
+        if (not schedule_path.is_file() or parallel.get("schedule_path") != str(schedule_path)
+                or hashlib.sha256(schedule_path.read_bytes()).hexdigest() != parallel.get("schedule_sha256")):
+            errors.append("Worker schedule is missing or its digest/reference changed")
+        names = [stems.get(name, name) for name in (selected or [])]
+        if [row.get("dataset") for row in status.get("datasets", [])] != names:
+            errors.append("Generation status differs from final dataset scope/order")
+        if runtime.get("run_id") and schedule.get("run_id") != runtime["run_id"]:
+            errors.append("Worker schedule belongs to another run")
+        strategy = "first_fit_backfill" if runtime["worker_policy"] == "independent_samples_v1" else "serial"
+        errors.extend(schedule_errors(product_dir, schedule, names, workers, parallel.get("gpu_devices", []), strategy))
+        for name in names:
+            try:
+                reference = product_dir / "references/sure_benchmark/jsonl" / f"{name}.jsonl"
+                samples = [json.loads(line) for line in reference.read_text().splitlines() if line.strip()]
+                cap = runtime.get("max_samples", 0)
+                expected_keys = [str(row["key"]) for row in (samples[:cap] if cap else samples)]
+                predictions = product_dir / "predictions" / f"{name}.jsonl"
+                actual_rows = [json.loads(line) for line in predictions.read_text().splitlines() if line.strip()]
+                text_rows = (product_dir / "predictions" / f"{name}.txt").read_text().splitlines()
+                if (len(set(expected_keys)) != len(expected_keys)
+                        or [str(row["key"]) for row in actual_rows] != expected_keys
+                        or any(row["dataset"] != name for row in actual_rows)
+                        or text_rows != [f"{row['key']}\t{row['normalized_prediction']}" for row in actual_rows]):
+                    errors.append(f"Prediction key scope/order or dataset differs: {name}")
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                errors.append(f"Cannot verify prediction scope for {name}: {exc}")
     plans = {stems[str(row["name"])]: row for row in eval_input.get("datasets", [])
              if isinstance(row, dict) and "planned_workers" in row}
     if not (product_dir / "protocol.yaml").is_file():

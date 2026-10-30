@@ -41,6 +41,8 @@
 			"properties": {
 				"requested_workers": { "type": "integer", "minimum": 1, "maximum": 8 },
 				"worker_selection": { "enum": ["auto", "explicit"] },
+				"schedule_path": { "type": "string" },
+				"schedule_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
 				"gpu_devices": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
 				"recovery_available": { "type": "boolean" },
 				"datasets": {
