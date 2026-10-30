@@ -57,9 +57,7 @@ LOWER_IS_BETTER_METRICS = {
     "tts_cer",
     "vc_wer",
     "vc_cer",
-    "rir_nmse",
     "rir_npm",
-    "rir_l1_mae",
     "rt30_mae",
     "rt60_mae",
     "rir_drr_mae",
@@ -76,10 +74,7 @@ LOWER_IS_BETTER_METRICS = {
     "rir_doa_mae",
 }
 RIR_METRIC_UNITS = {
-    "rir_nmse": "normalized",
     "rir_npm": "dB",
-    "rir_l1_mae": "normalized",
-    "rir_corr": "coefficient",
     "rt30_mae": "s",
     "rt60_mae": "s",
     "rir_drr_mae": "dB",
@@ -465,10 +460,14 @@ def _write_external_audio_samples_jsonl(
                 "sample_id": key,
                 "prediction_rir": generated_rir,
                 "reference_rir": reference_rir,
-                "sample_rate": sample.get("sample_rate") or structured.get("sample_rate"),
-                "channel_layout": sample.get("channel_layout") or structured.get("channel_layout"),
                 "metadata": _rir_metadata(sample, structured),
             }
+            for field in ("sample_rate", "channel_layout"):
+                value = sample.get(field)
+                if value is None:
+                    value = structured.get(field)
+                if value is not None:
+                    row[field] = value
             missing_roles = [role for role in ("prediction_rir", "reference_rir") if not row.get(role)]
             if missing_roles:
                 raise ValueError(

@@ -231,16 +231,6 @@ class RIRMetricReportTests(unittest.TestCase):
                 self.assertEqual(report["metric"]["display"], f"{score:.6f} {unit}")
                 self.assertFalse(report["metric"]["higher_is_better"])
 
-    def test_rir_correlation_remains_higher_is_better(self) -> None:
-        report = ep._standard_report_row_v1(
-            row={"dataset": "rir", "task": "RIR", "metric": "rir_corr", "result": {"score": 0.75}},
-            validation={}, run_id="run1", protocol_id="proto1", model_dir=None,
-            tool_name="rir_model",
-        )
-        self.assertEqual(report["metric"]["unit"], "coefficient")
-        self.assertEqual(report["metric"]["display"], "0.750000 coefficient")
-        self.assertTrue(report["metric"]["higher_is_better"])
-
 
 class SotaFallbackTests(unittest.TestCase):
     def setUp(self) -> None:
