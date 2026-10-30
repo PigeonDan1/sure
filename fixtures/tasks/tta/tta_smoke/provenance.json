@@ -24,7 +24,7 @@
   "annotations": {
     "source": "dataset metadata or deterministic fixture transform",
     "ground_truth_path": "gt.jsonl",
-    "ground_truth_sha256": "1b057a5b63554407172e35fb1c864b7b076645452230984d22bfbd1dc304bb9f"
+    "ground_truth_sha256": "1f5e8f5d7a2feac04d027c574d6de5b633f91fb3d01bf8e22acddfb1b7abdd67"
   },
   "transforms": [
     {
@@ -34,12 +34,30 @@
   ],
   "files": [
     {
+      "path": "ref_dog_park.wav",
+      "roles": [
+        "reference_audio"
+      ],
+      "sha256": "879c2bfe1e6b44b554295c08ccd573e86eb090f98d2aa4f5ee4bea2598bc0650",
+      "transform_id": "source_media_copy",
+      "source_sha256": "879c2bfe1e6b44b554295c08ccd573e86eb090f98d2aa4f5ee4bea2598bc0650"
+    },
+    {
+      "path": "ref_rain_roof.wav",
+      "roles": [
+        "reference_audio"
+      ],
+      "sha256": "aa49f3efc7db9cc4596862d2fe8027705037ac3bdd98044f38629e5cd30d8d9f",
+      "transform_id": "source_media_copy",
+      "source_sha256": "aa49f3efc7db9cc4596862d2fe8027705037ac3bdd98044f38629e5cd30d8d9f"
+    },
+    {
       "path": "gt.jsonl",
       "roles": [
         "ground_truth"
       ],
-      "sha256": "1b057a5b63554407172e35fb1c864b7b076645452230984d22bfbd1dc304bb9f",
-      "source_sha256": "1b057a5b63554407172e35fb1c864b7b076645452230984d22bfbd1dc304bb9f",
+      "sha256": "1f5e8f5d7a2feac04d027c574d6de5b633f91fb3d01bf8e22acddfb1b7abdd67",
+      "source_sha256": "1f5e8f5d7a2feac04d027c574d6de5b633f91fb3d01bf8e22acddfb1b7abdd67",
       "transform_id": "source_media_copy"
     }
   ]
