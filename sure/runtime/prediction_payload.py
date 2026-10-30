@@ -75,7 +75,7 @@ def normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict[
                 value = ""
             normalized_value = single_line_text(value)
             return normalized_value, {field: normalized_value, "text": normalized_value}
-        if task_name in {"TTS", "VC", "SE", "TSE"}:
+        if task_name in {"TTS", "VC", "SE", "TSE", "TTA"}:
             value = (
                 prediction.get("audio_path")
                 or prediction.get("path")
@@ -94,7 +94,7 @@ def normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict[
                         normalized[key] = path_text(prediction[key], field=key)
             elif task_name == "SE":
                 normalized["enhanced_audio"] = normalized_value
-            elif task_name == "TSE":
+            elif task_name in {"TSE", "TTA"}:
                 normalized["prediction_audio"] = normalized_value
             for key in ("sample_rate", "duration_ms"):
                 if prediction.get(key) is not None:
@@ -199,19 +199,19 @@ def normalize_prediction_payload(payload: Any, *, task: str) -> tuple[str, dict[
     if task_name in {"SV", "DOA"}:
         field = str(task_profile(task)["io_contract"]["primary_field"])
         raise ValueError(f"{task_name} prediction must be a JSON object with {field}")
-    if task_name in {"TTS", "VC", "SE", "TSE"}:
+    if task_name in {"TTS", "VC", "SE", "TSE", "TTA"}:
         value = path_text(payload, field="audio_path")
     elif task_name in {"SD", "SA_ASR"}:
         value = path_text(payload, field="annotation_path")
     else:
         value = single_line_text(payload)
-    if task_name in {"TTS", "VC", "SE", "TSE"}:
+    if task_name in {"TTS", "VC", "SE", "TSE", "TTA"}:
         normalized = {"audio_path": value}
         if task_name == "VC":
             normalized["converted_audio"] = value
         elif task_name == "SE":
             normalized["enhanced_audio"] = value
-        elif task_name == "TSE":
+        elif task_name in {"TSE", "TTA"}:
             normalized["prediction_audio"] = value
         return value, normalized
     if task_name in {"CLASSIFICATION", "LID", "SER", "GR"}:

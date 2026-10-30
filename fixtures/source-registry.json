@@ -41,6 +41,16 @@
 			"source_url": "https://www.openslr.org/12",
 			"citation_url": "https://www.danielpovey.com/files/2015_icassp_librispeech.pdf"
 		},
+		"sure_tta_smoke": {
+			"repository": "PigeonDan1/sure",
+			"revision": "synthetic TTA smoke fixture",
+			"configuration": "tta_smoke",
+			"split": "test",
+			"license": "MIT",
+			"license_url": "https://github.com/PigeonDan1/sure/blob/harness-tui-agent/LICENSE",
+			"source_url": "https://github.com/PigeonDan1/sure/tree/harness-tui-agent/fixtures/tasks/tta/tta_smoke",
+			"citation_url": "https://github.com/PigeonDan1/sure/blob/harness-tui-agent/fixtures/tasks/tta/README.md"
+		},
 		"aishell1": {
 			"repository": "OpenSLR SLR33",
 			"revision": "AISHELL-1 corpus release",

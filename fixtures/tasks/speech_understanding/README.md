@@ -28,6 +28,7 @@ sure/models/<model>/fixture/
 | SLU | `fixtures/tasks/slu/README.md` | `fixtures/tasks/slu/fluent_speech_commands_smoke/` |
 | SV | `fixtures/tasks/sv/README.md` | `fixtures/tasks/sv/librispeech_trials_smoke/` |
 | TSE | `fixtures/tasks/tse/README.md` | `fixtures/tasks/tse/librispeech_mix_smoke/` |
+| TTA | `fixtures/tasks/tta/README.md` | `fixtures/tasks/tta/tta_smoke/` |
 | TTS | `fixtures/tasks/tts/README.md` | `fixtures/tasks/tts/librispeech_prompt_smoke/` |
 | VAD | `fixtures/tasks/vad/README.md` | `fixtures/tasks/vad/librispeech_silence_smoke/` |
 | VC | `fixtures/tasks/vc/README.md` | `fixtures/tasks/vc/librispeech_voice_conversion_smoke/` |
@@ -54,6 +55,7 @@ src/sure_eval/evaluation/tasks/sa_asr/
 src/sure_eval/evaluation/tasks/se/
 src/sure_eval/evaluation/tasks/sv/
 src/sure_eval/evaluation/tasks/tse/
+src/sure_eval/evaluation/tasks/tta/
 src/sure_eval/evaluation/tasks/tts/
 src/sure_eval/evaluation/tasks/vad/
 src/sure_eval/evaluation/tasks/vc/

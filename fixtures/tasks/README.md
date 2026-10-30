@@ -34,6 +34,7 @@ all model directories.
 | SLU | `slu/README.md` | `slu/fluent_speech_commands_smoke/` |
 | SV | `sv/README.md` | `sv/librispeech_trials_smoke/` |
 | TSE | `tse/README.md` | `tse/librispeech_mix_smoke/` |
+| TTA | `tta/README.md` | `tta/tta_smoke/` |
 | TTS | `tts/README.md` | `tts/librispeech_prompt_smoke/` |
 | VAD | `vad/README.md` | `vad/librispeech_silence_smoke/` |
 | VC | `vc/README.md` | `vc/librispeech_voice_conversion_smoke/` |

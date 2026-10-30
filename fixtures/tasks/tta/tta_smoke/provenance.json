@@ -1,0 +1,46 @@
+{
+  "schema": "sure.fixture_provenance.v2",
+  "task": "tta",
+  "dataset": {
+    "repository": "PigeonDan1/sure",
+    "revision": "synthetic TTA smoke fixture",
+    "configuration": "tta_smoke",
+    "split": "test",
+    "license": "MIT",
+    "license_url": "https://github.com/PigeonDan1/sure/blob/harness-tui-agent/LICENSE",
+    "source_url": "https://github.com/PigeonDan1/sure/tree/harness-tui-agent/fixtures/tasks/tta/tta_smoke",
+    "citation_url": "https://github.com/PigeonDan1/sure/blob/harness-tui-agent/fixtures/tasks/tta/README.md",
+    "source_id": "sure_tta_smoke",
+    "metadata_sha256": "5d747bf3ba66eba87223adf6403bf277bf02265fda926bc75a9e89708d918fb5",
+    "metadata_hash_basis": "canonical selected key/task/annotation projection"
+  },
+  "selection": {
+    "rule": "deterministic smoke subset with task-native labels and at most five inference samples",
+    "sample_ids": [
+      "tta_smoke_001",
+      "tta_smoke_002"
+    ]
+  },
+  "annotations": {
+    "source": "dataset metadata or deterministic fixture transform",
+    "ground_truth_path": "gt.jsonl",
+    "ground_truth_sha256": "1b057a5b63554407172e35fb1c864b7b076645452230984d22bfbd1dc304bb9f"
+  },
+  "transforms": [
+    {
+      "id": "source_media_copy",
+      "command": "copy source media bytes without modification; verify SHA-256"
+    }
+  ],
+  "files": [
+    {
+      "path": "gt.jsonl",
+      "roles": [
+        "ground_truth"
+      ],
+      "sha256": "1b057a5b63554407172e35fb1c864b7b076645452230984d22bfbd1dc304bb9f",
+      "source_sha256": "1b057a5b63554407172e35fb1c864b7b076645452230984d22bfbd1dc304bb9f",
+      "transform_id": "source_media_copy"
+    }
+  ]
+}

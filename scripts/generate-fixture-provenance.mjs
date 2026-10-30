@@ -24,6 +24,7 @@ const taskSources = {
 	slu: "fluent_speech_commands",
 	sv: "librispeech",
 	tse: "librispeech",
+	tta: "sure_tta_smoke",
 	tts: "librispeech",
 	vad: "librispeech",
 	vc: "librispeech",
@@ -160,6 +161,15 @@ for (const [task, profile] of Object.entries(profiles.tasks)) {
 		} catch (error) {
 			if (!(error instanceof Error) || !error.message.includes("ENOENT")) throw error;
 		}
+	}
+	if (task === "tta") {
+		payload.files.push({
+			path: "gt.jsonl",
+			roles: ["ground_truth"],
+			sha256: hash(groundTruthPath),
+			source_sha256: hash(groundTruthPath),
+			transform_id: "source_media_copy",
+		});
 	}
 	const outputPath = join(fixtureRoot, "provenance.json");
 	const output = `${JSON.stringify(payload, null, 2)}\n`;

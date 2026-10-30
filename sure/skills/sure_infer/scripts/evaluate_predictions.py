@@ -448,6 +448,17 @@ def _write_external_audio_samples_jsonl(
                 "language": language,
                 "metadata": {"dataset": structured.get("dataset"), "task": "TSE", "source_key": key},
             }
+        elif task_upper == "TTA":
+            row = {
+                "sample_id": key,
+                "prediction_audio": generated_audio,
+                "reference_audio": _localize_sample_audio_path(
+                    sample.get("reference_audio"), dataset_jsonl_path
+                ),
+                "caption": str(sample.get("caption") or sample.get("text") or sample.get("prompt") or ""),
+                "language": language,
+                "metadata": {"dataset": structured.get("dataset"), "task": "TTA", "source_key": key},
+            }
         else:
             raise ExternalEvaluationUnsupported(f"task {task!r} does not use samples_jsonl audio bridge")
         missing_roles = [role for role in sorted(required_roles) if not row.get(role)]
@@ -1890,6 +1901,10 @@ def _write_sample_report(
                 row["generated_audio"] = prediction
                 row["reference_text"] = _sample_reference_text(sample)
                 row["reference_audio"] = _sample_reference_audio(sample)
+            elif task == "TTA":
+                row["generated_audio"] = prediction
+                row["caption"] = str(sample.get("caption") or sample.get("text") or sample.get("prompt") or "")
+                row["reference_audio"] = str(sample.get("reference_audio") or "")
             elif task == "VC":
                 row["converted_audio"] = prediction
                 row["reference_text"] = _sample_reference_text(sample)
