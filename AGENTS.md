@@ -122,6 +122,11 @@ Our pi is pi 0.85.1 plus the patches below. This list is the record; keep it cur
 - SURE run settlement on `agent_settled` instead of `agent_end` / `willRetry`.
 - Bounded automatic continuation and a distinct system-failure manifest when an agent or provider stops without an accepted `sure_finish`; skill success gates remain unchanged.
 - `callContextHandlerAbortable` in `src/core/extensions/runner.ts`, so `context` event handlers abort with `ctx.signal` instead of running to completion after a cancelled run.
+- SURE agent transport contracts in `src/core/sure/agent-invocation.ts` (`sure.agent.request.v1`), native `/sure_invoke`, structured output resolution via `resolveOutputDirPath`, and `invocationId` on run records.
+- The `sure.agent.receipt.v1` receipt and correlated evidence snapshots used by the external wrapper.
+- The external bridge fixtures in `packages/coding-agent/test/fixtures/sure-agent` and
+  `skills/sure/scripts/test_run.py`, including native trust, forbidden-output,
+  correlated-receipt, and cancellation coverage.
 
 `packages/ai`:
 
@@ -184,6 +189,13 @@ sure/skills/<skill-name>/
   examples/         # usage examples
 ```
 
+There are two skill kinds. The top-level external-discovery package at
+`skills/sure` has `SKILL.md` and `scripts/` but no `sure.skill.json`; it is
+exposed through `.agents/skills/sure` (the distribution symlink). Harness-native
+workflow packages live at `sure/skills/sure_*`, include `sure.skill.json`, hooks,
+and schemas, and are discovered by the native harness. Keep these namespaces
+separate.
+
 Shared memory code lives outside the skill packages, next to the harness runtime:
 
 ```text
@@ -194,6 +206,7 @@ sure/memory/              # instance data, git-ignored, group-writable in a shar
 ### Targeted Checks
 
 ```bash
+npm run test:sure-agent-skill
 npm run check:sure-hooks
 python3 -m py_compile sure/skills/sure_infer/scripts/*.py
 python3 -m py_compile sure/skills/sure_agent_eval/scripts/*.py

@@ -1,0 +1,4 @@
+interface:
+  display_name: "SURE"
+  short_description: "Initialize, onboard, infer and evaluate with SURE"
+  default_prompt: "Use $sure to complete the requested SURE workflow and return its validated artifacts."

@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sure.agent.receipt.v1",
+  "title": "SURE external agent invocation receipt",
+  "type": "object",
+  "required": ["schema", "invocation_id", "command", "status", "started_at"],
+  "properties": {
+    "schema": {"const": "sure.agent.receipt.v1"},
+    "invocation_id": {"type": "string", "pattern": "^[a-f0-9]{32}$"},
+    "command": {"type": "string", "pattern": "^/sure_[a-z_]+$"},
+    "status": {"enum": ["running", "planned", "success", "failed", "blocked", "incomplete", "cancelled", "timed_out"]},
+    "started_at": {"type": "string", "format": "date-time"},
+    "finished_at": {"type": "string", "format": "date-time"},
+    "exit_code": {"type": "integer"},
+    "run_id": {"type": "string"},
+    "run_dir": {"type": "string"},
+    "receipt_path": {"type": "string"},
+    "evidence_path": {"type": "string"},
+    "manifest_path": {"type": "string"},
+    "artifacts_path": {"type": "string"},
+    "artifacts_target": {"type": "string"},
+    "products": {"type": "array", "items": {"type": "string"}},
+    "error": {"type": "string"},
+    "trace_summary": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}}
+  },
+  "additionalProperties": true
+}

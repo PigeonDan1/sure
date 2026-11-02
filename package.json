@@ -20,6 +20,7 @@
 		"test:repository-hygiene": "node --test scripts/check-repository-hygiene.test.mjs",
 		"test:site-compatibility-rules": "node --test scripts/site-compatibility-rules.test.mjs",
 		"test:sure-doctor": "node --test scripts/sure-doctor.test.mjs",
+		"test:sure-agent-skill": "python3 -m unittest discover -s skills/sure/scripts -p 'test_*.py'",
 		"public:export": "node scripts/export-public.mjs",
 		"sure:site-info": "node --import tsx scripts/sure-site-info.ts",
 		"sure:site-check": "node --import tsx scripts/sure-site-check.ts",

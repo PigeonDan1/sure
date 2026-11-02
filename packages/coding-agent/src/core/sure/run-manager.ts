@@ -90,7 +90,7 @@ export class SureRunManager {
 		return join(this.cwd, SURE_RUNS_DIR);
 	}
 
-	createRun(skillPackage: SureSkillPackage, args: string, outputDir?: string): SureRunRecord {
+	createRun(skillPackage: SureSkillPackage, args: string, outputDir?: string, invocationId?: string): SureRunRecord {
 		const runId = `${safeTimestamp()}-${randomUUID().slice(0, 8)}`;
 		const runDir = join(this.runsRoot, runId);
 		mkdirSync(runDir, { recursive: true });
@@ -107,6 +107,7 @@ export class SureRunManager {
 			runDir,
 			args,
 			outputDir,
+			invocationId,
 			startedAt: nowIso(),
 			updatedAt: nowIso(),
 		};
@@ -199,6 +200,7 @@ export class SureRunManager {
 		writeJson(join(outputDir, RESULT_FILE), {
 			schema: "sure.run_result.v1",
 			command: `/${record.command.replace(/^\//, "")}`,
+			invocation_id: record.invocationId,
 			args: record.args,
 			run_id: record.runId,
 			run_dir: record.runDir,

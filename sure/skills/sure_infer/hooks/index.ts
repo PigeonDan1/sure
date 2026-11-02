@@ -270,8 +270,9 @@ export function preStart(ctx: SureHookContext): SureHookResult {
 	if (typeof args.run_id === "string") {
 		resolveArgs.push("--run-id", args.run_id);
 	}
-	if (typeof args.output_dir === "string") {
-		resolveArgs.push("--output-dir", args.output_dir);
+	const outputDir = ctx.run.outputDir ?? args.output_dir;
+	if (typeof outputDir === "string") {
+		resolveArgs.push("--output-dir", outputDir);
 	}
 	if (typeof args.evaluation_backend === "string") {
 		resolveArgs.push("--evaluation-backend", args.evaluation_backend);

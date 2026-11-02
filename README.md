@@ -11,6 +11,34 @@ SURE turns model deployment, environment adaptation, inference-code generation, 
 
 *One discover, onboard, approve, infer, evaluate session, replayed as a self-contained SVG animation. Regenerate with `node scripts/generate-readme-terminal.mjs`.*
 
+## Use SURE from another agent
+
+[`skills/sure/SKILL.md`](skills/sure/SKILL.md) is the single entry point for the
+complete SURE workflow: init, feed, onboard, trans, approve, infer, eval,
+agent_eval and resume. This checkout exposes it through `.agents/skills/sure`.
+Start a new agent session here and invoke `$sure`. To use it from another project,
+link the absolute `skills/sure` directory into your agent's skill directory
+(Codex: `~/.agents/skills/sure`). Keep the installed harness checkout available.
+
+The skill includes a Python 3.10+ helper that can be called from any directory
+(use `uv run --no-project --python 3.11` in place of `python` if needed):
+
+```bash
+python /path/to/sure/skills/sure/scripts/run.py list
+python /path/to/sure/skills/sure/scripts/run.py feed --arguments 'url=<model-url>' --dry-run
+```
+
+After setup, replace `--dry-run` with `--trust` to invoke the native harness in
+JSON print mode through the structured native bridge. `--trust` explicitly trusts this checkout for that invocation;
+without it the harness keeps its project-trust check. The helper returns JSON,
+checks correlated persisted terminal evidence and exits nonzero for non-success outcomes.
+It keeps the native state machines, runtime locks and human approval gates.
+Read the [skill's workflow examples](skills/sure/references/workflows.md) for
+initialization, handoffs, inference, scoring, approval and recovery. Provider
+configuration belongs to SURE, even when the calling agent already has a login.
+The existing-prediction scoring command in this version is `sure_eval`;
+`sure_infer` runs the model.
+
 ## Distribution
 
 This repository supports two distributions from one codebase:

@@ -11,11 +11,12 @@ import {
 	type ExtensionContext,
 	type ExtensionFactory,
 } from "../extensions/index.ts";
+import { inspectSureAgentRequest, parseSureAgentRequest, type SureAgentRequest } from "./agent-invocation.ts";
 import { SureHookRunner } from "./hooks.ts";
-import { runSureInit } from "./init.ts";
+import { parseInitArgs, runSureInit } from "./init.ts";
 import type { SureInitManifest } from "./init-types.ts";
 import { discoverSureSkillPackages, SURE_COMMANDS, type SureDiscoveryDiagnostic } from "./manifest.ts";
-import { resolveOutputDir, stripOutputDir } from "./output-dir.ts";
+import { resolveOutputDir, resolveOutputDirPath, stripOutputDir } from "./output-dir.ts";
 import { SureRunManager } from "./run-manager.ts";
 import { formatSureDisplayStatus, normalizeSureDisplayStatePatch } from "./state.ts";
 import { recordAssistantUsage } from "./token-usage.ts";
@@ -503,12 +504,28 @@ function validateManifestEnvelope(
 	return undefined;
 }
 
+function notifyAgentRun(ctx: ExtensionCommandContext, request: SureAgentRequest, run: SureRunRecord): void {
+	ctx.ui.notify(
+		JSON.stringify({
+			schema: "sure.agent.dispatch.v1",
+			invocation_id: request.invocation_id,
+			command: request.command,
+			status: "accepted",
+			run_id: run.runId,
+			run_dir: run.runDir,
+			run_command: run.command,
+		}),
+		"info",
+	);
+}
+
 async function startRun(
 	pi: ExtensionAPI,
 	ctx: ExtensionCommandContext,
 	skillPackage: SureSkillPackage,
 	args: string,
 	setActiveRun: (run: ActiveRun | undefined) => void,
+	request?: SureAgentRequest,
 ): Promise<void> {
 	if (!ctx.isIdle()) {
 		ctx.ui.notify("Cannot start a Sure run while the agent is busy.", "warning");
@@ -519,14 +536,16 @@ async function startRun(
 		return;
 	}
 
-	const outputDir = resolveOutputDir(args);
+	const outputDir = request ? resolveOutputDirPath(request.output_dir) : resolveOutputDir(args);
 	if (!outputDir.ok) {
+		if (request) throw new Error(outputDir.error ?? "Sure rejected the requested output_dir.");
 		ctx.ui.notify(outputDir.error ?? "Sure rejected the requested output_dir.", "error");
 		return;
 	}
 
 	const runManager = new SureRunManager(ctx.cwd);
-	const record = runManager.createRun(skillPackage, args, outputDir.dir);
+	const record = runManager.createRun(skillPackage, args, outputDir.dir, request?.invocation_id);
+	if (request) notifyAgentRun(ctx, request, record);
 	const active: ActiveRun = {
 		record,
 		skillPackage,
@@ -602,6 +621,7 @@ async function resumeRun(
 	ctx: ExtensionCommandContext,
 	setActiveRun: (run: ActiveRun | undefined) => void,
 	runId: string | undefined,
+	request?: SureAgentRequest,
 ): Promise<void> {
 	if (!ctx.isIdle()) {
 		ctx.ui.notify("Cannot resume a Sure run while the agent is busy.", "warning");
@@ -627,6 +647,7 @@ async function resumeRun(
 		}
 	}
 	if (!resumed) {
+		if (request) throw new Error(`Sure run ${runId} has no resumable checkpoint for this project.`);
 		ctx.ui.notify(
 			runId
 				? `Sure run ${runId} cannot be resumed: no resumable checkpoint for this project.`
@@ -655,7 +676,12 @@ async function resumeRun(
 	setActiveRun(active);
 	// pre_start is deliberately not re-run: it resolves inputs and resets the
 	// checkpoint to the first unit, which is the progress a resume is protecting.
-	active.record = runManager.updateRun(active.record, { status: "running", finishedAt: undefined }, "resumed");
+	active.record = runManager.updateRun(
+		active.record,
+		{ status: "running", finishedAt: undefined, ...(request ? { invocationId: request.invocation_id } : {}) },
+		"resumed",
+	);
+	if (request) notifyAgentRun(ctx, request, active.record);
 	pi.setActiveTools(activeToolNames(active));
 	const unit = unfinishedUnit(resumed.state);
 	if (unit) {
@@ -1045,6 +1071,61 @@ export function createSureExtension(): ExtensionFactory {
 				},
 			}),
 		);
+
+		pi.registerCommand("sure_invoke", {
+			description: "Invoke a SURE workflow with a structured external-agent request",
+			handler: async (raw, ctx) => {
+				let request: SureAgentRequest | undefined;
+				try {
+					request = parseSureAgentRequest(raw);
+					if (!ctx.isProjectTrusted()) throw new Error("SURE project is not trusted.");
+					if (!ctx.isIdle() || activeRun) throw new Error("A SURE run or agent turn is already active.");
+					inspectSureAgentRequest(ctx.cwd, request);
+					if (request.command === "sure_init") {
+						const result = await runSureInit({ ctx, args: request.arguments });
+						const expectedModel = parseInitArgs(request.arguments).model;
+						if (result.success && expectedModel && result.manifest?.defaultModel !== expectedModel) {
+							throw new Error("Native initialization returned a different model than requested.");
+						}
+						if (result.success && result.manifest) await switchToInitializedModel(pi, ctx, result.manifest);
+						ctx.ui.notify(
+							JSON.stringify({
+								schema: "sure.agent.dispatch.v1",
+								invocation_id: request.invocation_id,
+								command: request.command,
+								status: result.success && result.manifest?.uvOk ? "success" : "blocked",
+								init_manifest: result.manifest,
+								expected_model: expectedModel,
+								error: result.success ? undefined : result.message,
+								next_action: result.nextAction,
+							}),
+							result.success ? "info" : "error",
+						);
+						return;
+					}
+					if (request.command === "sure_resume") {
+						await resumeRun(pi, ctx, setActiveRun, request.arguments.trim(), request);
+						return;
+					}
+					const skill = discoverSureSkillPackages(ctx.cwd).packages.find(
+						(entry) => entry.manifest.command === request?.command,
+					);
+					if (!skill) throw new Error(`No native skill for ${request.command}.`);
+					await startRun(pi, ctx, skill, request.arguments, setActiveRun, request);
+				} catch (error) {
+					ctx.ui.notify(
+						JSON.stringify({
+							schema: "sure.agent.dispatch.v1",
+							invocation_id: request?.invocation_id,
+							command: request?.command,
+							status: "blocked",
+							error: error instanceof Error ? error.message : String(error),
+						}),
+						"error",
+					);
+				}
+			},
+		});
 
 		pi.registerCommand("sure_init", {
 			description: "Initialize SURE: select agent, configure auth, and validate environment",
