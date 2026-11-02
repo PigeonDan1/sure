@@ -42,6 +42,7 @@ TASK_CASES = {
         {"detected": False, "keyword": None, "score": 0.0},
     ),
     "lid": ({"label": "en"}, "en", {"label": "en", "language": "en"}),
+    "rir": ({"rir_path": "prediction.wav"}, "prediction.wav", {"rir_path": "prediction.wav", "prediction_rir": "prediction.wav"}),
     "s2tt": ({"translation": "translated text"}, "translated text", {"translation": "translated text", "text": "translated text"}),
     "sa_asr": ({"segments": TRANSCRIPTION}, TRANSCRIPTION, {"segments": TRANSCRIPTION}),
     "sd": ({"segments": DIARIZATION}, DIARIZATION, {"segments": DIARIZATION}),
@@ -50,6 +51,7 @@ TASK_CASES = {
     "slu": ({"answer": "activate_lights"}, "activate_lights", {"answer": "activate_lights", "text": "activate_lights"}),
     "sv": ({"embedding": [0, 0.5]}, [0, 0.5], {"embedding": [0, 0.5]}),
     "tse": ({"audio_path": "generated.wav"}, "generated.wav", {"audio_path": "generated.wav", "prediction_audio": "generated.wav"}),
+    "tta": ({"audio_path": "generated.wav"}, "generated.wav", {"audio_path": "generated.wav", "prediction_audio": "generated.wav"}),
     "tts": ({"audio_path": "generated.wav", "sample_rate": 16000}, "generated.wav", {"audio_path": "generated.wav", "sample_rate": 16000}),
     "vad": ({"speech_segments": []}, {"speech_segments": []}, {"speech_segments": []}),
     "vc": ({"audio_path": "generated.wav"}, "generated.wav", {"audio_path": "generated.wav", "converted_audio": "generated.wav"}),
@@ -85,6 +87,29 @@ class TaskProjectionContractTests(unittest.TestCase):
         for task, field in (("ASR", "text"), ("S2TT", "translation"), ("SLU", "answer")):
             with self.subTest(task=task):
                 self._assert_case(task, "hello\nworld", "hello world", {field: "hello world", "text": "hello world"})
+
+    def test_rir_projection_preserves_channel_metadata(self) -> None:
+        payload = {"prediction": {
+            "rir_path": "estimate.wav",
+            "sample_rate": 16000,
+            "channel_layout": "multi_channel",
+            "microphone_spacing_m": 0.04,
+            "sound_speed_mps": 343,
+        }}
+        self._assert_case(payload=payload, task="RIR", expected_projection="estimate.wav", expected_prediction={
+            "rir_path": "estimate.wav",
+            "prediction_rir": "estimate.wav",
+            "sample_rate": 16000,
+            "channel_layout": "multi_channel",
+            "microphone_spacing_m": 0.04,
+            "sound_speed_mps": 343,
+        })
+
+    def test_rir_projection_rejects_multiline_path(self) -> None:
+        for payload in ({"rir_path": "estimate.wav\nother.wav"}, "estimate.wav\nother.wav"):
+            with self.subTest(payload=payload):
+                with self.assertRaisesRegex(ValueError, "rir_path cannot contain newline"):
+                    gp._normalize_prediction_payload(payload, task="RIR")
 
 
 class AsrPayloadNormalizationTests(unittest.TestCase):
@@ -395,6 +420,7 @@ class AsrPayloadNormalizationTests(unittest.TestCase):
         cases = [
             ("SE", "enhanced_audio"),
             ("TSE", "prediction_audio"),
+            ("TTA", "prediction_audio"),
             ("VC", "converted_audio"),
         ]
         for task, field in cases:

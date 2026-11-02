@@ -1,0 +1,54 @@
+{
+  "schema": "sure.fixture_provenance.v2",
+  "task": "rir",
+  "dataset": {
+    "repository": "PigeonDan1/sure",
+    "revision": "synthetic RIR smoke fixture",
+    "configuration": "rir_smoke",
+    "split": "test",
+    "license": "MIT",
+    "license_url": "https://github.com/PigeonDan1/sure/blob/harness-tui-agent/LICENSE",
+    "source_url": "https://github.com/PigeonDan1/sure/tree/harness-tui-agent/fixtures/tasks/rir/rir_smoke",
+    "citation_url": "https://github.com/PigeonDan1/sure/blob/harness-tui-agent/fixtures/tasks/rir/README.md",
+    "source_id": "sure_rir_smoke",
+    "metadata_sha256": "5e225d062e1909c75ab0844a295298671cafd5d0081c735b95f6315beb2bf44e",
+    "metadata_hash_basis": "canonical selected key/task/annotation projection"
+  },
+  "selection": {
+    "rule": "deterministic smoke subset with task-native labels and at most five inference samples",
+    "sample_ids": [
+      "rir_smoke_001"
+    ]
+  },
+  "annotations": {
+    "source": "dataset metadata or deterministic fixture transform",
+    "ground_truth_path": "gt.jsonl",
+    "ground_truth_sha256": "a48d6b7f13fc29ef61feb00dad5908ec23e24615ef5b2d255a5f8577e18fa8b3"
+  },
+  "transforms": [
+    {
+      "id": "source_media_copy",
+      "command": "copy source media bytes without modification; verify SHA-256"
+    }
+  ],
+  "files": [
+    {
+      "path": "reference.wav",
+      "roles": [
+        "reference_rir"
+      ],
+      "sha256": "249c9fd8870e4b5a19b870d369ab0a8d4d3f3a89b540264c6b44d2ff509800d0",
+      "transform_id": "source_media_copy",
+      "source_sha256": "249c9fd8870e4b5a19b870d369ab0a8d4d3f3a89b540264c6b44d2ff509800d0"
+    },
+    {
+      "path": "gt.jsonl",
+      "roles": [
+        "ground_truth"
+      ],
+      "sha256": "a48d6b7f13fc29ef61feb00dad5908ec23e24615ef5b2d255a5f8577e18fa8b3",
+      "source_sha256": "a48d6b7f13fc29ef61feb00dad5908ec23e24615ef5b2d255a5f8577e18fa8b3",
+      "transform_id": "source_media_copy"
+    }
+  ]
+}

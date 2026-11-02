@@ -414,7 +414,7 @@ def task_defaults(task: str) -> dict[str, Any]:
     contract = io_contract_for_task(normalized)
     tool_name = str(profile["tool_name"])
     fixture_root = str(profile["fixture_root"])
-    if contract["input_type"] == "text_with_reference_audio":
+    if contract["input_type"] in {"text", "text_with_reference_audio"}:
         infer_test = f"model.{tool_name}('Hello from the SURE smoke fixture.')"
     elif contract["input_type"] == "audio_pair":
         infer_test = f"model.{tool_name}('<source-audio>', '<reference-audio>')"

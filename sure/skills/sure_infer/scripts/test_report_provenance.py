@@ -201,6 +201,37 @@ class ScoreNormalizationLabelTests(unittest.TestCase):
         self.assertEqual(report_row["metric"]["score_normalization"], "pipeline")
 
 
+class RIRMetricReportTests(unittest.TestCase):
+    def test_rir_error_metrics_keep_their_units_and_direction(self) -> None:
+        units = {
+            "rir_npm": "dB",
+            "rt30_mae": "s",
+            "rt60_mae": "s",
+            "rir_drr_mae": "dB",
+            "rir_c50_mae": "dB",
+            "rir_c80_mae": "dB",
+            "rir_edc_mae": "dB",
+            "rir_iacc_full_mae": "coefficient",
+            "rir_iacc_early_mae": "coefficient",
+            "rir_iacc_late_mae": "coefficient",
+            "rir_itd_mae": "ms",
+            "rir_ild_mae": "dB",
+            "rir_ipd_mae": "rad",
+            "rir_doa_mae": "degrees",
+        }
+        for name, unit in units.items():
+            with self.subTest(metric=name):
+                score = -3.25 if name == "rir_npm" else 0.25
+                report = ep._standard_report_row_v1(
+                    row={"dataset": "rir", "task": "RIR", "metric": name, "result": {"score": score}},
+                    validation={}, run_id="run1", protocol_id="proto1", model_dir=None,
+                    tool_name="rir_model",
+                )
+                self.assertEqual(report["metric"]["unit"], unit)
+                self.assertEqual(report["metric"]["display"], f"{score:.6f} {unit}")
+                self.assertFalse(report["metric"]["higher_is_better"])
+
+
 class SotaFallbackTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()

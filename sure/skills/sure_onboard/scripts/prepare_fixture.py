@@ -34,6 +34,7 @@ AUDIO_FIELDS = (
     "audio_path",
     "source_audio",
     "reference_audio",
+    "reference_rir",
     "noisy_audio",
     "mixed_audio",
     "enrollment_audio",
@@ -161,6 +162,8 @@ def load_samples(source_dir: Path, task: str = "") -> list[dict[str, Any]]:
         annotation_fields = [field for field in ANNOTATION_FIELDS if field in row]
         if task == "se":
             annotation_fields.append("reference_audio")
+        if task == "rir":
+            annotation_fields.append("reference_rir")
         if not annotation_fields:
             raise ValueError(
                 f"{gt}:{line_no} must contain at least one annotation field "
