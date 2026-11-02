@@ -143,6 +143,7 @@ const COPIED_SCRIPTS = [
 	"check_memory_extraction.py",
 	"publish_memory.py",
 	"check_execution_result.py",
+	"check_worker_schedule.py",
 	"dataset_identity.py",
 	"check_execution_surface_compliance.py",
 	"host_env_profile.py",
