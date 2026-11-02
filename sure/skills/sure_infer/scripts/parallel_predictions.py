@@ -422,7 +422,7 @@ def _dataset_steps(ctx: Any, dataset: str, payload: dict[str, Any]) -> Generator
                 keys_path.write_text("".join(f"{key}\n" for key in pending_shard), encoding="utf-8")
                 worker_request = ctx.child_env.get("SURE_EVAL_DEVICE_REQUEST") or ctx.device
                 worker_device = generation._worker_model_device(worker_request)
-                env = {**ctx.child_env, "CUDA_VISIBLE_DEVICES": ctx.gpu_devices[rank],
+                env = {**ctx.child_env, "CUDA_VISIBLE_DEVICES": devices[rank],
                        "DEVICE": worker_device, "SURE_EVAL_DEVICE_ACTUAL": worker_device,
                        "SURE_EVAL_DEVICE_REQUEST": worker_request or worker_device,
                        "SURE_INFER_WORKER_RANK": str(rank)}

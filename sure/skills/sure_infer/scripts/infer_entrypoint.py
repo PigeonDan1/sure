@@ -567,13 +567,8 @@ def stage_generate(ctx: Ctx) -> None:
             runner = run_datasets_backfill if ctx.worker_policy == "independent_samples_v1" else run_datasets_serial
             reports = runner(ctx)
         else:
-            reports = [
-                run_dataset(
-                    replace(ctx, num_workers=ctx.worker_plans.get(dataset, {}).get("planned_workers", ctx.num_workers)),
-                    dataset,
-                )
-                for dataset in ctx.datasets
-            ]
+            # No resolved Worker plan: every dataset runs with the full budget.
+            reports = [run_dataset(ctx, dataset) for dataset in ctx.datasets]
         failed = [dataset for dataset, report in zip(ctx.datasets, reports) if report.get("status") != "completed"]
         if failed:
             raise StageError("generate", f"Incomplete datasets: {', '.join(failed)}; successful Worker rows are preserved")

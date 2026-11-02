@@ -259,6 +259,23 @@ class ParallelTests(unittest.TestCase):
                 self.assertEqual(len(self.calls()), before)
                 self.ctx.no_resume = True
 
+    def test_backfill_workers_pin_their_leased_gpu(self) -> None:
+        self.ctx.datasets = ["A", "B"]
+        self.ctx.num_workers = 2
+        self.ctx.gpu_devices = ["2", "4"]
+        self.ctx.worker_selection = "auto"
+        self.ctx.worker_policy = "independent_samples_v1"
+        for name in self.ctx.datasets:
+            path = self.datasets_root / "sure_benchmark/jsonl" / f"{name}.jsonl"
+            path.write_text("".join(json.dumps({**self.samples[0], "key": f"k{i}"}) + "\n" for i in range(100)))
+            self.ctx.worker_plans[name] = {"worker_selection": "auto", "planned_workers": 1,
+                                           "total_samples": 100, "selected_samples": 100}
+        parallel.run_datasets_backfill(self.ctx)
+        # B launches while A still holds its lease, so its rank 0 is GPU "4",
+        # not the run-wide ctx.gpu_devices[0] that A occupies.
+        gpus = {call["dataset"]: call["gpu"] for call in self.calls()}
+        self.assertEqual(gpus, {"A": "2", "B": "4"})
+
     def test_backfill_prepares_all_scopes_before_launch(self) -> None:
         self.ctx.datasets = ["demo__v1", "second"]
         source = self.datasets_root / "sure_benchmark/jsonl/demo__v1.jsonl"

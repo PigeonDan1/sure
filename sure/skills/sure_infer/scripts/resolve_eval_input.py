@@ -56,6 +56,7 @@ TEXT_DEFAULT_METRICS = {
     "SPEECH_UNDERSTANDING": "accuracy",
 }
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._=-]{0,199}$")
+SAMPLES_PER_WORKER = 1000
 
 # Approved models and promoted results both live below the configured trust
 # root. Evaluation products never stage inside it; promotion stays human.
@@ -551,7 +552,7 @@ def _local_gpu_count() -> int:
 
 
 def _auto_workers(selected: int, available: int) -> int:
-    """Plan one Worker per 1000 selected samples, capped by this node.
+    """Plan one Worker per SAMPLES_PER_WORKER selected samples, capped by this node.
 
     Zero usable GPUs keeps the existing single-server/CPU planning path. A
     positive allocation is capped at eight to preserve the public contract.
@@ -562,7 +563,7 @@ def _auto_workers(selected: int, available: int) -> int:
         raise EvalInputError("available GPU count must be a non-negative integer")
     if available == 0:
         return 1
-    return max(1, min((selected + 999) // 1000, available, 8))
+    return max(1, min((selected + SAMPLES_PER_WORKER - 1) // SAMPLES_PER_WORKER, available, 8))
 
 
 def _plan_workers(
