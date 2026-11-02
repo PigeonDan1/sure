@@ -6,7 +6,7 @@
     "speech_enhancement": "se"
   },
   "engine": {
-    "commit": "ab5598a6f621fbcc2fa222926e9f63674c561d48",
+    "commit": "204ffe814fa7b0797e8471d80916339d1dfd0690",
     "path": "sure/external/sure-evaluation"
   },
   "schema": "sure.engine_capabilities.v1",
@@ -1564,8 +1564,23 @@
       "language_sensitive": false,
       "metrics": [
         "dnsmos",
+        "dnsmos_bak",
+        "dnsmos_p808",
+        "dnsmos_sig",
+        "estoi",
+        "lps",
+        "lsd",
+        "nisqa_col",
+        "nisqa_dis",
+        "nisqa_loud",
+        "nisqa_mos",
+        "nisqa_noi",
+        "nsrmr",
         "pesq",
         "si_sdr",
+        "squim_pesq",
+        "squim_si_sdr",
+        "squim_stoi",
         "stoi",
         "utmos",
         "wv_mos"
@@ -1612,6 +1627,45 @@
           ]
         },
         {
+          "input_contract": "scoring/estoi",
+          "language": "any",
+          "metric": "estoi",
+          "optional_roles": [
+            "noisy_audio"
+          ],
+          "pipeline_id": "se.any.estoi.estoi_v1",
+          "required_roles": [
+            "enhanced_audio",
+            "reference_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/lsd",
+          "language": "any",
+          "metric": "lsd",
+          "optional_roles": [
+            "noisy_audio"
+          ],
+          "pipeline_id": "se.any.lsd.lsd_v1",
+          "required_roles": [
+            "enhanced_audio",
+            "reference_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/lps",
+          "language": "any",
+          "metric": "lps",
+          "optional_roles": [
+            "noisy_audio"
+          ],
+          "pipeline_id": "se.any.lps.lps_v1",
+          "required_roles": [
+            "enhanced_audio",
+            "reference_audio"
+          ]
+        },
+        {
           "input_contract": "scoring/pesq",
           "language": "any",
           "metric": "pesq",
@@ -1638,6 +1692,45 @@
           ]
         },
         {
+          "input_contract": "scoring/dnsmos_p808",
+          "language": "any",
+          "metric": "dnsmos_p808",
+          "optional_roles": [
+            "noisy_audio",
+            "reference_audio"
+          ],
+          "pipeline_id": "se.any.dnsmos_p808.dnsmos_p808_v1",
+          "required_roles": [
+            "enhanced_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/dnsmos_sig",
+          "language": "any",
+          "metric": "dnsmos_sig",
+          "optional_roles": [
+            "noisy_audio",
+            "reference_audio"
+          ],
+          "pipeline_id": "se.any.dnsmos_sig.dnsmos_sig_v1",
+          "required_roles": [
+            "enhanced_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/dnsmos_bak",
+          "language": "any",
+          "metric": "dnsmos_bak",
+          "optional_roles": [
+            "noisy_audio",
+            "reference_audio"
+          ],
+          "pipeline_id": "se.any.dnsmos_bak.dnsmos_bak_v1",
+          "required_roles": [
+            "enhanced_audio"
+          ]
+        },
+        {
           "input_contract": "scoring/wv_mos",
           "language": "any",
           "metric": "wv_mos",
@@ -1659,6 +1752,123 @@
             "reference_audio"
           ],
           "pipeline_id": "se.any.utmos.utmos_v1",
+          "required_roles": [
+            "enhanced_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/nsrmr",
+          "language": "any",
+          "metric": "nsrmr",
+          "optional_roles": [
+            "noisy_audio",
+            "reference_audio"
+          ],
+          "pipeline_id": "se.any.nsrmr.nsrmr_v1",
+          "required_roles": [
+            "enhanced_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/squim_stoi",
+          "language": "any",
+          "metric": "squim_stoi",
+          "optional_roles": [
+            "noisy_audio",
+            "reference_audio"
+          ],
+          "pipeline_id": "se.any.squim_stoi.squim_stoi_v1",
+          "required_roles": [
+            "enhanced_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/squim_pesq",
+          "language": "any",
+          "metric": "squim_pesq",
+          "optional_roles": [
+            "noisy_audio",
+            "reference_audio"
+          ],
+          "pipeline_id": "se.any.squim_pesq.squim_pesq_v1",
+          "required_roles": [
+            "enhanced_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/squim_si_sdr",
+          "language": "any",
+          "metric": "squim_si_sdr",
+          "optional_roles": [
+            "noisy_audio",
+            "reference_audio"
+          ],
+          "pipeline_id": "se.any.squim_si_sdr.squim_si_sdr_v1",
+          "required_roles": [
+            "enhanced_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/nisqa_mos",
+          "language": "any",
+          "metric": "nisqa_mos",
+          "optional_roles": [
+            "noisy_audio",
+            "reference_audio"
+          ],
+          "pipeline_id": "se.any.nisqa_mos.nisqa_mos_v1",
+          "required_roles": [
+            "enhanced_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/nisqa_noi",
+          "language": "any",
+          "metric": "nisqa_noi",
+          "optional_roles": [
+            "noisy_audio",
+            "reference_audio"
+          ],
+          "pipeline_id": "se.any.nisqa_noi.nisqa_noi_v1",
+          "required_roles": [
+            "enhanced_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/nisqa_dis",
+          "language": "any",
+          "metric": "nisqa_dis",
+          "optional_roles": [
+            "noisy_audio",
+            "reference_audio"
+          ],
+          "pipeline_id": "se.any.nisqa_dis.nisqa_dis_v1",
+          "required_roles": [
+            "enhanced_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/nisqa_col",
+          "language": "any",
+          "metric": "nisqa_col",
+          "optional_roles": [
+            "noisy_audio",
+            "reference_audio"
+          ],
+          "pipeline_id": "se.any.nisqa_col.nisqa_col_v1",
+          "required_roles": [
+            "enhanced_audio"
+          ]
+        },
+        {
+          "input_contract": "scoring/nisqa_loud",
+          "language": "any",
+          "metric": "nisqa_loud",
+          "optional_roles": [
+            "noisy_audio",
+            "reference_audio"
+          ],
+          "pipeline_id": "se.any.nisqa_loud.nisqa_loud_v1",
           "required_roles": [
             "enhanced_audio"
           ]
