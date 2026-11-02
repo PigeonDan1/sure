@@ -28,7 +28,7 @@ import shutil
 import subprocess
 import signal
 import sys
-from contextlib import nullcontext
+from contextlib import ExitStack, nullcontext
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -42,6 +42,7 @@ for _parent in Path(__file__).resolve().parents:
 from sure.runtime.evaluation.task_registry import normalize_task, task_profile
 from dataset_identity import projection_stems
 from runtime_roles import same_runtime_executable
+from parallel_predictions import _identity, discover_gpus, output_lock, read_json, run_dataset, run_datasets_backfill, run_datasets_serial
 
 STAGES: tuple[str, ...] = (
     "guards",
@@ -96,6 +97,7 @@ class Ctx:
     gpu_devices: list[str] = field(default_factory=list)
     worker_selection: str = "explicit"
     worker_plans: dict[str, dict[str, Any]] = field(default_factory=dict)
+    worker_policy: str = "independent_samples_v1"
 
 
 def _env(name: str, default: str = "") -> str:
@@ -366,6 +368,9 @@ def stage_prepare(ctx: Ctx) -> None:
             declared_task = str(model.get("declared_task") or "").strip()
             dataset_tasks: list[str] = []
             for row in payload.get("datasets") or []:
+                selected = payload.get("runtime", {}).get("worker_datasets")
+                if selected is not None and row.get("name") not in selected:
+                    continue
                 if isinstance(row, dict) and row.get("task"):
                     dataset_task = str(row["task"]).strip()
                     if dataset_task and dataset_task not in dataset_tasks:
@@ -414,6 +419,7 @@ def stage_prepare(ctx: Ctx) -> None:
         resolved = _read_json(Path(resolved_input))
         entries = resolved.get("datasets", [])
         ctx.worker_selection = resolved.get("runtime", {}).get("worker_selection", "explicit")
+        ctx.worker_policy = resolved.get("runtime", {}).get("worker_policy", "independent_samples_v1")
         # Generation is keyed by the prepared projection stem, not the canonical id.
         stems = projection_stems(entries)
         for row in entries:
@@ -499,9 +505,14 @@ def _generate_args(ctx: Ctx, dataset: str, *, max_samples: int | None, run_dir: 
 
 
 def stage_smoke(ctx: Ctx) -> None:
+    if ctx.num_workers == 1 and ctx.worker_plans and ctx.device.startswith("cuda"):
+        discover_gpus(1, ctx.child_env, single=True)
     if ctx.num_workers > 1:
-        from parallel_predictions import discover_gpus
-
+        for dataset in ctx.datasets:
+            previous = read_json(ctx.run_dir / "parallel_inference" / dataset / "plan.json")
+            if previous and previous.get("identity") != _identity(
+                    ctx, dataset, ctx.datasets_root / "sure_benchmark" / "jsonl" / f"{dataset}.jsonl"):
+                raise StageError("smoke", "Parallel recovery identity differs; use a new output directory")
         ctx.gpu_devices = discover_gpus(ctx.num_workers, ctx.child_env)
         if not ctx.no_resume:
             # Recovery validates saved identities and rows in the controller;
@@ -552,14 +563,13 @@ def stage_smoke(ctx: Ctx) -> None:
 
 def stage_generate(ctx: Ctx) -> None:
     if ctx.num_workers > 1:
-        from parallel_predictions import run_dataset
-
-        failed = []
-        for dataset in ctx.datasets:
-            workers = ctx.worker_plans.get(dataset, {}).get("planned_workers", ctx.num_workers)
-            report = run_dataset(replace(ctx, num_workers=workers), dataset)
-            if report["status"] != "completed":
-                failed.append(dataset)
+        if ctx.worker_plans:
+            runner = run_datasets_backfill if ctx.worker_policy == "independent_samples_v1" else run_datasets_serial
+            reports = runner(ctx)
+        else:
+            # No resolved Worker plan: every dataset runs with the full budget.
+            reports = [run_dataset(ctx, dataset) for dataset in ctx.datasets]
+        failed = [dataset for dataset, report in zip(ctx.datasets, reports) if report.get("status") != "completed"]
         if failed:
             raise StageError("generate", f"Incomplete datasets: {', '.join(failed)}; successful Worker rows are preserved")
         return
@@ -664,8 +674,12 @@ def main() -> int:
     stage = "guards"
     ctx: Ctx | None = None
     completed = False
+    locks = ExitStack()
+    owns_output = False
     try:
         ctx = stage_guards()
+        locks.enter_context(output_lock(ctx.run_dir / ".inference.lock"))
+        owns_output = True
         flow = (
             ("tool_name", stage_tool_name),
             ("config", stage_config),
@@ -703,13 +717,14 @@ def main() -> int:
         print(f"{STAGE_MARKER} {stage}", flush=True)
         return 1
     finally:
-        if not completed and ctx is not None and ctx.num_workers > 1:
+        if owns_output and not completed and ctx is not None and ctx.num_workers > 1:
             from finalize_result_bundle import finalize_bundle
 
             try:
                 finalize_bundle(ctx.run_dir, Path(_env("SURE_EVAL_PUBLISHED_RUN_DIR") or str(ctx.run_dir)))
             except Exception as exc:
                 print(f"Failed to localize parallel diagnostics: {exc}", file=sys.stderr, flush=True)
+        locks.close()
     print("========================================")
     print(f"Inference completed: {ctx.run_id}")
     print(f"Predictions: {ctx.run_dir / 'predictions'}")

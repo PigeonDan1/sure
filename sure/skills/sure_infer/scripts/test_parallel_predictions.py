@@ -21,6 +21,7 @@ import resolve_eval_input
 import run_infer
 import test_deployment_binding as binding_tests
 import check_execution_result
+from check_worker_schedule import schedule_errors
 from container_execution import build_local_container_command
 from deployment_binding import load_deployment_binding
 from finalize_result_bundle import finalize_bundle
@@ -169,6 +170,7 @@ class ParallelTests(unittest.TestCase):
         self.ctx.num_workers = 8
         self.ctx.gpu_devices = [str(index) for index in range(8)]
         self.ctx.worker_selection = "auto"
+        self.ctx.worker_policy = "independent_samples_v1"
         for dataset, count in counts.items():
             samples = [{**self.samples[0], "key": f"k{index}"} for index in range(count)]
             path = self.datasets_root / "sure_benchmark" / "jsonl" / f"{dataset}.jsonl"
@@ -180,6 +182,12 @@ class ParallelTests(unittest.TestCase):
         self.assertEqual([call["dataset"] for call in calls], ["small__v1"] + ["large__v1"] * 8)
         small_report = parallel.read_json(self.product / "parallel_inference/small__v1/merge_report.json")
         large_report = parallel.read_json(self.product / "parallel_inference/large__v1/merge_report.json")
+        schedule = parallel.read_json(self.product / "parallel_inference/schedule.json")
+        self.assertEqual(schedule["strategy"], "first_fit_backfill")
+        self.assertEqual(schedule["gpu_budget"], 8)
+        self.assertEqual({row["dataset"] for row in schedule["datasets"]}, set(counts))
+        status = parallel.read_json(self.product / "prediction_generation_status.json")
+        self.assertEqual(len(status["cuda_visible_devices"].split(",")), 8)
         self.assertEqual(small_report["requested_workers"], 1)
         self.assertEqual(large_report["requested_workers"], 8)
         self.assertEqual(min(call["time"] for call in calls[1:]) > calls[0]["time"] + 0.15, True)
@@ -201,6 +209,118 @@ class ParallelTests(unittest.TestCase):
                                            "total_samples": 11, "selected_samples": 11}
         with self.assertRaisesRegex(ValueError, "changed after planning"):
             parallel.run_dataset(self.ctx, "demo__v1")
+        self.assertEqual(self.calls(), [])
+
+    def test_first_fit_backfills_and_matches_serial_predictions(self) -> None:
+        self.ctx.datasets = ["A", "B", "C", "D"]
+        self.ctx.worker_selection = "auto"
+        self.ctx.worker_policy = "independent_samples_v1"
+        for name, count, workers in zip(self.ctx.datasets, (100, 200, 4000, 2000), (1, 1, 4, 2)):
+            path = self.datasets_root / "sure_benchmark/jsonl" / f"{name}.jsonl"
+            path.write_text("".join(json.dumps({**self.samples[0], "key": f"k{i}"}) + "\n" for i in range(count)))
+            self.ctx.worker_plans[name] = {"worker_selection": "auto", "planned_workers": workers,
+                                           "total_samples": count, "selected_samples": count}
+        snapshots = {}
+        for budget, backfill in ((4, True), (8, True), (8, False)):
+            with self.subTest(budget=budget, backfill=backfill):
+                self.ctx.run_dir = self.root / f"run-{budget}-{backfill}"
+                self.ctx.num_workers = budget
+                self.ctx.gpu_devices = [str(i) for i in range(budget)]
+                runner = parallel.run_datasets_backfill if backfill else parallel.run_datasets_serial
+                reports = runner(self.ctx)
+                self.assertTrue(all(report["status"] == "completed" for report in reports))
+                schedule = parallel.read_json(self.ctx.run_dir / "parallel_inference/schedule.json")
+                strategy = "first_fit_backfill" if backfill else "serial"
+                self.assertEqual(schedule_errors(self.ctx.run_dir, schedule, self.ctx.datasets,
+                                                budget, self.ctx.gpu_devices, strategy), [])
+                events = schedule["events"]
+                if backfill:
+                    first = [row["dataset"] for row in events[:3 if budget == 4 else 4]]
+                    self.assertEqual(first, ["A", "B", "D"] if budget == 4 else self.ctx.datasets)
+                    self.assertTrue(all(row["event"] == "started" for row in events[:len(first)]))
+                for name in self.ctx.datasets:
+                    content = (self.ctx.run_dir / "predictions" / f"{name}.txt").read_text()
+                    self.assertEqual(content, snapshots.setdefault(name, content))
+                    structured = (self.ctx.run_dir / "predictions" / f"{name}.jsonl").read_text()
+                    self.assertEqual(structured, snapshots.setdefault(f"{name}.jsonl", structured))
+                for manifest in ("manifest.json", "conversion_manifest.json"):
+                    rows = parallel.read_json(self.ctx.run_dir / "predictions" / manifest)["datasets"]
+                    self.assertCountEqual([row["dataset"] for row in rows], self.ctx.datasets)
+                status = parallel.read_json(self.ctx.run_dir / "prediction_generation_status.json")
+                self.assertEqual([row["dataset"] for row in status["datasets"]], self.ctx.datasets)
+                # Missing/overlapping events cannot pass even if predictions exist.
+                schedule["events"].insert(1, dict(events[0]))
+                self.assertTrue(schedule_errors(self.ctx.run_dir, schedule, self.ctx.datasets,
+                                               budget, self.ctx.gpu_devices, strategy))
+                before = len(self.calls())
+                self.ctx.no_resume = False
+                resumed = runner(self.ctx)
+                self.assertTrue(all(row["effective_workers"] == 0 for row in resumed))
+                self.assertEqual(len(self.calls()), before)
+                self.ctx.no_resume = True
+
+    def test_backfill_workers_pin_their_leased_gpu(self) -> None:
+        self.ctx.datasets = ["A", "B"]
+        self.ctx.num_workers = 2
+        self.ctx.gpu_devices = ["2", "4"]
+        self.ctx.worker_selection = "auto"
+        self.ctx.worker_policy = "independent_samples_v1"
+        for name in self.ctx.datasets:
+            path = self.datasets_root / "sure_benchmark/jsonl" / f"{name}.jsonl"
+            path.write_text("".join(json.dumps({**self.samples[0], "key": f"k{i}"}) + "\n" for i in range(100)))
+            self.ctx.worker_plans[name] = {"worker_selection": "auto", "planned_workers": 1,
+                                           "total_samples": 100, "selected_samples": 100}
+        parallel.run_datasets_backfill(self.ctx)
+        # B launches while A still holds its lease, so its rank 0 is GPU "4",
+        # not the run-wide ctx.gpu_devices[0] that A occupies.
+        gpus = {call["dataset"]: call["gpu"] for call in self.calls()}
+        self.assertEqual(gpus, {"A": "2", "B": "4"})
+
+    def test_backfill_prepares_all_scopes_before_launch(self) -> None:
+        self.ctx.datasets = ["demo__v1", "second"]
+        source = self.datasets_root / "sure_benchmark/jsonl/demo__v1.jsonl"
+        source.with_name("second.jsonl").write_bytes(source.read_bytes())
+        self.ctx.worker_plans["second"] = {"worker_selection": "explicit", "planned_workers": 1,
+                                          "total_samples": 11, "selected_samples": 11}
+        with self.assertRaisesRegex(ValueError, "changed after planning"):
+            parallel.run_datasets_backfill(self.ctx)
+        self.assertEqual(self.calls(), [])
+
+    def test_backfill_cancellation_reaps_all_running_datasets(self) -> None:
+        self.ctx.datasets = ["demo__v1", "second"]
+        source = self.datasets_root / "sure_benchmark/jsonl/demo__v1.jsonl"
+        source.with_name("second.jsonl").write_bytes(source.read_bytes())
+        self.ctx.worker_plans = {name: {"worker_selection": "explicit", "planned_workers": 1,
+                                      "total_samples": 10, "selected_samples": 10} for name in self.ctx.datasets}
+        started = []
+        popen = subprocess.Popen
+        def launch(*args, **kwargs):
+            process = popen(*args, **kwargs)
+            started.append(process)
+            return process
+        sleep = time.sleep
+        cancelled = False
+        def cancel_once(seconds):
+            nonlocal cancelled
+            if not cancelled:
+                cancelled = True
+                raise InterruptedError("cancel")
+            sleep(seconds)
+        with patch.object(parallel.subprocess, "Popen", side_effect=launch), \
+                patch.object(parallel.time, "sleep", side_effect=cancel_once):
+            with self.assertRaisesRegex(InterruptedError, "cancel"):
+                parallel.run_datasets_backfill(self.ctx)
+        self.assertEqual(len(started), 2)
+        self.assertTrue(all(process.poll() is not None for process in started))
+        schedule = parallel.read_json(self.product / "parallel_inference/schedule.json")
+        self.assertEqual(schedule["status"], "failed")
+        self.assertEqual(len([event for event in schedule["events"] if event["event"] == "finished"]), 2)
+
+    def test_second_controller_cannot_acquire_output_lock(self) -> None:
+        path = self.product / ".generation.lock"
+        with parallel.output_lock(path):
+            with self.assertRaisesRegex(RuntimeError, "Another inference controller"):
+                parallel.run_dataset(self.ctx, "demo__v1")
         self.assertEqual(self.calls(), [])
 
     def test_even_split_and_small_or_empty_dataset(self) -> None:
@@ -341,7 +461,7 @@ class ParallelTests(unittest.TestCase):
         def run(ctx, dataset):
             visited.append(dataset)
             return {"status": "failed" if dataset == "first" else "completed"}
-        with patch.object(parallel, "run_dataset", side_effect=run):
+        with patch.object(infer_entrypoint, "run_dataset", side_effect=run):
             with self.assertRaisesRegex(infer_entrypoint.StageError, "first"):
                 infer_entrypoint.stage_generate(self.ctx)
         self.assertEqual(visited, ["first", "second"])
@@ -444,6 +564,14 @@ class ParallelTests(unittest.TestCase):
         self.assertEqual(command[command.index("--gpus") + 1], '"device=2,4"')
         self.assertFalse(any(argument.startswith("CUDA_VISIBLE_DEVICES=") for argument in command))
         self.assertIn("NO_RESUME=0", command)
+        runtime = arguments["eval_input"]["runtime"]
+        runtime.update(num_workers=1, worker_policy="independent_samples_v1")
+        with patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "2,4"}):
+            command, _ = build_local_container_command(**arguments)
+        self.assertEqual(command[command.index("--gpus") + 1], '"device=2"')
+        self.assertIn("DEVICE=cuda:0", command)
+        self.assertFalse(any(argument.startswith("CUDA_VISIBLE_DEVICES=") for argument in command))
+        runtime.update(num_workers=2)
         with patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "2"}):
             with self.assertRaisesRegex(ValueError, "enough"):
                 build_local_container_command(**arguments)
@@ -452,7 +580,7 @@ class ParallelTests(unittest.TestCase):
         self.ctx.worker_selection = "auto"
         self.ctx.worker_plans["demo__v1"] = {"worker_selection": "auto", "planned_workers": 3,
                                            "total_samples": 10, "selected_samples": 10}
-        parallel.run_dataset(self.ctx, "demo__v1")
+        parallel.run_datasets_backfill(self.ctx)
         (self.product / "validation_payload.json").write_text(json.dumps({"is_valid": True,
             "results": [{"dataset": "demo__v1", "is_valid": True, "expected_samples": 10, "provided_predictions": 10}]}))
         canonical = "demo_pool__v1"
@@ -464,11 +592,12 @@ class ParallelTests(unittest.TestCase):
         artifacts.mkdir(parents=True)
         binding = {"schema": "sure.deployment.binding.v2", "runtime_kind": "python", "model_dir": str(self.model),
                    "python": {}, "evidence": {}}
-        surface = {"execution": {"path_planned": "local_python"},
+        surface = {"execution": {"path_planned": "local_python"}, "inference_runtime": {"num_workers": 3},
                    "deployment_binding": check_execution_result.compliance.expected_binding_summary(binding)}
         (artifacts / "execution_surface.json").write_text(json.dumps(surface))
         (artifacts / "eval_input_resolved.json").write_text(json.dumps({"model": {"deployment_binding": binding},
-                "datasets": details, "runtime": {"num_workers": 3, "worker_selection": "auto"}}))
+                "datasets": details, "runtime": {"num_workers": 3, "worker_selection": "auto",
+                "worker_policy": "independent_samples_v1", "worker_datasets": [canonical]}}))
         result = {"job_status": "succeeded", "exit_code": 0, "execution_path": "local_python",
                   "product_dir": str(self.product), "datasets": rows,
                   "parallelism": run_infer._parallel_summary(self.product, 3)}
@@ -477,8 +606,13 @@ class ParallelTests(unittest.TestCase):
         (self.product / "protocol.yaml").write_text("schema: test\n")
         references = self.product / "references/sure_benchmark/jsonl"
         references.mkdir(parents=True)
-        (references / "demo__v1.jsonl").write_text("{}\n")
+        (references / "demo__v1.jsonl").write_text("".join(json.dumps(row) + "\n" for row in self.samples))
         self.assertEqual(check_execution_result.gate_errors(artifacts.parent, result_path), [])
+        schedule_path = self.product / "parallel_inference/schedule.json"
+        saved = schedule_path.read_bytes()
+        schedule_path.unlink()
+        self.assertTrue(check_execution_result.gate_errors(artifacts.parent, result_path))
+        schedule_path.write_bytes(saved)
         for key, value in (("planned_workers", 8), ("total_samples", 11), ("selected_samples", 9), ("effective_workers", 4)):
             with self.subTest(key=key):
                 old = result["parallelism"]["datasets"][0][key]
@@ -542,6 +676,8 @@ class ParallelTests(unittest.TestCase):
                                                 {"jsonrpc": "2.0", "id": 1, "method": "initialize"}, 0.3)
         self.assertLess(time.monotonic() - started, 10)
         self.assertIsNotNone(process.wait(timeout=10))
+        process.stdin.close()
+        process.stdout.close()
 
 
 if __name__ == "__main__":

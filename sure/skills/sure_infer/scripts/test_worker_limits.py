@@ -13,9 +13,44 @@ from unittest.mock import Mock, patch
 import infer_entrypoint
 import parallel_predictions
 import resolve_eval_input
+import run_infer
 
 
 class WorkerLimitTests(unittest.TestCase):
+    def test_final_budget_excludes_unselected_datasets_and_freezes_scope(self) -> None:
+        payload = {"runtime": {"num_workers": 8, "worker_selection": "auto", "worker_policy": "independent_samples_v1"},
+                   "datasets": [{"name": name, "planned_workers": count} for name, count in (("A", 1), ("B", 1), ("C", 4), ("D", 2))]}
+        run_infer._finalize_worker_budget(payload, ["A", "B"])
+        self.assertEqual(payload["runtime"]["num_workers"], 2)
+        run_infer._finalize_worker_budget(payload, ["A", "B"])
+        with self.assertRaisesRegex(ValueError, "scope changed"):
+            run_infer._finalize_worker_budget(payload, ["C"])
+        with self.assertRaisesRegex(ValueError, "unique"):
+            run_infer._finalize_worker_budget(payload, ["A", "A"])
+
+    def test_cpu_pinned_devices_and_legacy_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "data.jsonl"
+            path.write_text('{}\n' * 3000)
+            args = resolve_eval_input._build_parser().parse_args(["--model", "demo", "--datasets", "A,B"])
+            rows = [{"name": name, "jsonl_path": str(path)} for name in ("A", "B")]
+            for device in ("cpu", "cuda:2"):
+                args.device = device
+                self.assertEqual(self._plan(args, Mock(), rows), (1, "auto"))
+                self.assertEqual([row["planned_workers"] for row in rows], [1, 1])
+            args.device = "cuda"
+            with self.assertRaisesRegex(ValueError, "available GPU"):
+                self._plan(args, Mock(), rows, available=0)
+            with patch.object(resolve_eval_input, "_local_gpu_count", return_value=8):
+                self.assertEqual(resolve_eval_input._plan_workers(args, Mock(), rows, policy="legacy"), (4, "auto"))
+            with patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": "2,4"}):
+                with self.assertRaisesRegex(ValueError, "outside"):
+                    run_infer._local_device_env("cuda:0")
+            for visible in ("0,0", "0,,1", "0,-1", "garbage"):
+                with patch.dict(os.environ, {"CUDA_VISIBLE_DEVICES": visible}):
+                    with self.assertRaisesRegex(ValueError, "distinct"):
+                        resolve_eval_input._local_gpu_count()
+
     def _plan(self, args, manager, rows, *, available: int = 8):
         with patch.object(resolve_eval_input, "_local_gpu_count", return_value=available):
             return resolve_eval_input._plan_workers(args, manager, rows)
@@ -27,7 +62,7 @@ class WorkerLimitTests(unittest.TestCase):
             manager.download_and_convert.return_value = path
             args = resolve_eval_input._build_parser().parse_args(["--model", "demo", "--datasets", "demo"])
             self.assertIsNone(args.num_workers)
-            for total, expected in ((5, 1), (999, 1), (1000, 2), (1999, 2), (2000, 4), (3999, 4), (4000, 8), (8000, 8)):
+            for total, expected in ((1, 1), (999, 1), (1000, 1), (1001, 2), (1999, 2), (2000, 2), (2001, 3), (3000, 3), (4000, 4), (8000, 8), (8001, 8)):
                 with self.subTest(total=total):
                     path.write_text('{}\n' * total + '\n', encoding="utf-8")
                     rows = [{"name": "demo", "requested_name": "/source/demo@v1", "task": "ASR"}]
@@ -61,7 +96,7 @@ class WorkerLimitTests(unittest.TestCase):
             manager = Mock()
             manager.download_and_convert.return_value = path
             args = resolve_eval_input._build_parser().parse_args(["--model", "demo", "--datasets", "demo"])
-            for available, expected in ((0, 1), (1, 1), (2, 2), (3, 3), (4, 4), (8, 8)):
+            for available, expected in ((0, 1), (1, 1), (2, 2), (3, 3), (4, 4), (8, 5)):
                 with self.subTest(available=available):
                     rows = [{"name": "demo", "requested_name": "/source/demo@v1", "task": "ASR"}]
                     self.assertEqual(self._plan(args, manager, rows, available=available), (expected, "auto"))
@@ -81,7 +116,7 @@ class WorkerLimitTests(unittest.TestCase):
                 self._plan(args, manager, rows, available=2)
             self.assertEqual(self._plan(args, manager, rows, available=8), (8, "explicit"))
 
-    def test_mixed_datasets_allocate_maximum_before_submission(self) -> None:
+    def test_mixed_datasets_sum_automatic_budget_before_submission(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             paths = {"X": root / "X.jsonl", "Y": root / "Y.jsonl"}
@@ -99,6 +134,22 @@ class WorkerLimitTests(unittest.TestCase):
             args.device = "cpu"
             with self.assertRaisesRegex(resolve_eval_input.EvalInputError, "device"):
                 resolve_eval_input._parallel_request(args, maximum)
+
+    def test_mixed_small_datasets_use_the_sum_budget(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            paths = {name: root / f"{name}.jsonl" for name in ("A", "B", "C", "D")}
+            for name, count in zip(paths, (100, 200, 4000, 2000)):
+                paths[name].write_text('{}\n' * count)
+            manager = Mock()
+            manager.download_and_convert.side_effect = lambda name, task: paths[name]
+            args = resolve_eval_input._build_parser().parse_args(["--model", "demo", "--datasets", "A,B,C,D"])
+            rows = [{"name": name, "task": "ASR"} for name in paths]
+            budget, selection = self._plan(args, manager, rows, available=8)
+            self.assertEqual((budget, selection), (8, "auto"))
+            self.assertEqual({row["name"]: row["planned_workers"] for row in rows}, {"A": 1, "B": 1, "C": 4, "D": 2})
+            budget, _ = self._plan(args, manager, rows, available=4)
+            self.assertEqual(budget, 4)
 
     def test_new_and_cached_task_projections_use_the_same_plan(self) -> None:
         from test_source_conversion import make_manager, make_source_tree

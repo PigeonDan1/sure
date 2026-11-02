@@ -56,6 +56,7 @@ TEXT_DEFAULT_METRICS = {
     "SPEECH_UNDERSTANDING": "accuracy",
 }
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._=-]{0,199}$")
+SAMPLES_PER_WORKER = 1000
 
 # Approved models and promoted results both live below the configured trust
 # root. Evaluation products never stage inside it; promotion stays human.
@@ -391,7 +392,7 @@ def _write_harness_config(*, run_dir: Path, config_path: str | None) -> Path:
 
 
 def _nvidia_smi_available() -> bool:
-    if os.environ.get("CUDA_VISIBLE_DEVICES") == "":
+    if os.environ.get("CUDA_VISIBLE_DEVICES", "unset").strip() in {"", "-1"}:
         return False
     if not shutil.which("nvidia-smi"):
         return False
@@ -411,7 +412,7 @@ def _resolve_device(requested: str) -> dict[str, Any]:
         resolved = "cuda:0" if cuda_available else "cpu"
     elif lowered == "cuda":
         resolved = "cuda:0"
-    elif lowered.startswith("cuda") or lowered == "cpu":
+    elif re.fullmatch(r"cuda:\d+", lowered) or lowered == "cpu":
         resolved = request
     else:
         raise ValueError(f"Unsupported device: {requested}. Use auto, cpu, cuda, or cuda:<index>.")
@@ -529,10 +530,13 @@ def _local_gpu_count() -> int:
     """
     visible = os.environ.get("CUDA_VISIBLE_DEVICES")
     if visible is not None:
-        devices = [device.strip() for device in visible.split(",") if device.strip()]
-        if not devices or "-1" in devices:
+        if visible.strip() in {"", "-1"}:
             return 0
-        return len(set(devices))
+        devices = [device.strip() for device in visible.split(",")]
+        if (not all(re.fullmatch(r"(?:\d+|GPU-[\w-]+|MIG-[\w/.-]+)", device) for device in devices)
+                or len(set(devices)) != len(devices)):
+            raise EvalInputError("CUDA_VISIBLE_DEVICES must name distinct usable GPUs")
+        return len(devices)
     if not _nvidia_smi_available():
         return 0
     try:
@@ -548,26 +552,22 @@ def _local_gpu_count() -> int:
 
 
 def _auto_workers(selected: int, available: int) -> int:
-    """Size the pool by sample count, then by what the node actually has.
+    """Plan one Worker per SAMPLES_PER_WORKER selected samples, capped by this node.
 
-    The sample thresholds say how much parallel work is worth starting. They
-    are not a claim about the hardware: a two-GPU node given a 4000-sample
-    dataset must plan two Workers, not eight, or the run fails at GPU discovery
-    for a dataset it could have processed.
+    Zero usable GPUs keeps the existing single-server/CPU planning path. A
+    positive allocation is capped at eight to preserve the public contract.
     """
-    if selected < 1000:
-        planned = 1
-    elif selected < 2000:
-        planned = 2
-    elif selected < 4000:
-        planned = 4
-    else:
-        planned = 8
-    return max(1, min(planned, available))
+    if type(selected) is not int or selected < 1:
+        raise EvalInputError("selected sample count must be a positive integer")
+    if type(available) is not int or available < 0:
+        raise EvalInputError("available GPU count must be a non-negative integer")
+    if available == 0:
+        return 1
+    return max(1, min((selected + SAMPLES_PER_WORKER - 1) // SAMPLES_PER_WORKER, available, 8))
 
 
 def _plan_workers(
-    args: Any, manager: DatasetManager, datasets: list[dict[str, Any]]
+    args: Any, manager: DatasetManager, datasets: list[dict[str, Any]], *, policy: str = "independent_samples_v1"
 ) -> tuple[int, str]:
     """Decide the Worker count per dataset before the run materializes anything."""
     cap = args.max_samples
@@ -576,7 +576,13 @@ def _plan_workers(
     if not datasets:
         raise EvalInputError("No datasets available for Worker planning")
     explicit = getattr(args, "num_workers", None)
+    _parallel_request(args)
     available = _local_gpu_count()
+    device = str(args.device or "auto").strip().lower()
+    if device == "cpu" or re.fullmatch(r"cuda:\d+", device):
+        available = min(available, 1)
+    if device.startswith("cuda") and available == 0:
+        raise EvalInputError("device=cuda requires an available GPU")
     if explicit is not None and explicit > 1 and explicit > available:
         raise EvalInputError(
             f"num_workers={explicit} asks for {explicit} GPUs but this node provides {available}"
@@ -602,9 +608,17 @@ def _plan_workers(
             raise EvalInputError(f"Dataset {row['name']} has no samples in its task projection")
         selected = min(count, cap) if cap else count
         planned = explicit if explicit is not None else _auto_workers(selected, available)
+        if explicit is None and policy == "legacy":
+            old = 1 if selected < 1000 else 2 if selected < 2000 else 4 if selected < 4000 else 8
+            planned = max(1, min(old, available))
         row.update(num_samples=count, selected_samples=selected, planned_workers=planned)
+    planned = max(row["planned_workers"] for row in datasets) if explicit is not None or policy == "legacy" else min(
+        max(1, available), 8, sum(row["planned_workers"] for row in datasets)
+    )
+    if available == 0:
+        planned = 1
     return (
-        max(row["planned_workers"] for row in datasets),
+        planned,
         "explicit" if explicit is not None else "auto",
     )
 
@@ -907,7 +921,13 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         dataset_source_key=args.dataset_source_key,
     )
     _check_task_compatibility(model, datasets)
-    num_workers, worker_selection = _plan_workers(args, manager, datasets)
+    model_config = yaml.safe_load((Path(model["model_dir"]) / "config.yaml").read_text(encoding="utf-8")) or {}
+    # The optimized independent-sample scheduler is the default. A model may
+    # explicitly opt into the old behavior for a compatibility exception.
+    worker_policy = (model_config.get("inference") or {}).get("worker_policy", "independent_samples_v1")
+    if worker_policy not in {"legacy", "independent_samples_v1"}:
+        raise EvalInputError("inference.worker_policy must be legacy or independent_samples_v1")
+    num_workers, worker_selection = _plan_workers(args, manager, datasets, policy=worker_policy)
     num_workers = _parallel_request(args, num_workers)
     tasks = _dedupe([str(item.get("task") or "UNKNOWN") for item in datasets])
     languages = _dedupe([str(item.get("language") or "") for item in datasets if item.get("language")])
@@ -955,6 +975,7 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
             "max_samples": args.max_samples,
             "num_workers": num_workers,
             "worker_selection": worker_selection,
+            "worker_policy": worker_policy,
             "sample_scope": "full_dataset" if args.max_samples == 0 else "bounded",
             "device": device,
             "execution": execution,

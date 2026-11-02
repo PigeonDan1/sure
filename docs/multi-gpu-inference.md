@@ -5,20 +5,31 @@ large dataset uses the cards this node has, and a small one uses a single server
 
 This is process-level parallelism, not model batching. Each Worker loads its own copy
 of the model and calls it one sample at a time, so no model wrapper needs a batch
-argument and predictions are identical to a single-server run.
+argument. The input scope, call contract and output aggregation remain equivalent to
+the single-server path; models with cross-request state or randomness require their
+own compatibility validation before enabling a different Worker layout.
 
 ## Selecting Workers
 
 `num_workers` is optional.
 
+The automatic independent-sample rule and backfill are the default. A model may
+explicitly declare `inference.worker_policy: legacy` when compatibility validation
+requires the old 1/2/4/8 thresholds, maximum-dataset budget and serial dataset
+execution. Explicit counts remain explicit under either policy. The table below
+describes the default `independent_samples_v1` behavior.
+
 | Selected samples (after `max_samples`) | Workers |
 | --- | --- |
-| fewer than 1000 | 1 |
-| 1000 – 1999 | 2 |
-| 2000 – 3999 | 4 |
-| 4000 or more | 8 |
+| 1 – 1000 | 1 |
+| 1001 – 2000 | 2 |
+| 2001 – 3000 | 3 |
+| 3001 – 4000 | 4 |
+| 7001 – 8000 | 8 |
+| above 8000 | 8 |
 
-The planned count is then capped at the GPUs this node provides. The cap is the
+The planned count is `ceil(selected_samples / 1000)`, then capped at eight and at
+the GPUs this node provides. The cap is the
 allocation a local run actually gets: `CUDA_VISIBLE_DEVICES` when it is set,
 otherwise the `nvidia-smi` device list. A 4000-sample dataset on a two-GPU node plans
 two Workers, not eight, so automatic selection never asks for hardware the node does
@@ -33,12 +44,25 @@ num_workers=8 asks for 8 GPUs but this node provides 2
 ```
 
 `num_workers=1` always uses the single-server path. More than one Worker requires
-`device=auto` or `device=cuda`; `device=cuda:<index>` narrows the run to one card and
-is refused, never widened.
+`device=auto` or `device=cuda`. Automatic CPU and pinned-device runs stay serial;
+an explicit multi-Worker request with either device is refused. Pinned physical
+indices must belong to the visible allocation.
 
-A mixed run plans each dataset separately and records the maximum in the resolved
-runtime. Datasets are processed in input order, one at a time: models are loaded
-again for the next dataset rather than held across the whole run.
+A mixed run plans each dataset separately. Automatic runs reserve the sum of those
+per-dataset plans, capped at the GPU allocation; explicit `num_workers` keeps its
+existing run-wide request semantics. A fixed dataset list uses first-fit backfill:
+datasets are scanned in input order, a dataset that fits the currently free GPU
+budget starts immediately, and one that does not fit is skipped until a running
+dataset releases its GPU lease. Each dataset keeps its own isolated server, shards,
+journal and merge report; the run-level controller is the only writer of shared
+status and the final schedule.
+
+The launcher freezes the budget using only the final dataset decision before
+materializing the execution surface. Recovery preserves that budget and the planned
+counts, but reduces actual leases to verified pending keys, including zero for a
+completed dataset. A lease is held through bounded retries until the dataset ends.
+One cooperative controller owns all shared writes; output locks reject concurrent
+controllers across smoke, generation and finalization.
 
 ## Execution
 
@@ -47,7 +71,8 @@ Each Worker is a separate process pinned to one device through
 cannot widen that visibility.
 
 Keys are split into contiguous shards whose sizes differ by at most one, in source
-order. A dataset with fewer samples than Workers uses fewer Workers.
+order. A dataset with fewer samples than Workers uses fewer Workers. The backfill
+schedule never changes the selected key set or final source order.
 
 Both local surfaces work:
 
@@ -123,3 +148,8 @@ the selection mode (`auto` / `explicit`), the GPU list, and per dataset the plan
 effective Worker counts, sample scope, status and report path. The execution gate
 rejects a succeeded run whose plan, generation status, merge report or GPU list
 disagrees, so a tampered or drifted Worker count cannot pass.
+
+`parallel_inference/schedule.json` and its session copy record input order, strategy,
+budget, GPU set, per-dataset counts and start/finish leases. The result references
+its SHA256. The gate checks session bindings, non-overlapping leases, complete
+lifecycles and prediction keys/order against the selected reference scope.
